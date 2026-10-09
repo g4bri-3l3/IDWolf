@@ -44,7 +44,7 @@ a browser:
 
 - `examples/lab_report.html` is the report in the GIF. It comes from a real lab
   domain and includes the optional Gemini summary.
-- `examples/demo_report.html` is built on the fictional `moosebank.local`, with
+- `examples/demo_report.html` is built on a fictional domain, with
   a deep collection and password quality. Its findings CSV and JSON Lines sit
   next to it.
 - `examples/entra_report.html` is the fictional Entra tenant.
@@ -240,7 +240,7 @@ collectors talk to anything. `IDWolf.ps1`, the analysis, needs no network at all
 | the collecting machine | DNS and Kerberos (TCP/UDP 53, 88) | name resolution and sign-in as on any domain-joined machine | everything | everything |
 | a DC (or any host with the rights) | a DC | RPC (TCP 135 and the dynamic range) | `Export-PasswordQuality.ps1`: replication (DCSync) of the account data. Not needed with an offline `ntds.dit` | no password-quality report |
 | the Entra collector | `login.microsoftonline.com`, `graph.microsoft.com` | TCP 443 | sign-in and read-only Graph (`-UseDeviceCode` also needs a browser on any machine to `microsoft.com/devicelogin`) | no Entra snapshot |
-| the analysis machine | `generativelanguage.googleapis.com` (or `MOOSEAD_GEMINI_BASEURL`) | TCP 443 | the optional Gemini step, only if you answer yes | no AI summary; the report is unaffected |
+| the analysis machine | `generativelanguage.googleapis.com` (or `IDWOLF_GEMINI_BASEURL`) | TCP 443 | the optional Gemini step, only if you answer yes | no AI summary; the report is unaffected |
 | the machine installing modules | the PowerShell Gallery | TCP 443 | RSAT, Graph or DSInternals, only if you ask for the install | install by hand, or copy the module over |
 
 A proxy that asks for credentials will stop the Gemini and Graph calls, so set
@@ -782,7 +782,7 @@ This is how your data is protected:
   the section is labelled as AI-written.
 - **The key and the connection.** The key travels in a header, not in the URL.
   If there's no key when you say yes, IDWolf asks for it with hidden typing and
-  keeps it in memory for that run only. `MOOSEAD_GEMINI_BASEURL` points the call
+  keeps it in memory for that run only. `IDWOLF_GEMINI_BASEURL` points the call
   at an internal gateway. Timeouts and busy-server errors are retried
   (`-AiMaxAttempts`, where 0 means keep trying, with a growing pause of up to a
   minute). If the connection fails, the message shows the real cause.
@@ -948,11 +948,11 @@ Run them under Windows PowerShell 5.1 as well (`powershell.exe -File ...`). Real
 collections run there, and some bugs only show up there.
 
 - `tests/New-SyntheticSnapshot.ps1 -Scenario demo|partial|large [-Deep]` builds
-  the fictional `moosebank.local`. `demo` trips most checks, `partial` fakes
+  a fictional domain. `demo` trips most checks, `partial` fakes
   collection failures, and `large` adds 20,000 users and 5,000 computers, which
   takes about 20 seconds to analyze on PowerShell 7.
-- `tests/New-SyntheticEntraSnapshot.ps1` builds the fictional
-  `moosebank.onmicrosoft.com` tenant.
+- `tests/New-SyntheticEntraSnapshot.ps1` builds a fictional
+  Entra tenant.
 - The mock module runs the collector without a domain. The Entra collector has
   no full test harness yet: only its Graph paging helper is tested, against a
   fake Graph.
