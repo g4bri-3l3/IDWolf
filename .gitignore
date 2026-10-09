@@ -1,0 +1,20 @@
+# Real directory data: never commit snapshots, reports or AI prompts.
+# Synthetic samples under examples/ are kept.
+adsnapshot_*.json
+adsnap_*.json
+entrasnapshot_*.json
+pwq_*.json
+pwquality*.json
+report_*.html
+report_*.csv
+report*.jsonl
+findings*.jsonl
+ai_prompt*.txt
+*_ai_prompt.txt
+*_ai_response.json
+report.html
+report.csv
+report*.gif
+lab*.json
+*.zip
+!examples/**
