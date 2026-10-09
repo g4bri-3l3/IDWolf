@@ -1,0 +1,5 @@
+# Keep scripts byte-for-byte as committed, on every OS, so an Authenticode
+# signature still matches after a clone.
+*.ps1  -text
+*.psm1 -text
+*.cmd  -text
