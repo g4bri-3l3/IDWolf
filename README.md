@@ -30,8 +30,7 @@ benchmark.
 
 If you like, a Gemini step can write an executive summary and a remediation
 plan. The findings themselves are always computed on your machine, and every
-directory name is replaced by a token before anything is sent. Part of the
-MooseAlto family.
+directory name is replaced by a token before anything is sent.
 
 ## What it looks like
 
