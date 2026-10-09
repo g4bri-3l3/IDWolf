@@ -1,0 +1,376 @@
+{
+    "executive_summary":  "The Active Directory domain DOMAIN-1 is in an extremely vulnerable state with a hygiene score of 1/100, presenting widespread exposure to immediate domain takeover. Critical administrative boundaries have collapsed due to unprivileged users possessing direct write access over Tier 0 objects, Group Policy Objects linked to Domain Controllers, and Active Directory Certificate Services (AD CS). Furthermore, multiple privileged accounts are exposed to credential harvesting via Kerberoasting, AS-REP roasting, cleartext storage, and DCSync rights granted to standard identities. Fundamental domain controller defenses are disabled, including PrintNightmare restrictions, Netlogon channel enforcement, and SMB/LDAP signing. Remediation must immediately prioritize revoking unauthorized Tier 0 ACLs, unpublishing compromised certificate templates, and securing privileged credential material.",
+    "remediation_plan":  [
+                             {
+                                 "title":  "Revoke Non-Privileged Control Over Tier 0 Objects and GPOs",
+                                 "checks":  [
+                                                "gpo_dangerous_acl",
+                                                "dangerous_ace_tier0",
+                                                "dangerous_ace_anywhere",
+                                                "nonstandard_owner_tier0"
+                                            ],
+                                 "objects":  [
+                                                 "GPO-1",
+                                                 "DomainControllersOU",
+                                                 "AdminSDHolder",
+                                                 "DomainRoot",
+                                                 "USER-5",
+                                                 "GROUP-5",
+                                                 "GROUP-6",
+                                                 "USER-31"
+                                             ],
+                                 "rationale":  "Direct write or modification permissions over Domain Controller GPOs, AdminSDHolder, and domain containers allow non-administrative principals to seize complete control of Tier 0 instantaneously.",
+                                 "effort":  "medium",
+                                 "caveats":  "Altering ACLs on core containers and GPOs may break delegated administration or automation tools relying on these legacy permissions. Validate administrative operational workflows before removal."
+                             },
+                             {
+                                 "title":  "Neutralize AD CS Template and Infrastructure Vulnerabilities",
+                                 "checks":  [
+                                                "adcs_esc1",
+                                                "adcs_esc2",
+                                                "adcs_esc3",
+                                                "adcs_esc4",
+                                                "adcs_esc5",
+                                                "adcs_esc9",
+                                                "adcs_esc13",
+                                                "adcs_esc15"
+                                            ],
+                                 "objects":  [
+                                                 "Moose ESC1 Vulnerable",
+                                                 "Moose ESC2 AnyPurpose",
+                                                 "Moose ESC13 PolicyLink",
+                                                 "Moose ESC3 EnrollAgent",
+                                                 "Moose ESC4 WeakACL",
+                                                 "Moose ESC9 NoSecExt",
+                                                 "Moose ESC15 SchemaV1",
+                                                 "CA-1"
+                                             ],
+                                 "rationale":  "Multiple vulnerable AD CS templates permit arbitrary identity impersonation or unauthorized elevation directly to Tier 0 groups like Domain Admins.",
+                                 "effort":  "medium",
+                                 "caveats":  "Unpublishing certificate templates will block certificate issuance for any dependent legitimate applications or services. Verify issuance history on the CA before unpublishing."
+                             },
+                             {
+                                 "title":  "Harden Domain Controller Core Security Settings",
+                                 "checks":  [
+                                                "point_and_print_unsafe",
+                                                "netlogon_vulnerable_channel",
+                                                "dangerous_privilege_right",
+                                                "rbcd_configured",
+                                                "gpo_runs_code_from_share"
+                                            ],
+                                 "objects":  [
+                                                 "Domain Controllers",
+                                                 "DC-1$",
+                                                 "GPO-1"
+                                             ],
+                                 "rationale":  "Domain controllers are directly exposed to driver installation flaws, Netlogon bypasses, dangerous delegation rights, and remote code execution via insecure startup scripts.",
+                                 "effort":  "high",
+                                 "caveats":  "Enforcing Netlogon secure channels and disabling insecure Point and Print can impact non-compliant legacy endpoints and network printers. Test in a staging environment."
+                             },
+                             {
+                                 "title":  "Remediate Tier 0 Account Delegation, DCSync, and Exposure",
+                                 "checks":  [
+                                                "dcsync_rights",
+                                                "constrained_delegation_protocol_transition",
+                                                "unconstrained_delegation",
+                                                "privileged_kerberoastable",
+                                                "asrep_roastable"
+                                            ],
+                                 "objects":  [
+                                                 "USER-31",
+                                                 "USER-30",
+                                                 "USER-18",
+                                                 "HOST-2$",
+                                                 "USER-29",
+                                                 "USER-6",
+                                                 "USER-14",
+                                                 "USER-8"
+                                             ],
+                                 "rationale":  "Privileged identities with Kerberos delegation, roastable properties, or directory replication rights offer attackers direct paths to extract domain hashes or forge tickets.",
+                                 "effort":  "high",
+                                 "caveats":  "Disabling protocol transition, removing SPNs, or resetting replication permissions can disrupt Entra ID synchronization and production service availability."
+                             },
+                             {
+                                 "title":  "Privileged Account Hygiene and Protected Users Enforcement",
+                                 "checks":  [
+                                                "hidden_primary_group",
+                                                "privileged_inactive",
+                                                "privileged_account_delegable",
+                                                "protected_users_empty",
+                                                "privileged_group_oversized"
+                                            ],
+                                 "objects":  [
+                                                 "USER-12",
+                                                 "USER-5",
+                                                 "Protected Users",
+                                                 "Domain Admins"
+                                             ],
+                                 "rationale":  "An excessive number of stale or unmonitored Tier 0 identities increases the blast radius and complicates auditing of privileged actions.",
+                                 "effort":  "medium",
+                                 "caveats":  "Placing accounts into Protected Users disables NTLM authentication, Kerberos delegation, and DES/RC4 encryption; legacy services using these accounts may fail."
+                             },
+                             {
+                                 "title":  "Remediate Stored Credentials and SYSVOL Insecurities",
+                                 "checks":  [
+                                                "pwq_empty_password",
+                                                "gpp_cpassword",
+                                                "sysvol_script_secrets",
+                                                "reversible_encryption_account",
+                                                "pwq_cleartext_stored"
+                                            ],
+                                 "objects":  [
+                                                 "USER-22",
+                                                 "PATH-1",
+                                                 "PATH-6",
+                                                 "USER-24"
+                                             ],
+                                 "rationale":  "Exposed credentials in SYSVOL or accounts configured with empty or reversible passwords allow unauthenticated or low-privileged actors to pivot instantly.",
+                                 "effort":  "low",
+                                 "caveats":  "Removing legacy scripts or cpassword preferences may break automated drive mappings or scheduled software deployment on older endpoints."
+                             },
+                             {
+                                 "title":  "Rotate Root Kerberos and Domain Controller Credentials",
+                                 "checks":  [
+                                                "krbtgt_password_old",
+                                                "rodc_tier0_revealed",
+                                                "rodc_prp_too_broad",
+                                                "rodc_krbtgt_password_old"
+                                            ],
+                                 "objects":  [
+                                                 "krbtgt",
+                                                 "DC-3",
+                                                 "USER-7",
+                                                 "USER-1"
+                                             ],
+                                 "rationale":  "The krbtgt password has not been rotated in over 1,500 days, meaning historical credential compromises persist indefinitely.",
+                                 "effort":  "medium",
+                                 "caveats":  "krbtgt rotation must be performed twice, separated by at least 10 hours (or replication interval), to avoid invalidating existing Kerberos tickets across the domain."
+                             }
+                         ],
+    "quick_wins":  [
+                       "Disable or assign a complex password to USER-22 to eliminate the empty-password vulnerability.",
+                       "Remove NETBIOS-1\\GROUP-5\u0027s GenericWrite access from GPO-1.",
+                       "Unpublish vulnerable certificate templates Moose ESC1 Vulnerable and Moose ESC2 AnyPurpose from CA-1.",
+                       "Delete GPO preference files containing cpasswords from PATH-1 in SYSVOL.",
+                       "Enable pre-authentication on privileged accounts USER-8 and USER-19 to stop AS-REP roasting."
+                   ],
+    "monitoring":  [
+                       {
+                           "checks":  [
+                                          "dcsync_rights"
+                                      ],
+                           "event_ids":  [
+                                             "4662"
+                                         ],
+                           "guidance":  "Monitor for Directory Service Access requests against the domain root object containing extended rights DS-Replication-Get-Changes-All (1131f6ad-9c07-11d1-f79f-00c04fc2dcd2) originating from non-DC computer accounts."
+                       },
+                       {
+                           "checks":  [
+                                          "adcs_esc1",
+                                          "adcs_esc2",
+                                          "adcs_esc3",
+                                          "adcs_esc13",
+                                          "adcs_esc15"
+                                      ],
+                           "event_ids":  [
+                                             "4886",
+                                             "4887"
+                                         ],
+                           "guidance":  "Alert on Certificate Services events where certificate requests specify alternate subject names (SAN) or reference deprecated enrollment agent templates."
+                       },
+                       {
+                           "checks":  [
+                                          "privileged_kerberoastable"
+                                      ],
+                           "event_ids":  [
+                                             "4769"
+                                         ],
+                           "guidance":  "Detect Kerberos service ticket requests (TGS) with Ticket Encryption Type 0x17 (RC4) requested for administrative accounts USER-6 and USER-14."
+                       },
+                       {
+                           "checks":  [
+                                          "asrep_roastable"
+                                      ],
+                           "event_ids":  [
+                                             "4768"
+                                         ],
+                           "guidance":  "Monitor Kerberos authentication ticket (TGT) requests where Pre-Authentication Type is 0 (None) for USER-8 and USER-19."
+                       }
+                   ],
+    "attack_paths":  [
+                         {
+                             "title":  "Tier 0 Control via Group Policy Modification",
+                             "severity":  "Critical",
+                             "steps":  [
+                                           "NETBIOS-1\\GROUP-5 -\u003e GenericWrite on GPO-1",
+                                           "GPO-1 -\u003e Linked to Domain Controllers OU",
+                                           "Domain Controllers OU -\u003e Tier 0 Domain Takeover"
+                                       ],
+                             "narrative":  "A non-privileged principal in GROUP-5 can alter GPO-1, which is applied directly to Domain Controllers, achieving remote execution as SYSTEM on Tier 0 infrastructure. This chain can be broken by removing GROUP-5\u0027s permissions on GPO-1 and restricting GPO edit rights to Domain Admins."
+                         },
+                         {
+                             "title":  "AD CS Misconfiguration to Domain Admins Escalation (ESC13)",
+                             "severity":  "Critical",
+                             "steps":  [
+                                           "NETBIOS-1\\Domain Users -\u003e Certificate Request to Moose ESC13 PolicyLink",
+                                           "Moose ESC13 PolicyLink -\u003e High Assurance Policy linked to Domain Admins",
+                                           "Domain Admins -\u003e Tier 0 Domain Takeover"
+                                       ],
+                             "narrative":  "Any standard domain user can request a certificate from the Moose ESC13 PolicyLink template, granting them issuance policy rights associated with Domain Admins. This can be mitigated immediately by removing Domain Users from the template\u0027s enrollment permissions or unpublishing the template."
+                         },
+                         {
+                             "title":  "Direct Directory Replication Extraction via USER-31",
+                             "severity":  "Critical",
+                             "steps":  [
+                                           "NETBIOS-1\\USER-31 -\u003e DS-Replication-Get-Changes-All on Domain Root",
+                                           "Domain Root -\u003e DCSync credential extraction",
+                                           "krbtgt -\u003e Complete Domain Compromise"
+                                       ],
+                             "narrative":  "USER-31 holds replication privileges on the domain head, allowing the account to request password hashes for any domain identity without executing code on a DC. Removing this extended right from USER-31 severs the path."
+                         },
+                         {
+                             "title":  "Administrative Kerberoasting to Domain Admins",
+                             "severity":  "Critical",
+                             "steps":  [
+                                           "NETBIOS-1\\Domain Users -\u003e TGS Request for MSSQLSvc/HOSTFQDN-33:1433",
+                                           "USER-6 -\u003e Offline ticket cracking",
+                                           "Domain Admins -\u003e Tier 0 Domain Takeover"
+                                       ],
+                             "narrative":  "USER-6 is a member of Domain Admins but has a service principal name registered with an old, RC4-compatible password, exposing Tier 0 credentials to offline recovery. Removing the SPN or converting the service to a gMSA breaks this link."
+                         },
+                         {
+                             "title":  "Constrained Delegation with Protocol Transition to DCs",
+                             "severity":  "Critical",
+                             "steps":  [
+                                           "USER-18 -\u003e Protocol transition (S4U2Self/S4U2Proxy)",
+                                           "cifs/DC-1 -\u003e Impersonation to Domain Controller CIFS service",
+                                           "DC-1 -\u003e Tier 0 Domain Takeover"
+                                       ],
+                             "narrative":  "USER-18 is configured with protocol transition targeting CIFS on DC-1, permitting the account to forge impersonation tickets for any administrative user to the domain controller. Removing the delegation setting or restricting its target resolves the risk."
+                         },
+                         {
+                             "title":  "Resource-Based Constrained Delegation Compromise of DC-1",
+                             "severity":  "Critical",
+                             "steps":  [
+                                           "HOST-7$ -\u003e Allowed to act on behalf of other identities (RBCD)",
+                                           "DC-1$ -\u003e Inbound RBCD target",
+                                           "DC-1$ -\u003e Tier 0 Domain Takeover"
+                                       ],
+                             "narrative":  "DC-1$ permits computer HOST-7$ to delegate credentials against it, allowing anyone controlling HOST-7$ to gain administrative access to the domain controller. Clearing the msDS-AllowedToActOnBehalfOfOtherIdentity attribute on DC-1$ closes the path."
+                         }
+                     ],
+    "remediation_scripts":  [
+                                {
+                                    "check":  "asrep_roastable",
+                                    "powershell":  "Set-ADAccountControl -Identity \u0027USER-8\u0027 -DoesNotRequirePreAuth $false\nSet-ADAccountControl -Identity \u0027USER-19\u0027 -DoesNotRequirePreAuth $false",
+                                    "caveats":  "Verify that client applications authenticating as these accounts support Kerberos pre-authentication (standard Kerberos behavior)."
+                                },
+                                {
+                                    "check":  "rbcd_configured",
+                                    "powershell":  "Set-ADComputer -Identity \u0027DC-1$\u0027 -Clear \u0027msDS-AllowedToActOnBehalfOfOtherIdentity\u0027",
+                                    "caveats":  "Ensure HOST-7$ has no legitimate, documented requirement to delegate authentication to DC-1$."
+                                },
+                                {
+                                    "check":  "reversible_encryption_account",
+                                    "powershell":  "Set-ADUser -Identity \u0027USER-24\u0027 -EncryptedTextPasswordAllowed $false",
+                                    "caveats":  "The account password must be reset immediately following this command to overwrite the stored reversible format hash in the database."
+                                },
+                                {
+                                    "check":  "password_not_required",
+                                    "powershell":  "Set-ADAccountControl -Identity \u0027USER-9\u0027 -PasswordNotRequired $false\nSet-ADAccountControl -Identity \u0027USER-25\u0027 -PasswordNotRequired $false",
+                                    "caveats":  "Ensure existing passwords comply with length and complexity policies before forcing the requirement."
+                                },
+                                {
+                                    "check":  "machine_account_quota",
+                                    "powershell":  "Set-ADDomain -Identity \u0027DOMAIN-1\u0027 -Replace @{\u0027ms-DS-MachineAccountQuota\u0027 = 0}",
+                                    "caveats":  "Setting this to 0 prevents standard non-admin users from joining workstations to the domain; legitimate provisioning must use delegated administrator accounts."
+                                }
+                            ],
+    "triage":  [
+                   {
+                       "rank":  1,
+                       "checks":  [
+                                      "gpo_dangerous_acl"
+                                  ],
+                       "objects":  [
+                                       "GPO-1",
+                                       "GROUP-5"
+                                   ],
+                       "rationale":  "GROUP-5 can directly modify a Group Policy applied to all Domain Controllers, granting immediate, reliable code execution across Tier 0."
+                   },
+                   {
+                       "rank":  2,
+                       "checks":  [
+                                      "dcsync_rights"
+                                  ],
+                       "objects":  [
+                                       "USER-31"
+                                   ],
+                       "rationale":  "USER-31 holds non-default directory replication privileges, enabling immediate extraction of all Active Directory password hashes."
+                   },
+                   {
+                       "rank":  3,
+                       "checks":  [
+                                      "rbcd_configured"
+                                  ],
+                       "objects":  [
+                                       "DC-1$",
+                                       "HOST-7$"
+                                   ],
+                       "rationale":  "A domain controller explicitly trusts a compromised or lower-tier host for resource-based constrained delegation, enabling direct elevation to Tier 0."
+                   },
+                   {
+                       "rank":  4,
+                       "checks":  [
+                                      "adcs_esc1",
+                                      "adcs_esc13"
+                                  ],
+                       "objects":  [
+                                       "Moose ESC1 Vulnerable",
+                                       "Moose ESC13 PolicyLink"
+                                   ],
+                       "rationale":  "All domain users can enroll in these certificate templates to impersonate arbitrary principals or obtain Domain Admin issuance rights."
+                   },
+                   {
+                       "rank":  5,
+                       "checks":  [
+                                      "privileged_kerberoastable"
+                                  ],
+                       "objects":  [
+                                       "USER-6"
+                                   ],
+                       "rationale":  "A full Domain Admin account possesses an SPN with an unrotated, legacy-encrypted password, exposing Tier 0 credentials to offline cracking."
+                   },
+                   {
+                       "rank":  6,
+                       "checks":  [
+                                      "pwq_empty_password"
+                                  ],
+                       "objects":  [
+                                       "USER-22"
+                                   ],
+                       "rationale":  "An enabled domain account with an empty password offers an effortless entry point for initial access or lateral movement."
+                   },
+                   {
+                       "rank":  7,
+                       "checks":  [
+                                      "netlogon_vulnerable_channel",
+                                      "point_and_print_unsafe"
+                                  ],
+                       "objects":  [
+                                       "Domain Controllers"
+                                   ],
+                       "rationale":  "Weakened machine authentication and driver installation policies leave domain controllers directly vulnerable to known lateral movement and elevation exploits."
+                   },
+                   {
+                       "rank":  8,
+                       "checks":  [
+                                      "krbtgt_password_old"
+                                  ],
+                       "objects":  [
+                                       "krbtgt"
+                                   ],
+                       "rationale":  "The krbtgt password has not been rotated in over four years, maintaining long-term risk of ticket-forging persistence."
+                   }
+               ]
+}

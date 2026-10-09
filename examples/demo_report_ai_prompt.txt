@@ -1,0 +1,407 @@
+=== SYSTEM ===
+You are an Active Directory security assistant helping the defenders who
+own this domain plan remediation. You receive deterministic hygiene
+findings that were already computed by a local tool from a read-only
+directory snapshot. Treat them as established facts: do not recompute,
+dispute or add findings that are not in the input.
+
+Identifiers were replaced by placeholder tokens (USER-3, HOST-7, GROUP-2,
+DOMAIN-1, DN-4, SID-1, PATH-1...). Always refer to objects by their token
+exactly as written; never guess the real name. Well-known built-in names
+(Administrator, krbtgt, Domain Admins...) are left as is.
+
+Your output is for defenders only. Describe risk in terms of impact and
+business consequence; do not write attack procedures, commands or
+exploitation steps.
+
+Produce:
+1. executive_summary: 4-6 sentences for management. Overall posture, the
+   two or three exposures that matter most and why, in plain language.
+2. remediation_plan: an ordered list of work packages. Group related
+   checks that share an owner or a change window (for example all
+   Kerberos service-account items). Order by risk reduction per unit of
+   effort: exposures that alone give domain-wide control first, then
+   credential exposure, then hygiene. Each item: title, the check ids it
+   covers, affected object tokens (at most 8), why this position in the
+   order, effort (low | medium | high), and operational caveats (what can
+   break, what to test first). Do NOT number the items yourself.
+3. quick_wins: up to 5 changes that are low effort and low disruption.
+4. monitoring: for exposures that cannot be fixed immediately, what to
+   monitor meanwhile: relevant Windows Security event IDs and a short
+   description of the detection logic for a SIEM. Only reference event
+   IDs you are confident exist and apply.
+5. comparison_narrative: only if a "Comparison" section is present,
+   2-4 sentences on the trend (real progress vs churn). Omit otherwise.
+6. attack_paths: using the "Attack surface toward Tier 0" section as the
+   only source, describe up to 6 of the most important escalation paths in
+   defensive terms. For each: a short title, the severity, an ordered list
+   of steps naming the object tokens and the technique at each hop toward
+   Tier 0, and a one or two sentence narrative of the business impact and
+   where to break the chain. Describe WHAT grants control, never HOW to
+   exploit it: no commands, tools or step-by-step attack procedure.
+7. remediation_scripts: for the check ids where a safe, standard fix can be
+   expressed as PowerShell, give a snippet. Each: the check id, a short
+   PowerShell block using the native ActiveDirectory/GroupPolicy cmdlets
+   (use the object tokens as placeholders the operator will substitute),
+   and caveats. Only for changes that are routine and reversible; for
+   anything destructive or environment-specific, return guidance in
+   caveats and keep the script minimal or empty. Never include credential
+   theft or offensive code.
+8. triage: re-rank the fired checks by real exploitability in THIS
+   environment (chained paths, reachability, privilege of the affected
+   objects), not by static severity alone. Each: a rank (1 = fix first),
+   the check ids, the key object tokens, and a one sentence rationale.
+
+If no findings are provided, say so plainly and return empty lists.
+
+Respond with one JSON object only, no markdown fences:
+{ "executive_summary": "...",
+  "remediation_plan": [ { "title": "...", "checks": ["..."], "objects": ["..."],
+      "rationale": "...", "effort": "low|medium|high", "caveats": "..." } ],
+  "quick_wins": ["..."],
+  "monitoring": [ { "checks": ["..."], "event_ids": ["4769"], "guidance": "..." } ],
+  "comparison_narrative": "...",
+  "attack_paths": [ { "title": "...", "severity": "Critical|High|Medium|Low",
+      "steps": ["TOKEN -> technique", "..."], "narrative": "..." } ],
+  "remediation_scripts": [ { "check": "...", "powershell": "...", "caveats": "..." } ],
+  "triage": [ { "rank": 1, "checks": ["..."], "objects": ["..."], "rationale": "..." } ] }
+
+=== USER ===
+Domain: DOMAIN-1. Functional level: Windows2012R2Domain. Hygiene score: 1/100.
+Counts: users 67, computers 33, domain controllers 3.
+
+Findings grouped by check (severity, check id, title, affected objects):
+## [Critical] point_and_print_unsafe: Point and Print lets non-admins install printer drivers (PrintNightmare) (1 object(s))
+- [Critical] Domain Controllers: RestrictDriverInstallationToAdministrators = 0; NoWarningNoElevationOnInstall = 1; UpdatePromptSettings = not configured (drivers install with no prompt).
+## [Critical] netlogon_vulnerable_channel: Netlogon secure channel enforcement disabled (ZeroLogon exposure) (1 object(s))
+- [Critical] Domain Controllers: Netlogon enforcement weakened (FullSecureChannelProtection = n/a, RequireStrongKey = 0).
+## [Critical] pwq_empty_password: Account with an empty password (1 object(s))
+- [Critical] USER-22: Empty password.
+## [Critical] gpo_dangerous_acl: Non-privileged principal can edit a GPO linked to Tier 0 (1 object(s))
+- [Critical] GPO-1: NETBIOS-1\GROUP-5 holds GenericWrite on this GPO, linked (enabled) to the Domain Controllers OU.
+## [Critical] gpp_cpassword: Group Policy Preferences password in SYSVOL (1 object(s))
+- [Critical] GPO {31B2F340-016D-11D2-945F-00C04FB984F9}: cpassword found in PATH-1
+## [Critical] adcs_esc2: Template with Any Purpose or no EKU enrollable by low-privileged users (ESC2) (1 object(s))
+- [Critical] Moose ESC2 AnyPurpose: Enrollable by NT AUTHORITY\Authenticated Users; Any Purpose EKU; no manager approval.
+## [Critical] adcs_esc1: Template allows requester-supplied subject with client-auth (ESC1) (1 object(s))
+- [Critical] Moose ESC1 Vulnerable: Enrollable by NETBIOS-1\Domain Users; ENROLLEE_SUPPLIES_SUBJECT set; client-auth EKU; no manager approval; no enrollment-agent signature.
+## [Critical] adcs_esc13: Template with an issuance policy linked to a group (ESC13) (1 object(s))
+- [Critical] Moose ESC13 PolicyLink: Enrollable by NETBIOS-1\Domain Users; issuance policy 'High Assurance Policy' linked to group 'Domain Admins' (privileged): the certificate grants that group's rights.
+## [Critical] hidden_primary_group: Non-standard primaryGroupID (1 object(s))
+- [Critical] USER-12: primaryGroupID = 512 (Domain Admins): privileged group membership not visible in the member attribute.
+## [Critical] rodc_tier0_revealed: Tier 0 credentials cached on a read-only domain controller (1 object(s))
+- [Critical] DC-3: Password of Tier 0 account(s) cached on RODC DC-3: USER-7. Administered (managedBy) by GROUP-5, not Tier 0.
+## [Critical] constrained_delegation_protocol_transition: Constrained delegation with protocol transition (1 object(s))
+- [Critical] USER-18: Protocol transition (any-auth) to: cifs/DCHOST-1, cifs/DC-1. Targets include domain controller services: cifs/DCHOST-1, cifs/DC-1.
+## [Critical] krbtgt_password_old: krbtgt password not rotated (1 object(s))
+- [Critical] krbtgt: krbtgt password last set 1500 days ago (threshold 180 days, critical above 365).
+## [Critical] rbcd_configured: Resource-based constrained delegation (RBCD) configured (2 object(s))
+- [Critical] DC-1$: Principals allowed to act on behalf of other identities: HOST-7$. Target is a DOMAIN CONTROLLER.
+- [Medium] HOST-5$: Principals allowed to act on behalf of other identities: HOST-6$.
+## [Critical] asrep_roastable: Kerberos pre-authentication disabled (AS-REP roastable) (2 object(s))
+- [Critical] USER-8: Pre-authentication disabled on a privileged account (Domain Admins, Administrators (builtin)). Password age: 100 days.
+- [High] USER-19: Pre-authentication disabled. Password age: 1000 days.
+## [Critical] sid_history: sIDHistory populated (2 object(s))
+- [Critical] USER-28: sIDHistory: SID-1. SID-1 is a privileged SID (RID 512).
+- [Medium] USER-27: sIDHistory: SID-2.
+## [Critical] privileged_kerberoastable: Privileged account with SPN (Kerberoastable) (2 object(s))
+- [Critical] USER-14: Member of Backup Operators. SPN: backup/HOSTFQDN-32. Password age: 700 days.
+- [Critical] USER-6: Member of Domain Admins, Administrators (builtin). SPN: MSSQLSvc/HOSTFQDN-33:1433. Password age: 1200 days.
+## [Critical] dcsync_rights: Non-default principal with DCSync rights (2 object(s))
+- [Critical] NETBIOS-1\USER-31: Rights on domain head: ExtendedRight(DS-Replication-Get-Changes-All).
+- [High] NETBIOS-1\USER-30: Rights on domain head: ExtendedRight(DS-Replication-Get-Changes-All). Looks like an Entra Connect / sync account: expected, but it is a Tier 0 credential and must be protected as such.
+## [Critical] gpo_runs_code_from_share: GPO runs a script or task from a share outside SYSVOL (2 object(s))
+- [Critical] GPO-1: PATH-2: Machine Startup script: PATH-3 GPO linked to the Domain Controllers OU.
+- [Medium] GPO-2: PATH-4: Machine scheduled task 'TASK-2': PATH-5 GPO not linked to the domain root or the DC OU (check its other links).
+## [Critical] dangerous_ace_anywhere: Dangerous permission held by a non-privileged principal (3 object(s))
+- [Critical] NT AUTHORITY\Authenticated Users: WriteDacl over organizationalUnit 'Servers'.
+- [High] NETBIOS-1\GROUP-6: WriteProperty(User-Account-Restrictions) over computer 'HOST-8$'.
+- [High] NETBIOS-1\GROUP-5: GenericAll over user 'USER-3'.
+## [Critical] dangerous_ace_tier0: Dangerous permission on Tier 0 object (3 object(s))
+- [Critical] NETBIOS-1\GROUP-6: Target: DomainControllersOU. WriteProperty(gPLink).
+- [Critical] NETBIOS-1\USER-31: Target: AdminSDHolder. GenericAll.
+- [High] NETBIOS-1\GROUP-5: Target: DomainRoot. ExtendedRight(User-Force-Change-Password) on descendant user objects.
+## [High] sysvol_script_secrets: Possible credential in a SYSVOL logon script (1 object(s))
+- [High] mapdrives.bat: Password-like string in SYSVOL script: PATH-6
+## [High] pre_win2000_anonymous: Pre-Windows 2000 Compatible Access includes Anonymous/Everyone (1 object(s))
+- [High] Pre-Windows 2000 Compatible Access: Members include Anonymous Logon or Everyone: DN-1
+## [High] anonymous_ldap_enabled: Anonymous LDAP operations allowed (1 object(s))
+- [High] DOMAIN-1: dSHeuristics = '0000002'.
+## [High] adcs_weak_ca_key: CA certificate uses a weak key or signature (1 object(s))
+- [High] CA-1: CA certificate weakness: RSA key 1024 bits. Host: HOSTFQDN-1.
+## [High] trust_tgt_delegation: TGT delegation enabled across forest trust (1 object(s))
+- [High] TRUST-2: Forest trust (BiDirectional) with TGT delegation enabled.
+## [High] sync_laps_rights: Non-default principal can read confidential attributes through DirSync (1 object(s))
+- [High] NETBIOS-1\USER-32: Holds DS-Replication-Get-Changes and DS-Replication-Get-Changes-In-Filtered-Set on the domain head.
+## [High] nonstandard_owner_tier0: Non-default owner of Tier 0 object (1 object(s))
+- [High] NETBIOS-1\USER-5: Owner of Group:Domain Admins is NETBIOS-1\USER-5 (SID-3).
+## [High] rodc_prp_too_broad: RODC allowed to cache privileged or domain-wide credentials (1 object(s))
+- [High] DC-3: RODC DC-3: allowed list contains the domain-wide group Domain Users. Administered (managedBy) by GROUP-5, not Tier 0.
+## [High] shadow_credentials_present: Key credential set on a privileged account (possible Shadow Credentials) (1 object(s))
+- [High] USER-6: 1 key credential(s) on a Tier 0 account (member of Domain Admins, Administrators (builtin)). Confirm each against an expected Windows Hello / device registration, or treat as Shadow Credentials persistence.
+## [High] gmsa_password_readable: gMSA password readable by a non-Tier 0 principal (1 object(s))
+- [High] USER-65$: Password retrievable by non-Tier 0 principal(s): GROUP-5.
+## [High] adcs_esc5: Non-privileged principal controls an AD CS object (ESC5) (1 object(s))
+- [High] NETBIOS-1\GROUP-6: Control of PKI objects: WriteDacl on CA:CA-1.
+## [High] dangerous_privilege_right: Sensitive privilege granted to a non-privileged principal on DCs (1 object(s))
+- [High] Debug programs: GPO 'GPO-1' grants SeDebugPrivilege to: SID-4.
+## [High] pwq_cleartext_stored: Password recoverable in cleartext (reversible encryption) (1 object(s))
+- [High] USER-24: Cleartext recoverable (reversible encryption).
+## [High] adcs_esc10: Weak certificate binding on domain controllers (ESC10) (1 object(s))
+- [High] Domain Controllers: StrongCertificateBindingEnforcement = 1 (0 = disabled, 1 = compatibility; 2 = full enforcement).
+## [High] smb1_server_enabled: SMBv1 not disabled on domain controllers (1 object(s))
+- [High] Domain Controllers: SMBv1 enabled via GPO (mrxsmb10 Start = n/a, LanmanServer SMB1 = 1).
+## [High] fsmo_holder_invalid: FSMO role held by a server that is not a DC (1 object(s))
+- [High] InfrastructureMaster: InfrastructureMaster is held by HOSTFQDN-34, which is not one of the current domain controllers.
+## [High] dc_service_stopped: Core service stopped on a domain controller (1 object(s))
+- [High] DCHOST-2: Not running: DFSR.
+## [High] laps_readers: Non-Tier 0 principal can read LAPS passwords (1 object(s))
+- [High] NETBIOS-1\GROUP-5: Non-Tier 0 principal can read the LAPS password of 1 computer(s).
+## [High] ad_backup_overdue: Active Directory backup overdue (1 object(s))
+- [High] DOMAIN-1: Last AD backup of the domain naming context was 45 days ago (threshold 7).
+## [High] adcs_esc9: Template without the SID security extension (ESC9) (1 object(s))
+- [High] Moose ESC9 NoSecExt: Enrollable by NETBIOS-1\Domain Users; CT_FLAG_NO_SECURITY_EXTENSION set (no SID binding); client-auth EKU; no manager approval.
+## [High] adcs_esc15: Schema v1 template with requester-supplied subject (ESC15 / EKUwu, CVE-2024-49019) (1 object(s))
+- [High] Moose ESC15 SchemaV1: Schema v1 template enrollable by NETBIOS-1\Domain Users; ENROLLEE_SUPPLIES_SUBJECT set; no manager approval: an arbitrary application policy (e.g. client auth) can be injected into the request.
+## [High] adcs_esc3: Enrollment Agent template enrollable by low-privileged users (ESC3) (1 object(s))
+- [High] Moose ESC3 EnrollAgent: Enrollable by NETBIOS-1\Domain Users; Certificate Request Agent EKU; no manager approval.
+## [High] adcs_esc4: Certificate template with a dangerous ACL (ESC4) (1 object(s))
+- [High] Moose ESC4 WeakACL: Modifiable by non-administrators: NETBIOS-1\Domain Users: WriteDacl.
+## [High] ldap_signing_not_required: LDAP server signing not required (1 object(s))
+- [High] Domain Controllers: LDAPServerIntegrity = not configured (2 = require).
+## [High] wdigest_cleartext: WDigest cleartext credential caching enabled (1 object(s))
+- [High] Domain Controllers: WDigest UseLogonCredential = 1 (cleartext credentials cached in LSASS).
+## [High] dns_insecure_updates: DNS zone allows non-secure dynamic updates (1 object(s))
+- [High] DOMAIN-1: DynamicUpdate = NonsecureAndSecure.
+## [High] dns_dangerous_record: Dangerous DNS record (wildcard / WPAD / ISATAP) (1 object(s))
+- [High] wpad (DOMAIN-1): A record 'wpad' in zone DOMAIN-1.
+## [High] des_enabled: DES Kerberos encryption enabled (1 object(s))
+- [High] USER-19: USE_DES_KEY_ONLY: True; msDS-SupportedEncryptionTypes: not set.
+## [High] unix_password_present: UNIX password attribute populated (1 object(s))
+- [High] USER-17: userPassword / unixUserPassword attribute is populated (value not collected). Enabled: True.
+## [High] privileged_computer_member: Computer account in privileged group (1 object(s))
+- [High] HOST-1$: Member of Administrators (builtin) via: Administrators > HOST-1$.
+## [High] privileged_foreign_member: Foreign or unresolved principal in privileged group (1 object(s))
+- [High] FOREIGN-1: Member of Administrators (builtin) via: Administrators > FOREIGN-1.
+## [High] reversible_encryption_account: Password stored with reversible encryption (1 object(s))
+- [High] USER-24: ENCRYPTED_TEXT_PWD_ALLOWED set.
+## [High] privileged_inactive: Inactive privileged account still enabled (1 object(s))
+- [High] USER-5: Last logon: 200 days ago (threshold 90 days). Member of Domain Admins, Administrators (builtin).
+## [High] obsolete_os: Unsupported operating system (2 object(s))
+- [High] HOST-3$: Windows Server 2008 R2 Standard 6.1 (7601).
+- [Medium] HOST-4$: Windows 7 Professional 6.1 (7601) (also stale).
+## [High] password_in_description: Possible password in description (2 object(s))
+- [High] HOST-28$: Description (masked): '[masked by collector: 28 chars]'. Enabled: True.
+- [High] USER-25: Description (masked): '[masked by collector: 31 chars]'. Enabled: True.
+## [High] password_not_required: Password not required (PASSWD_NOTREQD) (2 object(s))
+- [High] USER-9: PASSWD_NOTREQD set on a privileged account.
+- [Medium] USER-25: PASSWD_NOTREQD set.
+## [High] pwq_duplicate_passwords: Accounts sharing the same password (2 object(s))
+- [High] 2 accounts: Same password: USER-33, USER-34.
+- [High] 3 accounts: Same password: USER-16, USER-17, USER-19.
+## [High] operator_groups_populated: Built-in operator group populated (2 object(s))
+- [High] USER-14: Member of Backup Operators via: Backup Operators > USER-14. Account enabled.
+- [High] USER-13: Member of Account Operators via: Account Operators > USER-13. Account enabled.
+## [High] pwq_default_password: Account with a default or username-equal password (2 object(s))
+- [High] USER-25: Password equals username or a known default.
+- [High] USER-23: Password equals username or a known default.
+## [High] gpo_broad_local_group: GPO makes everyone a local administrator or RDP user (2 object(s))
+- [High] GPO-2: local Administrators: Domain Users added to local Administrators through Group Policy Preferences.
+- [Medium] GPO-2: local Remote Desktop Users: Authenticated Users added to local Remote Desktop Users through Restricted Groups.
+## [High] pwq_breached_password: Account using a known-breached password (2 object(s))
+- [High] USER-14: Password found in the breach corpus.
+- [High] USER-21: Password found in the breach corpus.
+## [High] trust_sid_filtering_disabled: Trust without SID filtering (2 object(s))
+- [High] TRUST-2: Forest trust (BiDirectional) with SID history enabled (TREAT_AS_EXTERNAL): SIDs with RID >= 1000 from the other forest are accepted.
+- [High] TRUST-1: External trust (Inbound) without quarantine (SID filtering).
+## [High] fgpp_weak: Weak fine-grained password policy (2 object(s))
+- [High] PSO-2: Minimum length 10 (baseline 12), precedence 10. Applies to privileged principals: DN-2
+- [Medium] PSO-1: Minimum length 6 (baseline 12), precedence 20.
+## [High] unconstrained_delegation: Unconstrained delegation on non-DC principal (2 object(s))
+- [High] HOST-2$: TRUSTED_FOR_DELEGATION set on a computer that is not a domain controller. OS: Windows Server 2019 Standard.
+- [High] USER-29: TRUSTED_FOR_DELEGATION set on a user that is not a domain controller.
+## [High] spn_account_rc4: SPN account without AES-only encryption (4 object(s))
+- [High] USER-14: msDS-SupportedEncryptionTypes = 4: no AES, only RC4/DES tickets.
+- [Medium] USER-66$: sMSA msDS-SupportedEncryptionTypes = 4: RC4 possible.
+- [Medium] USER-17: msDS-SupportedEncryptionTypes not set: encryption type falls back to domain/DC defaults, RC4 possible.
+- [Medium] USER-6: msDS-SupportedEncryptionTypes not set: encryption type falls back to domain/DC defaults, RC4 possible.
+## [High] kerberoastable_user: User account with SPN (Kerberoastable) (4 object(s))
+- [High] USER-16: SPN: HTTP/HOSTFQDN-35. Password age: 500 days (over 365 days).
+- [Medium] USER-66$: Standalone managed service account (sMSA) with SPN and a settable password. SPN: MSSQLSvc/HOSTFQDN-36:1433.
+- [Medium] USER-18: SPN: HTTP/HOSTFQDN-37. Password age: 50 days.
+- [Medium] USER-17: SPN: HTTP/HOSTFQDN-38, HTTP/HOST-32. Password age: 100 days.
+## [High] privileged_password_old: Privileged account password not changed (5 object(s))
+- [High] USER-5: Password last set 900 days ago (threshold 365). Member of Domain Admins, Administrators (builtin).
+- [High] USER-3: Password last set 400 days ago (threshold 365). Member of Domain Admins, Administrators (builtin).
+- [High] Administrator: Password last set 800 days ago (threshold 365). Member of Domain Admins, Enterprise Admins, Administrators (builtin), Group Policy Creator Owners.
+- [High] USER-6: Password last set 1200 days ago (threshold 365). Member of Domain Admins, Administrators (builtin).
+- [High] USER-14: Password last set 700 days ago (threshold 365). Member of Backup Operators.
+## [High] privileged_account_delegable: Privileged account can be delegated (13 object(s))
+- [High] USER-5: Member of Domain Admins, Administrators (builtin); not in Protected Users and NOT_DELEGATED not set.
+- [High] Administrator: Member of Domain Admins, Enterprise Admins, Administrators (builtin), Group Policy Creator Owners; not in Protected Users and NOT_DELEGATED not set.
+- [High] USER-8: Member of Domain Admins, Administrators (builtin); not in Protected Users and NOT_DELEGATED not set.
+- [High] USER-4: Member of Domain Admins, Administrators (builtin); not in Protected Users and NOT_DELEGATED not set.
+- [High] USER-3: Member of Domain Admins, Administrators (builtin); not in Protected Users and NOT_DELEGATED not set.
+- [High] USER-11: Member of Domain Admins, Administrators (builtin); not in Protected Users and NOT_DELEGATED not set.
+- [High] USER-9: Member of Domain Admins, Administrators (builtin); not in Protected Users and NOT_DELEGATED not set.
+- [High] USER-13: Member of Account Operators; not in Protected Users and NOT_DELEGATED not set.
+- [High] USER-6: Member of Domain Admins, Administrators (builtin); not in Protected Users and NOT_DELEGATED not set.
+- [High] USER-15: Member of DnsAdmins; not in Protected Users and NOT_DELEGATED not set.
+- [High] USER-12: Member of Domain Admins, Administrators (builtin); not in Protected Users and NOT_DELEGATED not set.
+- [High] USER-7: Member of Domain Admins, Administrators (builtin); not in Protected Users and NOT_DELEGATED not set.
+- ... and 1 more object(s) with the same issue
+## [Medium] ldap_channel_binding_off: LDAP channel binding not enforced (1 object(s))
+- [Medium] Domain Controllers: LdapEnforceChannelBinding = not configured (2 = always).
+## [Medium] dnsadmins_populated: DnsAdmins populated (1 object(s))
+- [Medium] USER-15: Member of DnsAdmins via: DnsAdmins > USER-15. Account enabled.
+## [Medium] cmdline_audit_not_enabled: Command-line auditing not enabled in process creation events (1 object(s))
+- [Medium] Domain Controllers: ProcessCreationIncludeCmdLine_Enabled = not configured.
+## [Medium] smb_client_signing_not_required: SMB client signing not required (1 object(s))
+- [Medium] Domain Controllers: LanmanWorkstation RequireSecuritySignature (client) = not configured.
+## [Medium] anonymous_sam_enum: Anonymous SAM / share enumeration allowed (1 object(s))
+- [Medium] Domain Controllers: RestrictAnonymousSAM = not configured.
+## [Medium] kerberos_rc4_allowed: Kerberos encryption allows RC4 or DES on domain controllers (1 object(s))
+- [Medium] Domain Controllers: SupportedEncryptionTypes = 7 allows DES/RC4.
+## [Medium] lsass_not_protected: LSASS not running as a protected process (RunAsPPL) (1 object(s))
+- [Medium] Domain Controllers: RunAsPPL = not configured.
+## [Medium] ntlm_weak_lmcompat: Weak LM/NTLM compatibility level (1 object(s))
+- [Medium] Domain Controllers: LmCompatibilityLevel = 3 (5 = NTLMv2 only, refuse LM & NTLM).
+## [Medium] cached_credentials: Too many cached logon credentials (1 object(s))
+- [Medium] Domain Controllers: CachedLogonsCount = not configured (default 10).
+## [Medium] privileged_group_oversized: Too many Domain Admins (1 object(s))
+- [Medium] Domain Admins: 11 enabled effective members (threshold 5): Administrator, USER-2, USER-3, USER-4, USER-5, USER-6, USER-9, USER-12, USER-7, USER-8, USER-11.
+## [Medium] protected_users_empty: Protected Users group is empty (1 object(s))
+- [Medium] Protected Users: Protected Users has no members while 17 principal(s) hold Tier 0 group membership.
+## [Medium] delegation_orphan_spn: Constrained delegation to an SPN no account holds (SPN-jacking) (1 object(s))
+- [Medium] HOST-8$: Delegation targets held by no account in the snapshot: cifs/HOSTFQDN-39.
+## [Medium] audit_policy_insufficient: Advanced audit policy gaps on domain controllers (1 object(s))
+- [Medium] Domain Controllers: 12 subcategory gap(s): Kerberos Authentication Service (need Success+Failure, have None); Kerberos Service Ticket Operations (need Success+Failure, have None); User Account Management (need Success+Failure, have Success); Computer Account Management (need Success, have None); Security Group Management (need Success, have None); Directory Service Access (need Failure, have None); Directory Service Changes (need Success, have None); Special Logon (need Success, have None); Sensitive Privilege Use (need Success+Failure, have None); Audit Policy Change (need Success+Failure, have None); Security System Extension (need Success, have None); System Integrity (need Success+Failure, have None).
+## [Medium] rodc_krbtgt_password_old: RODC krbtgt account not rotated (1 object(s))
+- [Medium] USER-1: RODC krbtgt password last set 400 days ago.
+## [Medium] powershell_logging_not_enabled: PowerShell script block / module logging not enabled (1 object(s))
+- [Medium] Domain Controllers: EnableScriptBlockLogging = not configured.
+## [Medium] unc_hardening_disabled: UNC hardened paths not configured for SYSVOL / NETLOGON (1 object(s))
+- [Medium] Domain Controllers: Hardened UNC Paths not configured for: PATH-7 PATH-8
+## [Medium] spooler_on_dc: Print Spooler not disabled on domain controllers (1 object(s))
+- [Medium] Domain Controllers: Spooler service Start = not configured by GPO (4 = Disabled).
+## [Medium] llmnr_enabled: LLMNR not disabled (1 object(s))
+- [Medium] Domain Controllers: DNSClient EnableMulticast = not configured (0 = LLMNR disabled).
+## [Medium] password_policy_no_lockout: No account lockout (1 object(s))
+- [Medium] Default Domain Policy: Lockout threshold = 0.
+## [Medium] replication_failures: Active Directory replication failing (1 object(s))
+- [Medium] DCHOST-2: 6 consecutive replication failure(s) with partner DCHOST-1.
+## [Medium] trust_rc4: Trust uses RC4 (1 object(s))
+- [Medium] TRUST-1: UsesRC4Encryption: True; UsesAESKeys: False.
+## [Medium] dc_time_skew: Domain controllers' clocks disagree (1 object(s))
+- [Medium] domain controllers: Clocks differ by 95.4 s between DCHOST-1 and DCHOST-2 (Kerberos fails beyond 300 s).
+## [Medium] precreated_computer_account: Computer account with password not required (1 object(s))
+- [Medium] HOST-10$: PASSWD_NOTREQD set on an enabled computer account (predictable default machine password). OS: Windows Server 2022 Standard.
+## [Medium] dc_unreachable: Domain controller not answering (1 object(s))
+- [Medium] DCHOST-3: No LDAP answer from the collecting machine: Unable to contact the server.
+## [Medium] dhcp_on_dc: DHCP server running on a domain controller (1 object(s))
+- [Medium] DCHOST-2: Authorized DHCP server DCHOST-2 (10.0.0.12) is a domain controller.
+## [Medium] password_policy_short: Short minimum password length (1 object(s))
+- [Medium] Default Domain Policy: Minimum length 8 (baseline 12).
+## [Medium] adcs_ca_cert_expiring: CA certificate expiring or expired (1 object(s))
+- [Medium] CA-1: CA certificate expires in 120 days (2027-01-26). Host: HOSTFQDN-1.
+## [Medium] replication_stale: Active Directory replication stale (1 object(s))
+- [Medium] DCHOST-3: Last successful replication with DCHOST-1: 3 days ago.
+## [Medium] dc_low_disk: Low disk space on a domain controller (1 object(s))
+- [Medium] DCHOST-2: C: has 3.5 GB free of 59.4 GB (5.9%).
+## [Medium] dns_zone_transfer_allowed: DNS zone transfer allowed to any server (1 object(s))
+- [Medium] DOMAIN-1: SecureSecondaries = TransferToAnyServer.
+## [Medium] dc_password_old: Domain controller machine password not rotated (1 object(s))
+- [Medium] DC-2$: DC machine password last set 200 days ago (expected rotation ~30 days, threshold 90).
+## [Medium] machine_account_quota: Users can join computers to the domain (1 object(s))
+- [Medium] DOMAIN-1: ms-DS-MachineAccountQuota = 10.
+## [Medium] constrained_delegation: Constrained delegation configured (1 object(s))
+- [Medium] HOST-8$: Kerberos-only constrained delegation to: MSSQLSvc/HOSTFQDN-40:1433, cifs/HOSTFQDN-39.
+## [Medium] sysvol_frs: SYSVOL still replicated by FRS (1 object(s))
+- [Medium] DOMAIN-1: SYSVOL is still replicated by FRS (no DFSR content set found). Migrate to DFSR.
+## [Medium] builtin_administrator_hygiene: Built-in Administrator (RID 500) hygiene (1 object(s))
+- [Medium] Administrator: RID 500 account: used 5 days ago (routine use suspected); password 800 days old.
+## [Medium] adcs_low_priv_enroll: Client-auth template enrollable by all users (1 object(s))
+- [Medium] Moose Web Server: Client-auth template enrollable by NETBIOS-1\Domain Users. Review whether such broad enrollment is needed.
+## [Medium] functional_level_outdated: Outdated domain functional level (1 object(s))
+- [Medium] DOMAIN-1: Domain mode: Windows2012R2Domain; forest mode: Windows2012R2Forest.
+## [Medium] rodc_tier0_unprotected: Tier 0 accounts not protected from RODC credential caching (1 object(s))
+- [Medium] Denied RODC Password Replication Group: RODC present; these Tier 0 principals are not in the Denied RODC Password Replication Group: Domain Admins, Enterprise Admins, Schema Admins, krbtgt.
+## [Medium] schema_enterprise_admins_populated: Schema / Enterprise Admins not empty (2 object(s))
+- [Medium] USER-2: Member of Enterprise Admins via: Enterprise Admins > USER-2. Account enabled.
+- [Medium] Administrator: Member of Enterprise Admins via: Enterprise Admins > Administrator. Account enabled.
+## [Medium] laps_missing: Computer without LAPS password (3 object(s))
+- [Medium] HOST-26$: No LAPS expiration timestamp. OS: Windows 11 Enterprise.
+- [Medium] HOST-7$: No LAPS expiration timestamp. OS: Windows 10 Pro.
+- [Medium] HOST-3$: No LAPS expiration timestamp. OS: Windows Server 2008 R2 Standard.
+## [Medium] privileged_password_never_expires: Privileged account with password never expires (4 object(s))
+- [Medium] Administrator: Member of Domain Admins, Enterprise Admins, Administrators (builtin), Group Policy Creator Owners.
+- [Medium] USER-5: Member of Domain Admins, Administrators (builtin).
+- [Medium] USER-6: Member of Domain Admins, Administrators (builtin).
+- [Medium] USER-14: Member of Backup Operators.
+## [Low] recycle_bin_disabled: AD Recycle Bin not enabled (1 object(s))
+- [Low] DOMAIN-1: Recycle Bin Feature has no enabled scope.
+## [Low] laps_stale: LAPS password overdue (1 object(s))
+- [Low] HOST-25$: LAPS password expired 100 days ago and was not rotated.
+## [Low] never_logged_on_user: Enabled user never logged on (1 object(s))
+- [Low] USER-22: Created 200 days ago, no logon recorded.
+## [Low] adcs_manual_checks: AD CS checks that require on-CA verification (ESC6/ESC7/ESC8/ESC11/ESC16) (1 object(s))
+- [Low] CA-1: AD CS is deployed (1 CA(s)). ESC6/ESC7/ESC8/ESC11/ESC16 cannot be determined from LDAP; verify on the CA.
+## [Low] dc_obsolete_os: Domain controller on old operating system (1 object(s))
+- [Low] DC-2: Windows Server 2016 Standard: extended support ends January 2027, plan replacement.
+## [Low] dc_subnet_missing: No subnets declared in Active Directory Sites (1 object(s))
+- [Low] DOMAIN-1: No subnet objects are declared under Sites and Services.
+## [Low] auth_policy_silo_unused: No authentication policy silo in use (1 object(s))
+- [Low] DOMAIN-1: No authentication policy silo defined while 17 Tier 0 principal(s) exist.
+## [Low] inactive_user: Enabled user inactive (1 object(s))
+- [Low] USER-21: Last logon 400 days ago (threshold 180).
+## [Low] kerberos_armoring_not_enforced: Kerberos armoring (FAST) not enforced on domain controllers (1 object(s))
+- [Low] Domain Controllers: KDC EnableCbacAndArmor = not configured.
+## [Low] dns_scavenging_disabled: DNS aging/scavenging disabled (1 object(s))
+- [Low] DOMAIN-1: Aging/scavenging not enabled on the zone.
+## [Low] circular_group_nesting: Circular group nesting (1 object(s))
+- [Low] GROUP-1: Groups in a nesting cycle: GROUP-1, GROUP-2.
+## [Low] privileged_disabled_member: Disabled account in privileged group (1 object(s))
+- [Low] USER-10: Disabled, still member of Domain Admins, Administrators (builtin).
+## [Low] orphaned_admincount: Orphaned adminCount=1 (1 object(s))
+- [Low] USER-20: adminCount=1 but not an effective member of any protected group. Enabled: True.
+## [Low] password_never_expires: Password never expires (2 object(s))
+- [Low] USER-30: Password age: 30 days.
+- [Low] USER-16: Password age: 500 days.
+## [Low] stale_computer: Stale computer account (2 object(s))
+- [Low] HOST-27$: Last logon: 120 days ago (threshold 90 days). OS: Windows 11 Enterprise.
+- [Low] HOST-4$: Last logon: 300 days ago (threshold 90 days). OS: Windows 7 Professional.
+## [Low] trust_no_selective_auth: Inbound trust without selective authentication (2 object(s))
+- [Low] TRUST-2: BiDirectional forest trust, forest-wide authentication.
+- [Low] TRUST-1: Inbound external trust, forest-wide authentication.
+
+Attack surface toward Tier 0 (source object, then technique; use ONLY these for attack_paths):
+- [Critical] NETBIOS-1\GROUP-6  ->  Tier 0  via Dangerous ACL on Tier 0
+- [Critical] GPO-1  ->  Tier 0  via GPO control -> DCs
+- [Critical] NETBIOS-1\USER-31  ->  Tier 0  via DCSync
+- [Critical] NETBIOS-1\USER-31  ->  Tier 0  via Dangerous ACL on Tier 0
+- [Critical] Moose ESC2 AnyPurpose  ->  Tier 0  via AD CS ESC2
+- [Critical] Moose ESC13 PolicyLink  ->  Tier 0  via AD CS ESC13
+- [Critical] NT AUTHORITY\Authenticated Users  ->  Tier 0  via ACL path
+- [Critical] Moose ESC1 Vulnerable  ->  Tier 0  via AD CS ESC1
+- [Critical] DC-1$  ->  Tier 0  via RBCD
+- [Critical] USER-6  ->  Tier 0  via Kerberoastable Tier 0
+- [Critical] USER-14  ->  Tier 0  via Kerberoastable Tier 0
+- [Critical] USER-18  ->  Tier 0  via Protocol transition
+- [High] NETBIOS-1\GROUP-6  ->  Tier 0  via AD CS ESC5
+- [High] Moose ESC3 EnrollAgent  ->  Tier 0  via AD CS ESC3
+- [High] Moose ESC4 WeakACL  ->  Tier 0  via AD CS ESC4
+- [High] Debug programs  ->  Tier 0  via Sensitive right on DCs
+- [High] NETBIOS-1\USER-5  ->  Tier 0  via Owns Tier 0 object
+- [High] Domain Controllers  ->  Tier 0  via AD CS ESC10
+- [High] Moose ESC9 NoSecExt  ->  Tier 0  via AD CS ESC9
+- [High] Moose ESC15 SchemaV1  ->  Tier 0  via AD CS ESC15
+- [High] NETBIOS-1\GROUP-6  ->  Tier 0  via ACL path
+- [High] NETBIOS-1\GROUP-5  ->  Tier 0  via Dangerous ACL on Tier 0
+- [High] FOREIGN-1  ->  Tier 0  via Foreign Tier 0 member
+- [High] HOST-1$  ->  Tier 0  via Computer in Tier 0
+- [High] NETBIOS-1\USER-30  ->  Tier 0  via DCSync
+- [High] HOST-2$  ->  Tier 0  via Unconstrained delegation
+- [High] USER-29  ->  Tier 0  via Unconstrained delegation
+- [High] NETBIOS-1\GROUP-5  ->  Tier 0  via ACL path
+- [High] USER-65$  ->  Tier 0  via gMSA password read
+- [High] USER-6  ->  Tier 0  via Shadow credentials

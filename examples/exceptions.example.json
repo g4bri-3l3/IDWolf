@@ -1,0 +1,23 @@
+[
+  {
+    "type": "kerberoastable_user",
+    "object": "svc_web",
+    "reason": "Legacy web app, gMSA migration planned (CHG-2026-114). 30-char random password, AES only.",
+    "owner": "IAM team",
+    "expires": "2027-03-31"
+  },
+  {
+    "type": "dcsync_rights",
+    "object": "MOOSEBANK\\MSOL_a1b2c3d4e5f6",
+    "reason": "Entra Connect synchronization account, protected as Tier 0.",
+    "owner": "Identity platform",
+    "expires": "2027-09-30"
+  },
+  {
+    "type": "trust_no_selective_auth",
+    "object": "*",
+    "reason": "Accepted for all trusts until the partner segmentation project closes.",
+    "owner": "CISO office",
+    "expires": "2026-12-31"
+  }
+]

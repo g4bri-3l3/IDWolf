@@ -1,0 +1,726 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IDWolf report - test.com</title>
+<style>
+  :root {
+    --ink: #15171A; --paper: #F3F4F5; --accent: #4A5058; --accent-deep: #1F2226; --accent-tint: #E1E4E7;
+    --slate: #23262A; --border: #D3D7DB; --muted: #5E656C;
+    --critical: #A23B3B; --critical-bg: #F2E1E1; --high: #B0703A; --high-bg: #F2E6DB;
+    --medium: #A88B2E; --medium-bg: #F1ECDC; --low: #7F868D; --low-bg: #E4E7EA;
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; margin: 40px; color: var(--ink); background: var(--paper); line-height: 1.45; }
+  @media (max-width: 700px) { body { margin: 16px; } .wolf-logo { font-size: 7px; } }
+  h1 { border-bottom: 3px solid var(--accent); padding-bottom: 10px; }
+  h1.title { display: flex; align-items: flex-end; gap: 18px; }
+  .wolf-logo { font-family: Consolas, 'Courier New', monospace; font-size: 10px; line-height: 1.05; font-weight: 700; color: var(--slate); margin: 0; flex-shrink: 0; }
+  h2 { margin: 0; color: var(--slate); }
+  .meta { color: var(--muted); font-size: 13px; }
+  .cards { display: flex; flex-wrap: wrap; gap: 12px; margin: 18px 0; clear: both; }
+  .card { border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; min-width: 120px; background: #fff; }
+  .card .num { font-size: 26px; font-weight: 700; }
+  .card .lbl { font-size: 12px; color: var(--muted); }
+  .card.critical .num { color: var(--critical); } .card.high .num { color: var(--high); }
+  .card.medium .num { color: var(--medium); } .card.low .num { color: var(--low); }
+  .grade { font-size: 26px; font-weight: 800; color: var(--accent-deep); }
+  .table-wrap { border: 1px solid var(--border); border-radius: 10px; overflow-x: auto; margin: 12px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { padding: 7px 10px; text-align: left; vertical-align: top; border-top: 1px solid var(--border); }
+  th { background: var(--slate); color: var(--paper); font-weight: 600; border-top: none; }
+  tr.data-row:nth-child(even) td { background: #F7F8F9; }
+  tr.data-row:hover td { background: var(--accent-tint); }
+  .sev-pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 99px; white-space: nowrap; }
+  .sev-pill-critical { background: var(--critical-bg); color: #7A2727; }
+  .sev-pill-high { background: var(--high-bg); color: #7A4A1F; }
+  .sev-pill-medium { background: var(--medium-bg); color: #6E5A1C; }
+  .sev-pill-low { background: var(--low-bg); color: #4A5056; }
+  code { background: #E8EBEE; padding: 1px 5px; border-radius: 3px; font-family: ui-monospace, Consolas, monospace; font-size: 0.92em; }
+  details { margin-top: 28px; }
+  details > summary { cursor: pointer; list-style: none; border-bottom: 2px solid var(--accent-tint); padding-bottom: 6px; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary h2 { display: inline-block; }
+  details > summary::before { content: '\25b6'; display: inline-block; margin-right: 8px; font-size: 13px; color: var(--accent); transition: transform 0.15s ease; }
+  details[open] > summary::before { transform: rotate(90deg); }
+  details.check { margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+  details.check > summary { border-bottom: none; padding: 10px 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  details.check > summary::before { margin-right: 0; }
+  details.check .body { padding: 0 14px 12px 14px; }
+  .check-title { font-weight: 600; }
+  .check-id { color: var(--muted); font-size: 12px; }
+  .count { margin-left: auto; font-size: 12px; color: var(--muted); }
+  .kv { font-size: 13px; margin: 6px 0; }
+  .kv b { color: var(--slate); }
+  blockquote { background: var(--accent-tint); border-left: 4px solid var(--accent); margin: 12px 0; padding: 10px 14px; }
+  .warn { background: var(--critical-bg); border-left-color: var(--critical); }
+  tr.filter-row td { background: #EDEFF1; padding: 4px 6px; }
+  tr.filter-row input { width: 100%; box-sizing: border-box; font-size: 11px; padding: 3px 5px; border: 1px solid #BFC5CB; border-radius: 3px; }
+  .filter-status { font-size: 11px; color: var(--muted); margin: 4px 0 0 2px; }
+  .compare-new { color: var(--accent-deep); font-weight: bold; }
+  .compare-resolved { color: #5E656C; font-weight: bold; }
+  .yes { color: var(--critical); font-weight: 600; } .no { color: var(--muted); }
+  .chart-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin: 18px 0; }
+  .pie-chart-wrap { display: flex; align-items: center; gap: 16px; }
+  .pie-chart-wrap svg { flex-shrink: 0; }
+  .pie-chart-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--slate); }
+  .pie-legend { font-size: 12px; }
+  .pie-legend-item { display: flex; align-items: center; gap: 6px; margin: 3px 0; white-space: nowrap; }
+  .pie-legend-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .ai-section { background: #EEF0F2; border: 1px solid #CDD2D7; border-left: 4px solid #23262A; border-radius: 4px; padding: 4px 20px 16px 20px; margin-top: 16px; }
+  .ai-badge { display: inline-block; font-size: 11px; font-weight: bold; color: #23262A; background: #DDE1E5; border-radius: 10px; padding: 2px 10px; margin: 12px 0 8px 0; }
+  .ai-section h3 { color: var(--slate); margin: 16px 0 6px 0; }
+  .ai-section ol li { margin: 6px 0; }
+  .map-wrap { border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin: 12px 0; background: #fff; overflow-x: auto; }
+  .attack-map .am-edge.am-hot { opacity: 1 !important; stroke-width: 2.6px; }
+  .ai-script { background: #0F1113; color: #E3E6E9; border-radius: 6px; padding: 10px 12px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: pre-wrap; overflow-x: auto; margin: 6px 0; }
+  .ai-triage td { vertical-align: top; }
+</style>
+<script>
+function filterMooseTable(input) {
+  var table = input.closest('table');
+  var filters = Array.prototype.map.call(table.querySelectorAll('tr.filter-row input'), function (i) { return i.value.toLowerCase(); });
+  var rows = table.querySelectorAll('tr.data-row'); var shown = 0;
+  rows.forEach(function (row) {
+    var cells = row.children; var ok = true;
+    for (var i = 0; i < filters.length; i++) { if (filters[i] && (!cells[i] || cells[i].textContent.toLowerCase().indexOf(filters[i]) === -1)) { ok = false; break; } }
+    row.style.display = ok ? '' : 'none'; if (ok) shown++;
+  });
+  var status = table.parentNode.parentNode.querySelector('.filter-status');
+  if (status) status.textContent = shown + ' of ' + rows.length + ' rows shown';
+}
+function amMap(g, on) {
+  try {
+    var nid = g.getAttribute('data-nid');
+    var svg = g.ownerSVGElement; if (!svg) return;
+    var seen = {};
+    (function walk(id) {
+      if (seen[id]) return; seen[id] = 1;
+      var edges = svg.querySelectorAll('.am-from-' + id);
+      for (var i = 0; i < edges.length; i++) {
+        if (on) { edges[i].classList.add('am-hot'); } else { edges[i].classList.remove('am-hot'); }
+        var to = edges[i].getAttribute('data-to'); if (to) walk(to);
+      }
+    })(nid);
+  } catch (e) { }
+}
+</script>
+</head><body>
+<h1 class="title"><pre class='wolf-logo' role='img' aria-label='IDWolf wolf'>                     .
+                    / V\
+                  / `  /
+                 &lt;&lt;   |
+                 /    |
+               /      |
+             /        |
+           /    \  \ /
+          (      ) | |
+  ________|   _/_  | |
+&lt;__________\______)\__)</pre><span>IDWolf: Active Directory Hygiene Report</span></h1>
+<div class="meta">Domain <b>test.com</b> (TEST) &middot; forest test.com &middot; snapshot 2026-10-07 09:46 UTC by TEST\vboxuser from DCTEST4 &middot; IDWolf v1.0 &middot; analysis 1,6s</div>
+<div class="cards">
+<div class="card"><div class="grade">F &middot; 16/100</div><div class="lbl">Hygiene score (38 checks triggered)</div></div>
+<div class="card critical"><div class="num">4</div><div class="lbl">Critical findings</div></div>
+<div class="card high"><div class="num">24</div><div class="lbl">High findings</div></div>
+<div class="card medium"><div class="num">27</div><div class="lbl">Medium findings</div></div>
+<div class="card low"><div class="num">13</div><div class="lbl">Low findings</div></div>
+<div class="card"><div class="num">114</div><div class="lbl">Users / service accounts</div></div>
+<div class="card"><div class="num">4</div><div class="lbl">Computers</div></div>
+<div class="card"><div class="num">3</div><div class="lbl">Tier 0 principals</div></div>
+</div>
+<div class="meta">Score = 100 &times; e<sup>&minus;penalty/100</sup>, where penalty sums a weight per triggered check at its worst severity (Critical 20, High 8, Medium 3, Low 1), capped by the worst severity present: any Critical check limits the score to 35 (grade E), any High to 65 (grade C). It never reaches zero, so a bad domain and a catastrophic one still rank differently. Per-object counts are shown separately so that many low-impact objects do not hide a single critical exposure.</div>
+<div class='chart-row'><div><div class='pie-chart-title'>Findings by severity</div><div class='pie-chart-wrap'><svg viewBox='0 0 130 130' width='130' height='130' role='img'><g transform='rotate(-90 65 65)'><circle cx='65' cy='65' r='55.55' fill='none' stroke='#E4E7EA' stroke-width='16.9' /><circle cx='65' cy='65' r='55.55' fill='none' stroke='#A23B3B' stroke-width='16.9' stroke-dasharray='20.53 349.03' stroke-dashoffset='0'><title>Critical: 4</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#B0703A' stroke-width='16.9' stroke-dasharray='123.19 349.03' stroke-dashoffset='-20.53'><title>High: 24</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#A88B2E' stroke-width='16.9' stroke-dasharray='138.59 349.03' stroke-dashoffset='-143.72'><title>Medium: 27</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#7F868D' stroke-width='16.9' stroke-dasharray='66.73 349.03' stroke-dashoffset='-282.31'><title>Low: 13</title></circle></g><text x='65' y='63' text-anchor='middle' font-size='20' font-weight='600' fill='#23262A'>68</text><text x='65' y='79' text-anchor='middle' font-size='9' fill='#5E656C'>findings</text></svg><div class='pie-legend'><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#A23B3B'></span>Critical (4, 5.9%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#B0703A'></span>High (24, 35.3%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#A88B2E'></span>Medium (27, 39.7%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#7F868D'></span>Low (13, 19.1%)</div></div></div></div><div><div class='pie-chart-title'>Findings by category</div><div class='pie-chart-wrap'><svg viewBox='0 0 130 130' width='130' height='130' role='img'><g transform='rotate(-90 65 65)'><circle cx='65' cy='65' r='55.55' fill='none' stroke='#E4E7EA' stroke-width='16.9' /><circle cx='65' cy='65' r='55.55' fill='none' stroke='#15171A' stroke-width='16.9' stroke-dasharray='71.86 349.03' stroke-dashoffset='0'><title>Kerberos: 14</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#2A2E33' stroke-width='16.9' stroke-dasharray='35.93 349.03' stroke-dashoffset='-71.86'><title>Privileged Access: 7</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#40454B' stroke-width='16.9' stroke-dasharray='51.33 349.03' stroke-dashoffset='-107.79'><title>Account Hygiene: 10</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#575D64' stroke-width='16.9' stroke-dasharray='41.06 349.03' stroke-dashoffset='-159.12'><title>Domain Configuration: 8</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#6F767D' stroke-width='16.9' stroke-dasharray='76.99 349.03' stroke-dashoffset='-200.18'><title>Permissions: 15</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#A2A8AE' stroke-width='16.9' stroke-dasharray='66.73 349.03' stroke-dashoffset='-277.17'><title>Host Hardening: 13</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#D3D7DB' stroke-width='16.9' stroke-dasharray='5.13 349.03' stroke-dashoffset='-343.9'><title>Operational Health: 1</title></circle></g><text x='65' y='63' text-anchor='middle' font-size='20' font-weight='600' fill='#23262A'>68</text><text x='65' y='79' text-anchor='middle' font-size='9' fill='#5E656C'>findings</text></svg><div class='pie-legend'><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#15171A'></span>Kerberos (14, 20.6%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#2A2E33'></span>Privileged Access (7, 10.3%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#40454B'></span>Account Hygiene (10, 14.7%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#575D64'></span>Domain Configuration (8, 11.8%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#6F767D'></span>Permissions (15, 22.1%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#A2A8AE'></span>Host Hardening (13, 19.1%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#D3D7DB'></span>Operational Health (1, 1.5%)</div></div></div></div><div><div class='pie-chart-title'>Tier 0 composition</div><div class='pie-chart-wrap'><svg viewBox='0 0 130 130' width='130' height='130' role='img'><g transform='rotate(-90 65 65)'><circle cx='65' cy='65' r='55.55' fill='none' stroke='#E4E7EA' stroke-width='16.9' /><circle cx='65' cy='65' r='55.55' fill='none' stroke='#2A2E33' stroke-width='16.9' stroke-dasharray='349.03 349.03' stroke-dashoffset='0'><title>Active admins: 3</title></circle></g><text x='65' y='63' text-anchor='middle' font-size='20' font-weight='600' fill='#23262A'>3</text><text x='65' y='79' text-anchor='middle' font-size='9' fill='#5E656C'>Tier 0</text></svg><div class='pie-legend'><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#2A2E33'></span>Active admins (3, 100%)</div></div></div></div><div><div class='pie-chart-title'>Enabled users by activity</div><div class='pie-chart-wrap'><svg viewBox='0 0 130 130' width='130' height='130' role='img'><g transform='rotate(-90 65 65)'><circle cx='65' cy='65' r='55.55' fill='none' stroke='#E4E7EA' stroke-width='16.9' /><circle cx='65' cy='65' r='55.55' fill='none' stroke='#2A2E33' stroke-width='16.9' stroke-dasharray='12.81 349.03' stroke-dashoffset='0'><title>Logon within 180d: 4</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#C9CED3' stroke-width='16.9' stroke-dasharray='336.22 349.03' stroke-dashoffset='-12.81'><title>Never logged on: 105</title></circle></g><text x='65' y='63' text-anchor='middle' font-size='20' font-weight='600' fill='#23262A'>109</text><text x='65' y='79' text-anchor='middle' font-size='9' fill='#5E656C'>enabled users</text></svg><div class='pie-legend'><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#2A2E33'></span>Logon within 180d (4, 3.7%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#C9CED3'></span>Never logged on (105, 96.3%)</div></div></div></div></div>
+<div class='chart-row'><div><div class='pie-chart-title'>All accounts</div><div class='pie-chart-wrap'><svg viewBox='0 0 130 130' width='130' height='130' role='img'><g transform='rotate(-90 65 65)'><circle cx='65' cy='65' r='55.55' fill='none' stroke='#E4E7EA' stroke-width='16.9' /><circle cx='65' cy='65' r='55.55' fill='none' stroke='#2A2E33' stroke-width='16.9' stroke-dasharray='319.45 349.03' stroke-dashoffset='0'><title>User accounts: 108</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#6F767D' stroke-width='16.9' stroke-dasharray='11.83 349.03' stroke-dashoffset='-319.45'><title>Service accounts: 4</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#C9CED3' stroke-width='16.9' stroke-dasharray='5.92 349.03' stroke-dashoffset='-331.28'><title>Disabled users: 2</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#A88B2E' stroke-width='16.9' stroke-dasharray='11.83 349.03' stroke-dashoffset='-337.2'><title>Computers: 4</title></circle></g><text x='65' y='63' text-anchor='middle' font-size='20' font-weight='600' fill='#23262A'>118</text><text x='65' y='79' text-anchor='middle' font-size='9' fill='#5E656C'>accounts</text></svg><div class='pie-legend'><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#2A2E33'></span>User accounts (108, 91.5%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#6F767D'></span>Service accounts (4, 3.4%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#C9CED3'></span>Disabled users (2, 1.7%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#A88B2E'></span>Computers (4, 3.4%)</div></div></div></div><div><div class='pie-chart-title'>Password age (enabled accounts)</div><div class='pie-chart-wrap'><svg viewBox='0 0 130 130' width='130' height='130' role='img'><g transform='rotate(-90 65 65)'><circle cx='65' cy='65' r='55.55' fill='none' stroke='#E4E7EA' stroke-width='16.9' /><circle cx='65' cy='65' r='55.55' fill='none' stroke='#2A2E33' stroke-width='16.9' stroke-dasharray='342.8 349.03' stroke-dashoffset='0'><title>Changed within 90d: 110</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#C9CED3' stroke-width='16.9' stroke-dasharray='6.23 349.03' stroke-dashoffset='-342.8'><title>Never set: 2</title></circle></g><text x='65' y='63' text-anchor='middle' font-size='20' font-weight='600' fill='#23262A'>112</text><text x='65' y='79' text-anchor='middle' font-size='9' fill='#5E656C'>accounts</text></svg><div class='pie-legend'><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#2A2E33'></span>Changed within 90d (110, 98.2%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#C9CED3'></span>Never set (2, 1.8%)</div></div></div></div><div><div class='pie-chart-title'>Password settings (enabled accounts)</div><div class='pie-chart-wrap'><svg viewBox='0 0 130 130' width='130' height='130' role='img'><g transform='rotate(-90 65 65)'><circle cx='65' cy='65' r='55.55' fill='none' stroke='#E4E7EA' stroke-width='16.9' /><circle cx='65' cy='65' r='55.55' fill='none' stroke='#2A2E33' stroke-width='16.9' stroke-dasharray='324.1 349.03' stroke-dashoffset='0'><title>Expires normally: 104</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#A88B2E' stroke-width='16.9' stroke-dasharray='24.93 349.03' stroke-dashoffset='-324.1'><title>Never expires: 8</title></circle></g><text x='65' y='63' text-anchor='middle' font-size='20' font-weight='600' fill='#23262A'>112</text><text x='65' y='79' text-anchor='middle' font-size='9' fill='#5E656C'>accounts</text></svg><div class='pie-legend'><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#2A2E33'></span>Expires normally (104, 92.9%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#A88B2E'></span>Never expires (8, 7.1%)</div></div></div></div><div><div class='pie-chart-title'>Computers by operating system</div><div class='pie-chart-wrap'><svg viewBox='0 0 130 130' width='130' height='130' role='img'><g transform='rotate(-90 65 65)'><circle cx='65' cy='65' r='55.55' fill='none' stroke='#E4E7EA' stroke-width='16.9' /><circle cx='65' cy='65' r='55.55' fill='none' stroke='#2A2E33' stroke-width='16.9' stroke-dasharray='174.52 349.03' stroke-dashoffset='0'><title>Unknown: 2</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#575D64' stroke-width='16.9' stroke-dasharray='87.26 349.03' stroke-dashoffset='-174.52'><title>11 Pro: 1</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#6F767D' stroke-width='16.9' stroke-dasharray='87.26 349.03' stroke-dashoffset='-261.78'><title>Server 2025 Standard Evaluation: 1</title></circle></g><text x='65' y='63' text-anchor='middle' font-size='20' font-weight='600' fill='#23262A'>4</text><text x='65' y='79' text-anchor='middle' font-size='9' fill='#5E656C'>computers</text></svg><div class='pie-legend'><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#2A2E33'></span>Unknown (2, 50%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#575D64'></span>11 Pro (1, 25%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#6F767D'></span>Server 2025 Standard Evaluation (1, 25%)</div></div></div></div><div><div class='pie-chart-title'>Enabled computers by activity</div><div class='pie-chart-wrap'><svg viewBox='0 0 130 130' width='130' height='130' role='img'><g transform='rotate(-90 65 65)'><circle cx='65' cy='65' r='55.55' fill='none' stroke='#E4E7EA' stroke-width='16.9' /><circle cx='65' cy='65' r='55.55' fill='none' stroke='#2A2E33' stroke-width='16.9' stroke-dasharray='174.52 349.03' stroke-dashoffset='0'><title>Seen within 90d: 2</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#C9CED3' stroke-width='16.9' stroke-dasharray='174.52 349.03' stroke-dashoffset='-174.52'><title>Never logged on: 2</title></circle></g><text x='65' y='63' text-anchor='middle' font-size='20' font-weight='600' fill='#23262A'>4</text><text x='65' y='79' text-anchor='middle' font-size='9' fill='#5E656C'>computers</text></svg><div class='pie-legend'><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#2A2E33'></span>Seen within 90d (2, 50%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#C9CED3'></span>Never logged on (2, 50%)</div></div></div></div><div><div class='pie-chart-title'>Groups by scope</div><div class='pie-chart-wrap'><svg viewBox='0 0 130 130' width='130' height='130' role='img'><g transform='rotate(-90 65 65)'><circle cx='65' cy='65' r='55.55' fill='none' stroke='#E4E7EA' stroke-width='16.9' /><circle cx='65' cy='65' r='55.55' fill='none' stroke='#2A2E33' stroke-width='16.9' stroke-dasharray='135.11 349.03' stroke-dashoffset='0'><title>Global: 24</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#888F96' stroke-width='16.9' stroke-dasharray='191.4 349.03' stroke-dashoffset='-135.11'><title>Domain local: 34</title></circle><circle cx='65' cy='65' r='55.55' fill='none' stroke='#C9CED3' stroke-width='16.9' stroke-dasharray='22.52 349.03' stroke-dashoffset='-326.51'><title>Universal: 4</title></circle></g><text x='65' y='63' text-anchor='middle' font-size='20' font-weight='600' fill='#23262A'>62</text><text x='65' y='79' text-anchor='middle' font-size='9' fill='#5E656C'>groups</text></svg><div class='pie-legend'><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#2A2E33'></span>Global (24, 38.7%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#888F96'></span>Domain local (34, 54.8%)</div><div class='pie-legend-item'><span class='pie-legend-swatch' style='background:#C9CED3'></span>Universal (4, 6.5%)</div></div></div></div></div>
+<details open class="map-details"><summary><h2>Attack-path map (toward Tier 0)</h2></summary>
+<div class='map-wrap'><svg viewBox='0 0 1226 340' width='100%' preserveAspectRatio='xMinYMin meet' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' class='attack-map'>
+<defs><marker id='amArrow' markerWidth='9' markerHeight='9' refX='8' refY='3' orient='auto'><path d='M0,0 L8,3 L0,6 Z' fill='#8C939A'/></marker></defs>
+<path class='am-edge am-from-0' d='M986,66 C1021,66 1021,170 1056,170' fill='none' stroke='#A23B3B' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>lab.delegsvc -> Tier 0 via Protocol transition [Critical]</title></path>
+<path class='am-edge am-from-1' d='M986,194 C1021,194 1021,170 1056,170' fill='none' stroke='#B0703A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>lab-unconstr$ -> Tier 0 via Unconstrained delegation [High]</title></path>
+<path class='am-edge am-from-2' d='M986,290 C1021,290 1021,170 1056,170' fill='none' stroke='#A88B2E' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>lab-rbcdtarget$ -> Tier 0 via RBCD [Medium]</title></path>
+<path class='am-edge am-from-3' d='M986,98 C1021,98 1021,170 1056,170' fill='none' stroke='#A23B3B' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>TEST\aprilette.madelyn -> Tier 0 via DCSync [Critical]</title></path>
+<path class='am-edge am-from-4' d='M986,130 C1021,130 1021,170 1056,170' fill='none' stroke='#A23B3B' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>TEST\gladi.simona -> Tier 0 via DCSync [Critical]</title></path>
+<path class='am-edge am-from-5' d='M986,162 C1021,162 1021,170 1056,170' fill='none' stroke='#A23B3B' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>TEST\lab.svcsync -> Tier 0 via DCSync [Critical]</title></path>
+<path class='am-edge am-from-6' data-to='4' d='M726,162 C761,162 761,130 796,130' fill='none' stroke='#B0703A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>TEST\sales -> TEST\gladi.simona via ACL path (GenericWrite) [High]</title></path>
+<path class='am-edge am-from-7' data-to='5' d='M726,98 C761,98 761,162 796,162' fill='none' stroke='#B0703A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>TEST\LabAdminsShadow -> TEST\lab.svcsync via ACL path (GenericAll) [High]</title></path>
+<path class='am-edge am-from-8' d='M986,258 C1021,258 1021,170 1056,170' fill='none' stroke='#B0703A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>TEST\Senior management -> Tier 0 via ACL path [High] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-9' d='M986,226 C1021,226 1021,170 1056,170' fill='none' stroke='#B0703A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>TEST\Project management -> Tier 0 via ACL path [High] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-10' data-to='8' d='M726,130 C761,130 761,258 796,258' fill='none' stroke='#B0703A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>TEST\marketing -> TEST\Senior management via ACL path (WriteDacl) [High]</title></path>
+<path class='am-edge am-from-10' data-to='9' d='M726,130 C761,130 761,226 796,226' fill='none' stroke='#B0703A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>TEST\marketing -> TEST\Project management via ACL path (GenericWrite) [High]</title></path>
+<path class='am-edge am-from-6' data-to='9' d='M726,162 C761,162 761,226 796,226' fill='none' stroke='#B0703A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>TEST\sales -> TEST\Project management via ACL path (WriteProperty(all)) [High]</title></path>
+<path class='am-edge am-from-11' data-to='9' d='M726,66 C761,66 761,226 796,226' fill='none' stroke='#B0703A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>TEST\accounting -> TEST\Project management via ACL path (GenericAll) [High]</title></path>
+<path class='am-edge am-from-12' data-to='13' d='M206,66 C241,66 241,66 276,66' fill='none' stroke='#B0703A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>TEST\LabHelpdesk -> TEST\LabOps via ACL path (GenericWrite) [High]</title></path>
+<path class='am-edge am-from-13' data-to='7' d='M466,66 C501,66 501,98 536,98' fill='none' stroke='#B0703A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>TEST\LabOps -> TEST\LabAdminsShadow via ACL path (WriteDacl) [High]</title></path>
+<rect x='1056' y='148' width='150' height='44' rx='8' fill='#23262A' stroke='#4A5058' stroke-width='2'/>
+<text x='1131' y='168' text-anchor='middle' fill='#E1E4E7' font-size='13' font-weight='700'>Tier 0</text>
+<text x='1131' y='183' text-anchor='middle' fill='#AEB4BA' font-size='10'>domain compromise</text>
+<g class='am-node' data-nid='0' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='796' y='54' width='190' height='24' rx='5' fill='#fff' stroke='#A23B3B' stroke-width='1.6'/>
+<rect x='796' y='54' width='4' height='24' rx='2' fill='#A23B3B'/>
+<text x='806' y='70' font-size='11' fill='#15171A'>lab.delegsvc</text>
+<title>lab.delegsvc [user] - Protocol transition</title>
+</g>
+<g class='am-node' data-nid='3' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='796' y='86' width='190' height='24' rx='5' fill='#fff' stroke='#A23B3B' stroke-width='1.6'/>
+<rect x='796' y='86' width='4' height='24' rx='2' fill='#A23B3B'/>
+<text x='806' y='102' font-size='11' fill='#15171A'>TEST\aprilette.madelyn</text>
+<title>TEST\aprilette.madelyn [acl] - DCSync</title>
+</g>
+<g class='am-node' data-nid='4' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='796' y='118' width='190' height='24' rx='5' fill='#fff' stroke='#A23B3B' stroke-width='1.6'/>
+<rect x='796' y='118' width='4' height='24' rx='2' fill='#A23B3B'/>
+<text x='806' y='134' font-size='11' fill='#15171A'>TEST\gladi.simona</text>
+<title>TEST\gladi.simona [acl] - DCSync</title>
+</g>
+<g class='am-node' data-nid='5' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='796' y='150' width='190' height='24' rx='5' fill='#fff' stroke='#A23B3B' stroke-width='1.6'/>
+<rect x='796' y='150' width='4' height='24' rx='2' fill='#A23B3B'/>
+<text x='806' y='166' font-size='11' fill='#15171A'>TEST\lab.svcsync</text>
+<title>TEST\lab.svcsync [acl] - DCSync</title>
+</g>
+<g class='am-node' data-nid='1' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='796' y='182' width='190' height='24' rx='5' fill='#fff' stroke='#B0703A' stroke-width='1.6'/>
+<rect x='796' y='182' width='4' height='24' rx='2' fill='#B0703A'/>
+<text x='806' y='198' font-size='11' fill='#15171A'>lab-unconstr$</text>
+<title>lab-unconstr$ [computer] - Unconstrained delegation</title>
+</g>
+<g class='am-node' data-nid='11' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='536' y='54' width='190' height='24' rx='5' fill='#fff' stroke='#B0703A' stroke-width='1.6'/>
+<rect x='536' y='54' width='4' height='24' rx='2' fill='#B0703A'/>
+<text x='546' y='70' font-size='11' fill='#15171A'>TEST\accounting</text>
+<title>TEST\accounting [acl] - ACL path (GenericAll)</title>
+</g>
+<g class='am-node' data-nid='7' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='536' y='86' width='190' height='24' rx='5' fill='#fff' stroke='#B0703A' stroke-width='1.6'/>
+<rect x='536' y='86' width='4' height='24' rx='2' fill='#B0703A'/>
+<text x='546' y='102' font-size='11' fill='#15171A'>TEST\LabAdminsShadow</text>
+<title>TEST\LabAdminsShadow [acl] - ACL path (GenericAll)</title>
+</g>
+<g class='am-node' data-nid='12' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='16' y='54' width='190' height='24' rx='5' fill='#fff' stroke='#B0703A' stroke-width='1.6'/>
+<rect x='16' y='54' width='4' height='24' rx='2' fill='#B0703A'/>
+<text x='26' y='70' font-size='11' fill='#15171A'>TEST\LabHelpdesk</text>
+<title>TEST\LabHelpdesk [acl] - ACL path (GenericWrite)</title>
+</g>
+<g class='am-node' data-nid='13' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='276' y='54' width='190' height='24' rx='5' fill='#fff' stroke='#B0703A' stroke-width='1.6'/>
+<rect x='276' y='54' width='4' height='24' rx='2' fill='#B0703A'/>
+<text x='286' y='70' font-size='11' fill='#15171A'>TEST\LabOps</text>
+<title>TEST\LabOps [acl] - ACL path (WriteDacl)</title>
+</g>
+<g class='am-node' data-nid='10' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='536' y='118' width='190' height='24' rx='5' fill='#fff' stroke='#B0703A' stroke-width='1.6'/>
+<rect x='536' y='118' width='4' height='24' rx='2' fill='#B0703A'/>
+<text x='546' y='134' font-size='11' fill='#15171A'>TEST\marketing</text>
+<title>TEST\marketing [acl] - ACL path (WriteDacl), ACL path (GenericWrite)</title>
+</g>
+<g class='am-node' data-nid='9' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='796' y='214' width='190' height='24' rx='5' fill='#fff' stroke='#B0703A' stroke-width='1.6'/>
+<rect x='796' y='214' width='4' height='24' rx='2' fill='#B0703A'/>
+<text x='806' y='230' font-size='11' fill='#15171A'>TEST\Project management</text>
+<title>TEST\Project management [acl] - ACL path</title>
+</g>
+<g class='am-node' data-nid='6' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='536' y='150' width='190' height='24' rx='5' fill='#fff' stroke='#B0703A' stroke-width='1.6'/>
+<rect x='536' y='150' width='4' height='24' rx='2' fill='#B0703A'/>
+<text x='546' y='166' font-size='11' fill='#15171A'>TEST\sales</text>
+<title>TEST\sales [acl] - ACL path (GenericWrite), ACL path (WriteProperty(all))</title>
+</g>
+<g class='am-node' data-nid='8' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='796' y='246' width='190' height='24' rx='5' fill='#fff' stroke='#B0703A' stroke-width='1.6'/>
+<rect x='796' y='246' width='4' height='24' rx='2' fill='#B0703A'/>
+<text x='806' y='262' font-size='11' fill='#15171A'>TEST\Senior management</text>
+<title>TEST\Senior management [acl] - ACL path</title>
+</g>
+<g class='am-node' data-nid='2' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='796' y='278' width='190' height='24' rx='5' fill='#fff' stroke='#A88B2E' stroke-width='1.6'/>
+<rect x='796' y='278' width='4' height='24' rx='2' fill='#A88B2E'/>
+<text x='806' y='294' font-size='11' fill='#15171A'>lab-rbcdtarget$</text>
+<title>lab-rbcdtarget$ [computer] - RBCD</title>
+</g>
+</svg>
+</div>
+<p class='meta'>Each box is a principal or object that has a path to Tier 0; the arrow is the technique. Colour is the severity. Hover an arrow for the exact path. Dashed arrows: the right is real but the object it is held over is not known to lead to Tier 0, so the arrow to Tier 0 is an assumption; check those first. Boxes joined by an arrow are hops of one chain: a principal that holds a right over the next box and so inherits what it reaches (4 steps at most). Hover a box to light up its whole path. This is derived from the deterministic findings, not a live reachability test.</p>
+<h3 style='margin-top:18px'>Trust map</h3>
+<p class="meta">No external or forest trusts.</p>
+<h3 style='margin-top:18px'>Tier 0 members (3)</h3>
+<p class="meta">These principals already hold Tier 0 rights, so they are the target of the paths above, not a source. Compromising any of them is domain compromise.</p>
+<div class="table-wrap"><table><tr><th>Principal</th><th>Kind</th><th>Status</th><th>Last logon</th><th>Password age</th><th>Tier 0 through</th></tr>
+<tr class="data-row"><td><b>admin</b></td><td>user</td><td>enabled</td><td>6 d ago</td><td>1 d</td><td>Domain Admins, Enterprise Admins, Administrators (builtin)</td></tr>
+<tr class="data-row"><td><b>Administrator</b></td><td>user</td><td>enabled</td><td>1 d ago</td><td>1 d</td><td>Domain Admins, Enterprise Admins, Schema Admins, Administrators (builtin), Group Policy Creator Owners</td></tr>
+<tr class="data-row"><td><b>vboxuser</b></td><td>user</td><td>enabled</td><td>6 d ago</td><td>7 d</td><td>Administrators (builtin)</td></tr>
+</table></div>
+</details>
+
+<div class='ai-section'><div class='ai-badge'>AI-assisted &middot; gemini-3.5-flash &middot; 152 identifiers pseudonymized before sending</div>
+<h2><span class='ai-robot' role='img' aria-label='AI' style='margin-right:8px'>&#x1F916;</span>AI summary and remediation plan</h2>
+<p>The Active Directory domain test.com currently has an extremely critical security posture with a hygiene score of 16/100. The most severe exposure is the presence of multiple non-default user accounts (TEST\lab.svcsync, TEST\gladi.simona, and TEST\aprilette.madelyn) that possess DCSync rights, allowing them to extract all domain password hashes at will. Additionally, dangerous delegation configurations (such as lab.delegsvc with protocol transition and lab-unconstr$ with unconstrained delegation) provide immediate paths to domain controller compromise. A complex web of delegated permissions among non-privileged groups further exacerbates the risk, allowing lateral movement and escalation to Tier 0. Immediate remediation of these structural flaws is required to prevent complete domain takeover.</p>
+<h3>Quick wins</h3><ul>
+<li>Disable the Print Spooler service on dctest4.test.com via Group Policy.</li>
+<li>Set ms-DS-MachineAccountQuota to 0 on test.com to prevent non-admin users from joining arbitrary computers to the domain.</li>
+<li>Enable the Active Directory Recycle Bin on test.com.</li>
+<li>Clear the description fields for alvira.hatty and myrle.ceil to remove exposed passwords.</li>
+<li>Enable LSASS RunAsPPL protection on dctest4.test.com.</li>
+</ul>
+<h3>Suggested remediation order</h3><ol>
+<li><b>Revoke Unauthorized DCSync Rights</b> <span class='check-id'>effort: low</span><br>DCSync rights allow an attacker to impersonate a domain controller and request password hashes for all domain accounts. Revoking these unauthorized rights immediately stops the most direct path to total domain compromise.<br><span class='meta'>Checks: <code>dcsync_rights</code></span><br><span class='meta'>Objects: TEST\lab.svcsync, TEST\gladi.simona, TEST\aprilette.madelyn</span><br><span class='meta'>Caveats: Verify if these accounts are used for legitimate synchronization tools (e.g., Microsoft Entra Connect). If so, they must be heavily hardened, restricted, and monitored rather than simply deleted.</span></li>
+<li><b>Secure Kerberos Delegation Configurations</b> <span class='check-id'>effort: medium</span><br>Unconstrained delegation and protocol transition allow attackers to impersonate arbitrary users (including Domain Admins) to target resources. Restricting these configurations blocks high-severity lateral movement paths.<br><span class='meta'>Checks: <code>constrained_delegation_protocol_transition</code> <code>unconstrained_delegation</code> <code>rbcd_configured</code></span><br><span class='meta'>Objects: lab.delegsvc, lab-unconstr$, lab-rbcdtarget$</span><br><span class='meta'>Caveats: Disabling delegation can break application authentication. Coordinate with application owners to transition to Resource-Based Constrained Delegation (RBCD) or modern authentication protocols.</span></li>
+<li><b>Remediate Dangerous Active Directory ACLs</b> <span class='check-id'>effort: high</span><br>These groups hold nested administrative permissions over other groups and users, creating complex escalation paths that lead to Tier 0 control.<br><span class='meta'>Checks: <code>dangerous_ace_anywhere</code></span><br><span class='meta'>Objects: TEST\marketing, TEST\Project management, TEST\sales, TEST\Senior management, TEST\LabAdminsShadow, TEST\LabOps, TEST\LabHelpdesk, TEST\accounting</span><br><span class='meta'>Caveats: Modifying Active Directory ACLs can disrupt administrative workflows, automated provisioning scripts, or identity management systems. Perform a thorough audit of who relies on these permissions before modification.</span></li>
+<li><b>Harden Domain Controller Security and Policies</b> <span class='check-id'>effort: medium</span><br>Protects domain controllers from credential dumping (LSASS), relay attacks (LDAP/SMB signing), and printer spooler coercion vulnerabilities.<br><span class='meta'>Checks: <code>ldap_signing_not_required</code> <code>ldap_channel_binding_off</code> <code>spooler_on_dc</code> <code>lsass_not_protected</code> <code>smb_client_signing_not_required</code></span><br><span class='meta'>Objects: Domain Controllers, dctest4.test.com</span><br><span class='meta'>Caveats: Enforcing LDAP signing and channel binding may cause authentication failures for legacy or non-Windows systems. Ensure the Print Spooler service is not actively used for printing on DCs before disabling it.</span></li>
+<li><b>Protect Tier 0 Accounts and Enforce Password Hygiene</b> <span class='check-id'>effort: medium</span><br>Reduces the risk of credential theft, offline brute-forcing (AS-REP roasting), and unauthorized access to highly privileged accounts.<br><span class='meta'>Checks: <code>privileged_account_delegable</code> <code>protected_users_empty</code> <code>asrep_roastable</code> <code>password_in_description</code> <code>password_policy_short</code> <code>password_policy_no_lockout</code> <code>privileged_password_never_expires</code></span><br><span class='meta'>Objects: vboxuser, Administrator, admin, lab.asrep, bethany.eadith, alvira.hatty, myrle.ceil</span><br><span class='meta'>Caveats: Adding accounts to the &#39;Protected Users&#39; group enforces strict security controls (e.g., disabling NTLM and long-lived Kerberos tickets), which may impact legacy administrative tools.</span></li>
+</ol>
+<h3>Monitoring until fixed</h3><div class='table-wrap'><table><tr><th>Checks</th><th>Event IDs</th><th>Guidance</th></tr>
+<tr class='data-row'><td><code>dcsync_rights</code></td><td>4662</td><td>Monitor for Event ID 4662 on Domain Controllers where the write/read operation accesses the DS-Replication-Get-Changes-All schema GUID (1131f6ad-9c07-11d1-f79f-00c04fc2dcd2) by non-DC accounts.</td></tr>
+<tr class='data-row'><td><code>asrep_roastable</code></td><td>4768</td><td>Monitor for Event ID 4768 (TGT Request) where pre-authentication is not required (Result Code 0x0) and the ticket encryption type is weak (e.g., RC4).</td></tr>
+<tr class='data-row'><td><code>constrained_delegation_protocol_transition</code> <code>unconstrained_delegation</code></td><td>4769</td><td>Monitor for Event ID 4769 (Kerberos Service Ticket Request) where the service name indicates delegation is being used, particularly focusing on accounts like lab.delegsvc and lab-unconstr$.</td></tr>
+</table></div>
+<h3>Exploitability triage (fix order for this environment)</h3><div class='table-wrap'><table class='ai-triage'><tr><th>#</th><th>Checks</th><th>Objects</th><th>Why</th></tr>
+<tr class='data-row'><td>1</td><td><code>dcsync_rights</code></td><td>TEST\lab.svcsync, TEST\gladi.simona, TEST\aprilette.madelyn</td><td>These accounts hold direct DCSync rights on the domain head, allowing immediate extraction of all domain credentials.</td></tr>
+<tr class='data-row'><td>2</td><td><code>constrained_delegation_protocol_transition</code></td><td>lab.delegsvc</td><td>Constrained delegation with protocol transition to a domain controller allows immediate impersonation of Tier 0 administrators.</td></tr>
+<tr class='data-row'><td>3</td><td><code>unconstrained_delegation</code></td><td>lab-unconstr$</td><td>Unconstrained delegation on a member server poses an immediate threat of credential theft if any Tier 0 administrator connects to it.</td></tr>
+<tr class='data-row'><td>4</td><td><code>dangerous_ace_anywhere</code></td><td>TEST\marketing, TEST\Project management, TEST\Senior management, TEST\LabAdminsShadow</td><td>These groups form a direct escalation path to control the DCSync-enabled account lab.svcsync.</td></tr>
+<tr class='data-row'><td>5</td><td><code>asrep_roastable</code></td><td>lab.asrep, bethany.eadith</td><td>These accounts allow offline password cracking without active interaction, posing a high risk of credential exposure.</td></tr>
+</table></div>
+<h3>Attack paths toward Tier 0</h3>
+<div style='margin:10px 0'><b>Direct DCSync Abuse by Non-Privileged Users</b> <span class="sev-pill sev-pill-critical">Critical</span>
+<div class='meta' style='margin:4px 0'>TEST\aprilette.madelyn -&gt; DCSync -&gt; Tier 0</div>
+<div>The non-privileged user TEST\aprilette.madelyn (as well as gladi.simona and lab.svcsync) has been granted DCSync rights on the domain head. An attacker compromising any of these accounts can immediately request all domain password hashes, achieving total domain compromise. Break this chain by revoking DCSync rights from these accounts.</div>
+</div>
+<div style='margin:10px 0'><b>Protocol Transition Abuse via lab.delegsvc</b> <span class="sev-pill sev-pill-critical">Critical</span>
+<div class='meta' style='margin:4px 0'>lab.delegsvc -&gt; Protocol transition -&gt; Tier 0</div>
+<div>lab.delegsvc is configured with constrained delegation with protocol transition to ldap/dctest4.test.com. An attacker compromising lab.delegsvc can impersonate any domain user (including Domain Admins) to the domain controller. Break this chain by removing the protocol transition configuration.</div>
+</div>
+<div style='margin:10px 0'><b>Unconstrained Delegation Abuse on lab-unconstr$</b> <span class="sev-pill sev-pill-high">High</span>
+<div class='meta' style='margin:4px 0'>lab-unconstr$ -&gt; Unconstrained delegation -&gt; Tier 0</div>
+<div>lab-unconstr$ is configured with unconstrained delegation. If a Tier 0 administrator connects to this host, their Ticket Granting Ticket (TGT) is cached in memory, allowing an attacker with local admin rights on lab-unconstr$ to harvest the ticket and compromise the domain. Break this chain by disabling unconstrained delegation on lab-unconstr$.</div>
+</div>
+<div style='margin:10px 0'><b>Delegated ACL Escalation to DCSync Account</b> <span class="sev-pill sev-pill-high">High</span>
+<div class='meta' style='margin:4px 0'>TEST\marketing -&gt; ACL path -&gt; TEST\LabAdminsShadow -&gt; ACL path -&gt; TEST\lab.svcsync -&gt; DCSync -&gt; Tier 0</div>
+<div>A chain of dangerous permissions allows members of non-privileged groups (such as marketing, Project management, or Senior management) to modify other groups, eventually granting control over TEST\lab.svcsync, which holds DCSync rights. Break this chain by removing the dangerous WriteDacl and GenericAll permissions on the intermediate groups.</div>
+</div>
+<div style='margin:10px 0'><b>Resource-Based Constrained Delegation via lab-rbcdtarget$</b> <span class="sev-pill sev-pill-medium">Medium</span>
+<div class='meta' style='margin:4px 0'>lab-rbcdtarget$ -&gt; RBCD -&gt; Tier 0</div>
+<div>lab-rbcdtarget$ is configured for Resource-Based Constrained Delegation, allowing lab.rbcdsrc to act on behalf of other identities. If lab.rbcdsrc is compromised, an attacker can gain administrative control over lab-rbcdtarget$, which may lead to Tier 0 escalation if lab-rbcdtarget$ hosts sensitive administrative sessions. Break this chain by removing the RBCD configuration.</div>
+</div>
+<h3>Remediation scripts (review before running)</h3>
+<p class='meta'>Generated PowerShell using native cmdlets, with object names as placeholders. Treat as a starting point: read it, substitute the real objects, and test in a lab first.</p>
+<div style='margin:10px 0'><span class='check-id'>Fix for <code>machine_account_quota</code></span>
+<div class='ai-script'>Set-ADDomain -Identity &quot;test.com&quot; -Replace @{&quot;ms-DS-MachineAccountQuota&quot;=0}</div>
+<div class='meta'>Caveats: Setting this to 0 prevents non-administrative users from joining workstations to the domain. Ensure helpdesk workflows are adjusted accordingly.</div>
+</div>
+<div style='margin:10px 0'><span class='check-id'>Fix for <code>recycle_bin_disabled</code></span>
+<div class='ai-script'>Enable-ADOptionalFeature -Identity &quot;Recycle Bin Feature&quot; -Scope ForestOrConfigurationSet -Target &quot;test.com&quot;</div>
+<div class='meta'>Caveats: Enabling the Active Directory Recycle Bin is irreversible. Ensure the forest functional level is at least Windows Server 2008 R2.</div>
+</div>
+<div style='margin:10px 0'><span class='check-id'>Fix for <code>unconstrained_delegation</code></span>
+<div class='ai-script'>Set-ADComputer -Identity &quot;lab-unconstr$&quot; -TrustedForDelegation $false</div>
+<div class='meta'>Caveats: Disabling unconstrained delegation will break applications that rely on double-hop authentication. Test application functionality after applying.</div>
+</div>
+<div style='margin:10px 0'><span class='check-id'>Fix for <code>asrep_roastable</code></span>
+<div class='ai-script'>Set-ADUser -Identity &quot;lab.asrep&quot; -DoesNotRequirePreAuth $false
+Set-ADUser -Identity &quot;bethany.eadith&quot; -DoesNotRequirePreAuth $false</div>
+<div class='meta'>Caveats: Enabling Kerberos pre-authentication is standard practice. Ensure the affected accounts do not belong to legacy applications that cannot support pre-authentication.</div>
+</div>
+<p class='meta'>Generated by a language model from findings computed locally. Verify every recommendation before acting; the deterministic sections of this report are authoritative.</p></div>
+
+<blockquote class="warn"><b>Incomplete coverage.</b> Some sections could not be collected; the checks below were <b>not evaluated</b> (zero findings there does not mean compliant).<ul>
+<li><code>pwq_duplicate_passwords</code> Accounts sharing the same password: no password-quality report supplied (run Export-PasswordQuality.ps1, pass -PasswordQualityFile)</li>
+<li><code>pwq_default_password</code> Account with a default or username-equal password: no password-quality report supplied (run Export-PasswordQuality.ps1, pass -PasswordQualityFile)</li>
+<li><code>pwq_empty_password</code> Account with an empty password: no password-quality report supplied (run Export-PasswordQuality.ps1, pass -PasswordQualityFile)</li>
+<li><code>pwq_breached_password</code> Account using a known-breached password: no password-quality report supplied (run Export-PasswordQuality.ps1, pass -PasswordQualityFile)</li>
+<li><code>pwq_cleartext_stored</code> Password recoverable in cleartext (reversible encryption): no password-quality report supplied (run Export-PasswordQuality.ps1, pass -PasswordQualityFile)</li>
+</ul></blockquote>
+<details open><summary><h2>Summary by category</h2></summary><div class="table-wrap"><table><tr><th>Category</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th><th>Checks triggered</th></tr>
+<tr class="data-row"><td>Kerberos</td><td>1</td><td>6</td><td>7</td><td>0</td><td>8</td></tr>
+<tr class="data-row"><td>Privileged Access</td><td>0</td><td>0</td><td>6</td><td>1</td><td>4</td></tr>
+<tr class="data-row"><td>Account Hygiene</td><td>0</td><td>3</td><td>1</td><td>6</td><td>4</td></tr>
+<tr class="data-row"><td>Domain Configuration</td><td>0</td><td>1</td><td>2</td><td>5</td><td>6</td></tr>
+<tr class="data-row"><td>Operational Health</td><td>0</td><td>0</td><td>1</td><td>0</td><td>1</td></tr>
+<tr class="data-row"><td>Permissions</td><td>3</td><td>12</td><td>0</td><td>0</td><td>2</td></tr>
+<tr class="data-row"><td>Certificate Services</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+<tr class="data-row"><td>Host Hardening</td><td>0</td><td>2</td><td>10</td><td>1</td><td>13</td></tr>
+<tr class="data-row"><td>Password Quality</td><td>0</td><td>0</td><td>0</td><td>0</td><td>0</td></tr>
+</table></div></details>
+<details open><summary><h2>Findings by check</h2></summary>
+<details class="check"><summary><span class="sev-pill sev-pill-critical">Critical</span><span class="check-title">Non-default principal with DCSync rights</span><span class="check-id">dcsync_rights &middot; Permissions</span><span class="count">3 objects</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> Replicating Directory Changes All on the domain head lets the principal retrieve every password hash, including krbtgt.</div>
+<div class="kv"><b>Remediation.</b> Remove the right unless it belongs to a documented synchronization account; protect any such account as Tier 0.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1003/006/" target="_blank" rel="noopener">T1003.006</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-critical">Critical</span></td><td title="DC=test,DC=com"><b>TEST\aprilette.madelyn</b></td><td>acl</td><td>Rights on domain head: ExtendedRight(DS-Replication-Get-Changes-All).</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-critical">Critical</span></td><td title="DC=test,DC=com"><b>TEST\gladi.simona</b></td><td>acl</td><td>Rights on domain head: ExtendedRight(DS-Replication-Get-Changes-All).</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-critical">Critical</span></td><td title="DC=test,DC=com"><b>TEST\lab.svcsync</b></td><td>acl</td><td>Rights on domain head: ExtendedRight(DS-Replication-Get-Changes-All).</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-critical">Critical</span><span class="check-title">Constrained delegation with protocol transition</span><span class="check-id">constrained_delegation_protocol_transition &middot; Kerberos</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> TRUSTED_TO_AUTH_FOR_DELEGATION lets the account obtain a ticket for any user (including admins) to the listed services without that user ever authenticating (S4U2Self + S4U2Proxy). The service part of the SPN is not protected, so any service on the target host is reachable.</div>
+<div class="kv"><b>Remediation.</b> Use Kerberos-only constrained delegation where possible, restrict the target list, and protect the source account as Tier 0 when the targets are sensitive.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1550/003/" target="_blank" rel="noopener">T1550.003</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-critical">Critical</span></td><td title="CN=lab.delegsvc,OU=IDWolfLab,DC=test,DC=com"><b>lab.delegsvc</b></td><td>user</td><td>Protocol transition (any-auth) to: ldap/dctest4.test.com. Targets include domain controller services: ldap/dctest4.test.com.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Dangerous permission held by a non-privileged principal</span><span class="check-id">dangerous_ace_anywhere &middot; Permissions</span><span class="count">12 objects</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> A non-privileged principal holds a control right (GenericAll, WriteDacl, WriteOwner, GenericWrite, member/SPN/key-credential write, forced password reset) over a user, computer, group or OU. This is a delegation path to whatever that object controls. Found only with a deep ACL sweep.</div>
+<div class="kv"><b>Remediation.</b> Remove the ACE or scope the delegation to the minimum needed. Prioritize ACEs over Tier 0 or over objects that lead to Tier 0.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/" target="_blank" rel="noopener">T1098</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=Project management,CN=Users,DC=test,DC=com"><b>TEST\accounting</b></td><td>acl</td><td>GenericAll over group &#39;Project management&#39;.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=lab.svcsync,OU=IDWolfLab,DC=test,DC=com"><b>TEST\LabAdminsShadow</b></td><td>acl</td><td>GenericAll over user &#39;lab.svcsync&#39;.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=LabOps,OU=IDWolfLab,DC=test,DC=com"><b>TEST\LabHelpdesk</b></td><td>acl</td><td>GenericWrite over group &#39;LabOps&#39;.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=LabAdminsShadow,OU=IDWolfLab,DC=test,DC=com"><b>TEST\LabOps</b></td><td>acl</td><td>WriteDacl over group &#39;LabAdminsShadow&#39;.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=Senior management,CN=Users,DC=test,DC=com"><b>TEST\marketing</b></td><td>acl</td><td>WriteDacl over group &#39;Senior management&#39;.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=Project management,CN=Users,DC=test,DC=com"><b>TEST\marketing</b></td><td>acl</td><td>GenericWrite over group &#39;Project management&#39;.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=Office Admin,CN=Users,DC=test,DC=com"><b>TEST\Project management</b></td><td>acl</td><td>WriteOwner over group &#39;Office Admin&#39;.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=Executives,CN=Users,DC=test,DC=com"><b>TEST\Project management</b></td><td>acl</td><td>WriteProperty(all) over group &#39;Executives&#39;.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=Gladi Simona,CN=Users,DC=test,DC=com"><b>TEST\sales</b></td><td>acl</td><td>GenericWrite over user &#39;gladi.simona&#39;.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=Project management,CN=Users,DC=test,DC=com"><b>TEST\sales</b></td><td>acl</td><td>WriteProperty(all) over group &#39;Project management&#39;.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=Executives,CN=Users,DC=test,DC=com"><b>TEST\Senior management</b></td><td>acl</td><td>WriteDacl over group &#39;Executives&#39;.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=Office Admin,CN=Users,DC=test,DC=com"><b>TEST\Senior management</b></td><td>acl</td><td>GenericAll over group &#39;Office Admin&#39;.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Privileged account can be delegated</span><span class="check-id">privileged_account_delegable &middot; Kerberos</span><span class="count">3 objects</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> Tier 0 account neither marked &quot;sensitive and cannot be delegated&quot; nor in Protected Users: its credentials can be captured and replayed through any delegation-enabled host it touches.</div>
+<div class="kv"><b>Remediation.</b> Add the account to Protected Users (after testing: it disables NTLM, DES/RC4 and delegation for it) or set NOT_DELEGATED.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1558/" target="_blank" rel="noopener">T1558</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=admin,CN=Users,DC=test,DC=com"><b>admin</b></td><td>user</td><td>Member of Domain Admins, Enterprise Admins, Administrators (builtin); not in Protected Users and NOT_DELEGATED not set.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=Administrator,CN=Users,DC=test,DC=com"><b>Administrator</b></td><td>user</td><td>Member of Domain Admins, Enterprise Admins, Schema Admins, Administrators (builtin), Group Policy Creator Owners; not in Protected Users and NOT_DELEGATED not set.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=vboxuser,CN=Users,DC=test,DC=com"><b>vboxuser</b></td><td>user</td><td>Member of Administrators (builtin); not in Protected Users and NOT_DELEGATED not set.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Possible password in description</span><span class="check-id">password_in_description &middot; Account Hygiene</span><span class="count">2 objects</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> The description attribute is readable by every authenticated user. The collector masked the value.</div>
+<div class="kv"><b>Remediation.</b> Remove the credential from the description and reset the password: consider it disclosed.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1552/" target="_blank" rel="noopener">T1552</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=Alvira Hatty,CN=Users,DC=test,DC=com"><b>alvira.hatty</b></td><td>user</td><td>Description (masked): &#39;[masked by collector: 26 chars]&#39;. Enabled: True.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=Myrle Ceil,CN=Users,DC=test,DC=com"><b>myrle.ceil</b></td><td>user</td><td>Description (masked): &#39;[masked by collector: 26 chars]&#39;. Enabled: True.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Kerberos pre-authentication disabled (AS-REP roastable)</span><span class="check-id">asrep_roastable &middot; Kerberos</span><span class="count">2 objects</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> With DONT_REQ_PREAUTH set, anyone who can reach a DC (no credentials needed) can request an AS-REP for the account and crack it offline.</div>
+<div class="kv"><b>Remediation.</b> Clear &quot;Do not require Kerberos preauthentication&quot; unless a documented legacy dependency exists; if it does, enforce a long random password.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1558/004/" target="_blank" rel="noopener">T1558.004</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=Bethany Eadith,CN=Users,DC=test,DC=com"><b>bethany.eadith</b></td><td>user</td><td>Pre-authentication disabled. Password age: 6 days.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=lab.asrep,OU=IDWolfLab,DC=test,DC=com"><b>lab.asrep</b></td><td>user</td><td>Pre-authentication disabled. Password age: 0 days.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Short minimum password length</span><span class="check-id">password_policy_short &middot; Domain Configuration</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> Default Domain Policy minimum length below the configured threshold.</div>
+<div class="kv"><b>Remediation.</b> Raise the minimum length (14+ for users; longer or passwordless for admins) and add banned-password filtering.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1110/" target="_blank" rel="noopener">T1110</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="DC=test,DC=com"><b>Default Domain Policy</b></td><td>policy</td><td>Minimum length 7 (baseline 12).</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">No advanced audit policy applied to domain controllers</span><span class="check-id">audit_advanced_policy_missing &middot; Host Hardening</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> No GPO linked to the Domain Controllers OU defines an advanced audit policy (audit.csv). Security auditing on the DCs is effectively at defaults, so most attacker actions are not recorded.</div>
+<div class="kv"><b>Remediation.</b> Deploy an Advanced Audit Policy GPO to the Domain Controllers OU covering credential validation, Kerberos, account/group management, DS access/changes, logon, privilege use and policy change.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1562/002/" target="_blank" rel="noopener">T1562.002</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title=""><b>Domain Controllers</b></td><td>gpo</td><td>No GPO linked to the Domain Controllers OU defines an advanced audit policy (audit.csv).</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">LAPS not deployed</span><span class="check-id">laps_not_deployed &middot; Account Hygiene</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> Neither legacy LAPS nor Windows LAPS schema attributes exist: local administrator passwords are likely identical across machines, enabling lateral movement with a single hash.</div>
+<div class="kv"><b>Remediation.</b> Deploy Windows LAPS (built into current Windows) and back up passwords to AD with encryption.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1550/002/" target="_blank" rel="noopener">T1550.002</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="DC=test,DC=com"><b>test.com</b></td><td>domain</td><td>Neither ms-Mcs-AdmPwdExpirationTime (legacy LAPS) nor msLAPS-PasswordExpirationTime (Windows LAPS) exists in the schema.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">LDAP server signing not required</span><span class="check-id">ldap_signing_not_required &middot; Host Hardening</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> The DCs do not require LDAP signing (LDAPServerIntegrity &lt; 2). LDAP is a common NTLM-relay target for privilege escalation (e.g. relay to LDAP then RBCD).</div>
+<div class="kv"><b>Remediation.</b> Set &quot;Domain controller: LDAP server signing requirements&quot; to &quot;Require signing&quot; once clients support it.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1557/001/" target="_blank" rel="noopener">T1557.001</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title=""><b>Domain Controllers</b></td><td>gpo</td><td>LDAPServerIntegrity = 1 (2 = require).</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Unconstrained delegation on non-DC principal</span><span class="check-id">unconstrained_delegation &middot; Kerberos</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> Hosts trusted for unconstrained delegation cache the TGT of every user that authenticates to them. Combined with coercion (e.g. printer bug, PetitPotam) this yields a DC TGT and full domain compromise.</div>
+<div class="kv"><b>Remediation.</b> Replace with constrained or resource-based constrained delegation. Add Tier 0 accounts to Protected Users or mark them &quot;sensitive and cannot be delegated&quot;.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1558/" target="_blank" rel="noopener">T1558</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td title="CN=lab-unconstr,OU=IDWolfLab,DC=test,DC=com"><b>lab-unconstr$</b></td><td>computer</td><td>TRUSTED_FOR_DELEGATION set on a computer that is not a domain controller.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">User account with SPN (Kerberoastable)</span><span class="check-id">kerberoastable_user &middot; Kerberos</span><span class="count">4 objects</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> Service account whose ticket can be requested and cracked offline by any domain user. Risk grows with password age and weak encryption types.</div>
+<div class="kv"><b>Remediation.</b> Migrate the service to a gMSA. If not possible, set a random password of 25+ characters, enforce AES only (msDS-SupportedEncryptionTypes = 24) and rotate it regularly.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1558/003/" target="_blank" rel="noopener">T1558.003</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="CN=exchange_svc,CN=Managed Service Accounts,DC=test,DC=com"><b>exchange_svc$</b></td><td>msa</td><td>Standalone managed service account (sMSA) with SPN and a settable password. SPN: exchange_svc/exserver.test.com.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="CN=http_svc,CN=Managed Service Accounts,DC=test,DC=com"><b>http_svc$</b></td><td>msa</td><td>Standalone managed service account (sMSA) with SPN and a settable password. SPN: http_svc/httpserver.test.com.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="CN=lab.delegsvc,OU=IDWolfLab,DC=test,DC=com"><b>lab.delegsvc</b></td><td>user</td><td>SPN: HTTP/labdeleg.test.com. Password age: 0 days.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="CN=mssql_svc,CN=Managed Service Accounts,DC=test,DC=com"><b>mssql_svc$</b></td><td>msa</td><td>Standalone managed service account (sMSA) with SPN and a settable password. SPN: mssql_svc/mssqlserver.test.com.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Schema / Enterprise Admins not empty</span><span class="check-id">schema_enterprise_admins_populated &middot; Privileged Access</span><span class="count">3 objects</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> Microsoft guidance is to keep Schema Admins and Enterprise Admins empty and populate them only for the duration of a change.</div>
+<div class="kv"><b>Remediation.</b> Remove permanent members and use a just-in-time procedure to add them when needed.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="CN=admin,CN=Users,DC=test,DC=com"><b>admin</b></td><td>user</td><td>Member of Enterprise Admins via: Enterprise Admins &gt; admin. Account enabled.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="CN=Administrator,CN=Users,DC=test,DC=com"><b>Administrator</b></td><td>user</td><td>Member of Enterprise Admins via: Enterprise Admins &gt; Administrator. Account enabled.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="CN=Administrator,CN=Users,DC=test,DC=com"><b>Administrator</b></td><td>user</td><td>Member of Schema Admins via: Schema Admins &gt; Administrator. Account enabled.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Privileged account with password never expires</span><span class="check-id">privileged_password_never_expires &middot; Privileged Access</span><span class="count">2 objects</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> DONT_EXPIRE_PASSWORD on a Tier 0 account removes the only built-in guarantee that its password is ever changed.</div>
+<div class="kv"><b>Remediation.</b> Clear the flag, or document the exception (break-glass) with compensating controls.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="CN=admin,CN=Users,DC=test,DC=com"><b>admin</b></td><td>user</td><td>Member of Domain Admins, Enterprise Admins, Administrators (builtin).</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="CN=Administrator,CN=Users,DC=test,DC=com"><b>Administrator</b></td><td>user</td><td>Member of Domain Admins, Enterprise Admins, Schema Admins, Administrators (builtin), Group Policy Creator Owners.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Too many cached logon credentials</span><span class="check-id">cached_credentials &middot; Host Hardening</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> The number of cached interactive logons is high or unset (default 10). Cached domain credentials can be extracted offline from a stolen or compromised machine; domain controllers and admin hosts should cache few or none.</div>
+<div class="kv"><b>Remediation.</b> Set &quot;Interactive logon: Number of previous logons to cache&quot; to a low value (0 on DCs and PAWs, &lt;= 4 elsewhere) via GPO.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1003/005/" target="_blank" rel="noopener">T1003.005</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title=""><b>Domain Controllers</b></td><td>gpo</td><td>CachedLogonsCount = not configured (default 10).</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">LSASS not running as a protected process (RunAsPPL)</span><span class="check-id">lsass_not_protected &middot; Host Hardening</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> RunAsPPL is not enforced, so credential-theft tools can open LSASS and dump secrets more easily on the DCs.</div>
+<div class="kv"><b>Remediation.</b> Enable &quot;Configure LSASS to run as a protected process&quot; (RunAsPPL = 1) after checking driver/AV compatibility.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1003/001/" target="_blank" rel="noopener">T1003.001</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title=""><b>Domain Controllers</b></td><td>gpo</td><td>RunAsPPL = not configured.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">LDAP channel binding not enforced</span><span class="check-id">ldap_channel_binding_off &middot; Host Hardening</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> LdapEnforceChannelBinding is not set to Always. Channel binding blocks relaying LDAPS authentication.</div>
+<div class="kv"><b>Remediation.</b> Set LDAP channel binding to &quot;When supported&quot; then &quot;Always&quot; after validating clients.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1557/001/" target="_blank" rel="noopener">T1557.001</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title=""><b>Domain Controllers</b></td><td>gpo</td><td>LdapEnforceChannelBinding = not configured (2 = always).</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Anonymous SAM / share enumeration allowed</span><span class="check-id">anonymous_sam_enum &middot; Host Hardening</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> RestrictAnonymous / RestrictAnonymousSAM are not enforced, allowing anonymous enumeration of accounts and shares that feeds password spraying and recon.</div>
+<div class="kv"><b>Remediation.</b> Enable &quot;Do not allow anonymous enumeration of SAM accounts and shares&quot;.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1087/" target="_blank" rel="noopener">T1087</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title=""><b>Domain Controllers</b></td><td>gpo</td><td>RestrictAnonymousSAM = not configured.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">UNC hardened paths not configured for SYSVOL / NETLOGON</span><span class="check-id">unc_hardening_disabled &middot; Host Hardening</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> Hardened UNC paths for \\*\SYSVOL and \\*\NETLOGON (RequireMutualAuthentication and RequireIntegrity) are not enforced. Without them, GPO and logon-script delivery can be tampered with or spoofed on the path to the DC (a GPO-over-SMB attack vector).</div>
+<div class="kv"><b>Remediation.</b> Configure &quot;Hardened UNC Paths&quot; for \\*\SYSVOL and \\*\NETLOGON with RequireMutualAuthentication=1 and RequireIntegrity=1 via GPO.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1557/" target="_blank" rel="noopener">T1557</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title=""><b>Domain Controllers</b></td><td>gpo</td><td>Hardened UNC Paths not configured for: \\*\SYSVOL, \\*\NETLOGON.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">LLMNR not disabled</span><span class="check-id">llmnr_enabled &middot; Host Hardening</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> Link-Local Multicast Name Resolution is not disabled (DNSClient EnableMulticast not set to 0). LLMNR lets an attacker on the same subnet answer name queries and capture or relay NTLM credentials (Responder-style poisoning).</div>
+<div class="kv"><b>Remediation.</b> Disable LLMNR via GPO (Turn off multicast name resolution = Enabled), together with NBT-NS hardening.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1557/001/" target="_blank" rel="noopener">T1557.001</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title=""><b>Domain Controllers</b></td><td>gpo</td><td>DNSClient EnableMulticast = not configured (0 = LLMNR disabled).</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Print Spooler not disabled on domain controllers</span><span class="check-id">spooler_on_dc &middot; Host Hardening</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> No GPO disables the Print Spooler service on the DCs. A running spooler on a DC is the lever for coercion attacks (PrinterBug / MS-RPRN) that force the DC to authenticate to an attacker, feeding NTLM relay and unconstrained-delegation chains.</div>
+<div class="kv"><b>Remediation.</b> Disable the Print Spooler service on all domain controllers via GPO (service startup = Disabled).</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1547/012/" target="_blank" rel="noopener">T1547.012</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title=""><b>Domain Controllers</b></td><td>gpo</td><td>Spooler service Start = not configured by GPO (4 = Disabled). Running config: dctest4.test.com (Auto, Running).</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">SMB client signing not required</span><span class="check-id">smb_client_signing_not_required &middot; Host Hardening</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> The SMB client does not require signing, which allows an attacker to relay or tamper with outbound SMB authentication from the DCs.</div>
+<div class="kv"><b>Remediation.</b> Set &quot;Microsoft network client: Digitally sign communications (always)&quot; to Enabled via GPO.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1557/001/" target="_blank" rel="noopener">T1557.001</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title=""><b>Domain Controllers</b></td><td>gpo</td><td>LanmanWorkstation RequireSecuritySignature (client) = not configured.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Command-line auditing not enabled in process creation events</span><span class="check-id">cmdline_audit_not_enabled &middot; Host Hardening</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> ProcessCreationIncludeCmdLine_Enabled is not set, so 4688 events do not record the full command line. Without it, malicious use of living-off-the-land binaries and scripts is far harder to detect.</div>
+<div class="kv"><b>Remediation.</b> Enable &quot;Include command line in process creation events&quot; via GPO, together with Audit Process Creation (Success).</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1562/002/" target="_blank" rel="noopener">T1562.002</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title=""><b>Domain Controllers</b></td><td>gpo</td><td>ProcessCreationIncludeCmdLine_Enabled = not configured.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">PowerShell script block / module logging not enabled</span><span class="check-id">powershell_logging_not_enabled &middot; Host Hardening</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> EnableScriptBlockLogging (and module logging) is not set, so PowerShell activity, a very common attacker tool, is not recorded for the SIEM.</div>
+<div class="kv"><b>Remediation.</b> Enable PowerShell Script Block Logging (and Module Logging) via GPO, and forward events 4104/4103 to the SIEM.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1562/002/" target="_blank" rel="noopener">T1562.002</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title=""><b>Domain Controllers</b></td><td>gpo</td><td>EnableScriptBlockLogging = not configured.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Resource-based constrained delegation (RBCD) configured</span><span class="check-id">rbcd_configured &middot; Kerberos</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> msDS-AllowedToActOnBehalfOfOtherIdentity lets the listed principals impersonate any user to this object. Often left behind by attacks (e.g. via MachineAccountQuota + relay).</div>
+<div class="kv"><b>Remediation.</b> Verify each allowed principal is expected. Clear the attribute if unknown. Any RBCD on a domain controller must be treated as an active compromise indicator.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1550/003/" target="_blank" rel="noopener">T1550.003</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="CN=lab-rbcdtarget,OU=IDWolfLab,DC=test,DC=com"><b>lab-rbcdtarget$</b></td><td>computer</td><td>Principals allowed to act on behalf of other identities: lab.rbcdsrc.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">No account lockout</span><span class="check-id">password_policy_no_lockout &middot; Domain Configuration</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> Lockout threshold is 0: online password spraying is unlimited.</div>
+<div class="kv"><b>Remediation.</b> Set a lockout threshold (e.g. 10) with a short duration, and monitor 4625/4771 events for spraying.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1110/003/" target="_blank" rel="noopener">T1110.003</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="DC=test,DC=com"><b>Default Domain Policy</b></td><td>policy</td><td>Lockout threshold = 0.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Built-in Administrator (RID 500) hygiene</span><span class="check-id">builtin_administrator_hygiene &middot; Privileged Access</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> The RID 500 account cannot be locked out and is a known target. It should be a vaulted break-glass account, not used day to day.</div>
+<div class="kv"><b>Remediation.</b> Vault the password, rotate it after each use, and alert on every logon of this account.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="CN=Administrator,CN=Users,DC=test,DC=com"><b>Administrator</b></td><td>user</td><td>RID 500 account: used 1 days ago (routine use suspected).</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Protected Users group is empty</span><span class="check-id">protected_users_empty &middot; Kerberos</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> Protected Users gives privileged accounts non-configurable protections (no NTLM, no delegation, no RC4/DES, 4h TGT). It is unused.</div>
+<div class="kv"><b>Remediation.</b> Add Tier 0 human accounts to Protected Users after a pilot. Do not add service accounts or computer accounts.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1550/" target="_blank" rel="noopener">T1550</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="CN=Protected Users,CN=Users,DC=test,DC=com"><b>Protected Users</b></td><td>group</td><td>Protected Users has no members while 3 principal(s) hold Tier 0 group membership.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">SPN account without AES-only encryption</span><span class="check-id">spn_account_rc4 &middot; Kerberos</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> An SPN account whose msDS-SupportedEncryptionTypes is unset or lacks AES can receive RC4-encrypted service tickets, which crack orders of magnitude faster than AES.</div>
+<div class="kv"><b>Remediation.</b> Set msDS-SupportedEncryptionTypes to 24 (AES128+AES256) after verifying the service supports AES, then reset the password so AES keys are generated.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1558/003/" target="_blank" rel="noopener">T1558.003</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="CN=lab.delegsvc,OU=IDWolfLab,DC=test,DC=com"><b>lab.delegsvc</b></td><td>user</td><td>msDS-SupportedEncryptionTypes not set: encryption type falls back to domain/DC defaults, RC4 possible.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Users can join computers to the domain</span><span class="check-id">machine_account_quota &middot; Account Hygiene</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> ms-DS-MachineAccountQuota &gt; 0 lets any user create computer accounts, a key building block of relay and RBCD attacks.</div>
+<div class="kv"><b>Remediation.</b> Set ms-DS-MachineAccountQuota to 0 and delegate domain join to a dedicated group.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1136/002/" target="_blank" rel="noopener">T1136.002</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="DC=test,DC=com"><b>test.com</b></td><td>domain</td><td>ms-DS-MachineAccountQuota = 10.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Low disk space on a domain controller</span><span class="check-id">dc_low_disk &middot; Operational Health</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> The system drive of a DC is nearly full. When the disk holding NTDS.dit fills up, AD stops accepting changes and the DC can stop working.</div>
+<div class="kv"><b>Remediation.</b> Free space or extend the volume; keep at least 10% (and several GB) free on the DCs.</div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title=""><b>dctest4.test.com</b></td><td>dc</td><td>C: has 4.2 GB free of 30.1 GB (14%).</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Single domain controller</span><span class="check-id">single_dc &middot; Domain Configuration</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> Only one DC: no redundancy and a harder, riskier recovery.</div>
+<div class="kv"><b>Remediation.</b> Deploy at least two writable DCs.</div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td title="CN=DCTEST4,OU=Domain Controllers,DC=test,DC=com"><b>DCTEST4</b></td><td>dc</td><td>Only one writable domain controller.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Password never expires</span><span class="check-id">password_never_expires &middot; Account Hygiene</span><span class="count">6 objects</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> Typical of service accounts whose passwords are never changed.</div>
+<div class="kv"><b>Remediation.</b> Migrate services to gMSA; for humans, clear the flag.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td title="CN=gabriele,CN=Users,DC=test,DC=com"><b>gabriele</b></td><td>user</td><td>Password age: 6 days.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td title="CN=lab.asrep,OU=IDWolfLab,DC=test,DC=com"><b>lab.asrep</b></td><td>user</td><td>Password age: 0 days.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td title="CN=lab.delegsvc,OU=IDWolfLab,DC=test,DC=com"><b>lab.delegsvc</b></td><td>user</td><td>Password age: 0 days.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td title="CN=lab.entry,OU=IDWolfLab,DC=test,DC=com"><b>lab.entry</b></td><td>user</td><td>Password age: 0 days.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td title="CN=lab.rbcdsrc,OU=IDWolfLab,DC=test,DC=com"><b>lab.rbcdsrc</b></td><td>user</td><td>Password age: 0 days.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td title="CN=lab.svcsync,OU=IDWolfLab,DC=test,DC=com"><b>lab.svcsync</b></td><td>user</td><td>Password age: 0 days.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">DNS aging/scavenging disabled</span><span class="check-id">dns_scavenging_disabled &middot; Domain Configuration</span><span class="count">3 objects</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> Without aging/scavenging, stale records accumulate; an attacker can claim an abandoned name that still resolves for clients.</div>
+<div class="kv"><b>Remediation.</b> Enable aging and scavenging on the zone with sensible refresh/no-refresh intervals.</div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td title=""><b>_msdcs.test.com</b></td><td>dnszone</td><td>Aging/scavenging not enabled on the zone.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td title=""><b>test.com</b></td><td>dnszone</td><td>Aging/scavenging not enabled on the zone.</td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td title=""><b>TrustAnchors</b></td><td>dnszone</td><td>Aging/scavenging not enabled on the zone.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">No subnets declared in Active Directory Sites</span><span class="check-id">dc_subnet_missing &middot; Domain Configuration</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> With no subnets defined, clients cannot be mapped to a site: they may authenticate against any DC (including a remote or RODC), and site-aware security and locality are lost. It is also a sign of an incompletely managed directory.</div>
+<div class="kv"><b>Remediation.</b> Declare every network subnet under Sites and Services and associate it with the correct site.</div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td title="DC=test,DC=com"><b>test.com</b></td><td>domain</td><td>No subnet objects are declared under Sites and Services.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">AD Recycle Bin not enabled</span><span class="check-id">recycle_bin_disabled &middot; Domain Configuration</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> Deleted objects cannot be restored with their attributes and group memberships, which slows recovery after an incident or an error.</div>
+<div class="kv"><b>Remediation.</b> Enable-ADOptionalFeature &#39;Recycle Bin Feature&#39;.</div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td title="DC=test,DC=com"><b>test.com</b></td><td>domain</td><td>Recycle Bin Feature has no enabled scope.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Kerberos armoring (FAST) not enforced on domain controllers</span><span class="check-id">kerberos_armoring_not_enforced &middot; Host Hardening</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> EnableCbacAndArmor / the KDC &quot;fail unarmored&quot; setting is not enforced, so Kerberos pre-authentication is not protected by FAST and remains exposed to AS-REP roasting and some downgrade attacks.</div>
+<div class="kv"><b>Remediation.</b> Once the functional level and clients support it, enable KDC support for claims/armoring and require armored requests via GPO.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1558/" target="_blank" rel="noopener">T1558</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td title=""><b>Domain Controllers</b></td><td>gpo</td><td>KDC EnableCbacAndArmor = not configured.</td></tr>
+</table></div></div></details>
+<details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">No authentication policy silo in use</span><span class="check-id">auth_policy_silo_unused &middot; Privileged Access</span><span class="count">1 object</span></summary><div class="body">
+<div class="kv"><b>Why it matters.</b> The domain defines no authentication policy silos. Silos (2012R2+) confine Tier 0 accounts so their TGTs can only be used from designated hosts and enforce Protected-Users-style restrictions, limiting credential theft and lateral movement. They are a key Tier 0 containment control and are unused here.</div>
+<div class="kv"><b>Remediation.</b> Create an authentication policy and silo for Tier 0 accounts and admin workstations, pilot it, then assign the Tier 0 accounts. Combine with Protected Users.</div>
+<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></div>
+<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td title="DC=test,DC=com"><b>test.com</b></td><td>domain</td><td>No authentication policy silo defined while 3 Tier 0 principal(s) exist.</td></tr>
+</table></div></div></details>
+</details>
+<details><summary><h2>Tier 0 inventory</h2></summary>
+<p class="meta">Effective members of privileged groups, resolved by SID through nested groups and primaryGroupID. PU = Protected Users, ND = "sensitive and cannot be delegated".</p>
+<div class="table-wrap"><table><tr><th>Principal</th><th>Type</th><th>Enabled</th><th>Privileged groups</th><th>Membership path</th><th>Last logon</th><th>Password age</th><th>SPN</th><th>PU / ND</th><th>Never expires</th></tr>
+<tr class="data-row"><td title="CN=admin,CN=Users,DC=test,DC=com"><b>admin</b></td><td>user</td><td>yes</td><td>Domain Admins, Enterprise Admins, Administrators (builtin)</td><td>Domain Admins &gt; admin | Enterprise Admins &gt; admin | Administrators &gt; Domain Admins &gt; admin | Administrators &gt; Enterprise Admins &gt; admin</td><td>6 days</td><td>1 days</td><td><span class="no">no</span></td><td><span class="yes">none</span></td><td><span class="yes">yes</span></td></tr>
+<tr class="data-row"><td title="CN=Administrator,CN=Users,DC=test,DC=com"><b>Administrator</b></td><td>user</td><td>yes</td><td>Domain Admins, Enterprise Admins, Schema Admins, Administrators (builtin), Group Policy Creator Owners</td><td>Domain Admins &gt; Administrator | Enterprise Admins &gt; Administrator | Schema Admins &gt; Administrator | Administrators &gt; Administrator | Administrators &gt; Domain Admins &gt; Administrator | Administrators &gt; Enterprise Admins &gt; Administrator | Group Policy Creator Owners &gt; Administrator</td><td>1 days</td><td>1 days</td><td><span class="no">no</span></td><td><span class="yes">none</span></td><td><span class="yes">yes</span></td></tr>
+<tr class="data-row"><td title="CN=vboxuser,CN=Users,DC=test,DC=com"><b>vboxuser</b></td><td>user</td><td>yes</td><td>Administrators (builtin)</td><td>Administrators &gt; vboxuser</td><td>6 days</td><td>7 days</td><td><span class="no">no</span></td><td><span class="yes">none</span></td><td><span class="no">no</span></td></tr>
+</table></div></details>
+<details><summary><h2>Domain posture</h2></summary><div class="table-wrap"><table><tr><th>Item</th><th>Value</th></tr>
+<tr class="data-row"><td>Domain / forest functional level</td><td>Windows2016Domain / Windows2016Forest</td></tr>
+<tr class="data-row"><td>krbtgt password age</td><td>6 days</td></tr>
+<tr class="data-row"><td>Domain controllers</td><td>DCTEST4 (Windows Server 2025 Standard Evaluation)</td></tr>
+<tr class="data-row"><td>Password policy</td><td>min length 7, complexity True, lockout 0, max age 42d, history 24</td></tr>
+<tr class="data-row"><td>Fine-grained policies</td><td>0</td></tr>
+<tr class="data-row"><td>ms-DS-MachineAccountQuota</td><td>10</td></tr>
+<tr class="data-row"><td>LAPS schema (legacy / Windows)</td><td>False / False</td></tr>
+<tr class="data-row"><td>Recycle Bin</td><td>False</td></tr>
+<tr class="data-row"><td>dSHeuristics</td><td>(not set)</td></tr>
+<tr class="data-row"><td>External / forest trusts</td><td>0</td></tr>
+<tr class="data-row"><td>SYSVOL scanned for cpassword</td><td>True</td></tr>
+</table></div>
+<p class="meta">Thresholds: krbtgt 180/365 days, privileged inactivity 90 days, user inactivity 180 days, stale computer 90 days, password age 365 days, minimum length 12, max Domain Admins 5.</p></details>
+<details><summary><h2>All findings</h2></summary><div class="table-wrap"><table>
+<tr><th>Severity</th><th>Check</th><th>Category</th><th>Object</th><th>Type</th><th>Detail</th><th>MITRE</th></tr>
+<tr class="filter-row"><td><input type="text" placeholder="filter" oninput="filterMooseTable(this)"></td><td><input type="text" placeholder="filter" oninput="filterMooseTable(this)"></td><td><input type="text" placeholder="filter" oninput="filterMooseTable(this)"></td><td><input type="text" placeholder="filter" oninput="filterMooseTable(this)"></td><td><input type="text" placeholder="filter" oninput="filterMooseTable(this)"></td><td><input type="text" placeholder="filter" oninput="filterMooseTable(this)"></td><td><input type="text" placeholder="filter" oninput="filterMooseTable(this)"></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-critical">Critical</span></td><td>constrained_delegation_protocol_transition</td><td>Kerberos</td><td title="CN=lab.delegsvc,OU=IDWolfLab,DC=test,DC=com">lab.delegsvc</td><td>user</td><td>Protocol transition (any-auth) to: ldap/dctest4.test.com. Targets include domain controller services: ldap/dctest4.test.com.</td><td><a href="https://attack.mitre.org/techniques/T1550/003/" target="_blank" rel="noopener">T1550.003</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-critical">Critical</span></td><td>dcsync_rights</td><td>Permissions</td><td title="DC=test,DC=com">TEST\aprilette.madelyn</td><td>acl</td><td>Rights on domain head: ExtendedRight(DS-Replication-Get-Changes-All).</td><td><a href="https://attack.mitre.org/techniques/T1003/006/" target="_blank" rel="noopener">T1003.006</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-critical">Critical</span></td><td>dcsync_rights</td><td>Permissions</td><td title="DC=test,DC=com">TEST\gladi.simona</td><td>acl</td><td>Rights on domain head: ExtendedRight(DS-Replication-Get-Changes-All).</td><td><a href="https://attack.mitre.org/techniques/T1003/006/" target="_blank" rel="noopener">T1003.006</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-critical">Critical</span></td><td>dcsync_rights</td><td>Permissions</td><td title="DC=test,DC=com">TEST\lab.svcsync</td><td>acl</td><td>Rights on domain head: ExtendedRight(DS-Replication-Get-Changes-All).</td><td><a href="https://attack.mitre.org/techniques/T1003/006/" target="_blank" rel="noopener">T1003.006</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>asrep_roastable</td><td>Kerberos</td><td title="CN=Bethany Eadith,CN=Users,DC=test,DC=com">bethany.eadith</td><td>user</td><td>Pre-authentication disabled. Password age: 6 days.</td><td><a href="https://attack.mitre.org/techniques/T1558/004/" target="_blank" rel="noopener">T1558.004</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>asrep_roastable</td><td>Kerberos</td><td title="CN=lab.asrep,OU=IDWolfLab,DC=test,DC=com">lab.asrep</td><td>user</td><td>Pre-authentication disabled. Password age: 0 days.</td><td><a href="https://attack.mitre.org/techniques/T1558/004/" target="_blank" rel="noopener">T1558.004</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>audit_advanced_policy_missing</td><td>Host Hardening</td><td title="">Domain Controllers</td><td>gpo</td><td>No GPO linked to the Domain Controllers OU defines an advanced audit policy (audit.csv).</td><td><a href="https://attack.mitre.org/techniques/T1562/002/" target="_blank" rel="noopener">T1562.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>dangerous_ace_anywhere</td><td>Permissions</td><td title="CN=Project management,CN=Users,DC=test,DC=com">TEST\accounting</td><td>acl</td><td>GenericAll over group &#39;Project management&#39;.</td><td><a href="https://attack.mitre.org/techniques/T1098/" target="_blank" rel="noopener">T1098</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>dangerous_ace_anywhere</td><td>Permissions</td><td title="CN=lab.svcsync,OU=IDWolfLab,DC=test,DC=com">TEST\LabAdminsShadow</td><td>acl</td><td>GenericAll over user &#39;lab.svcsync&#39;.</td><td><a href="https://attack.mitre.org/techniques/T1098/" target="_blank" rel="noopener">T1098</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>dangerous_ace_anywhere</td><td>Permissions</td><td title="CN=LabOps,OU=IDWolfLab,DC=test,DC=com">TEST\LabHelpdesk</td><td>acl</td><td>GenericWrite over group &#39;LabOps&#39;.</td><td><a href="https://attack.mitre.org/techniques/T1098/" target="_blank" rel="noopener">T1098</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>dangerous_ace_anywhere</td><td>Permissions</td><td title="CN=LabAdminsShadow,OU=IDWolfLab,DC=test,DC=com">TEST\LabOps</td><td>acl</td><td>WriteDacl over group &#39;LabAdminsShadow&#39;.</td><td><a href="https://attack.mitre.org/techniques/T1098/" target="_blank" rel="noopener">T1098</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>dangerous_ace_anywhere</td><td>Permissions</td><td title="CN=Senior management,CN=Users,DC=test,DC=com">TEST\marketing</td><td>acl</td><td>WriteDacl over group &#39;Senior management&#39;.</td><td><a href="https://attack.mitre.org/techniques/T1098/" target="_blank" rel="noopener">T1098</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>dangerous_ace_anywhere</td><td>Permissions</td><td title="CN=Project management,CN=Users,DC=test,DC=com">TEST\marketing</td><td>acl</td><td>GenericWrite over group &#39;Project management&#39;.</td><td><a href="https://attack.mitre.org/techniques/T1098/" target="_blank" rel="noopener">T1098</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>dangerous_ace_anywhere</td><td>Permissions</td><td title="CN=Office Admin,CN=Users,DC=test,DC=com">TEST\Project management</td><td>acl</td><td>WriteOwner over group &#39;Office Admin&#39;.</td><td><a href="https://attack.mitre.org/techniques/T1098/" target="_blank" rel="noopener">T1098</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>dangerous_ace_anywhere</td><td>Permissions</td><td title="CN=Executives,CN=Users,DC=test,DC=com">TEST\Project management</td><td>acl</td><td>WriteProperty(all) over group &#39;Executives&#39;.</td><td><a href="https://attack.mitre.org/techniques/T1098/" target="_blank" rel="noopener">T1098</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>dangerous_ace_anywhere</td><td>Permissions</td><td title="CN=Gladi Simona,CN=Users,DC=test,DC=com">TEST\sales</td><td>acl</td><td>GenericWrite over user &#39;gladi.simona&#39;.</td><td><a href="https://attack.mitre.org/techniques/T1098/" target="_blank" rel="noopener">T1098</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>dangerous_ace_anywhere</td><td>Permissions</td><td title="CN=Project management,CN=Users,DC=test,DC=com">TEST\sales</td><td>acl</td><td>WriteProperty(all) over group &#39;Project management&#39;.</td><td><a href="https://attack.mitre.org/techniques/T1098/" target="_blank" rel="noopener">T1098</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>dangerous_ace_anywhere</td><td>Permissions</td><td title="CN=Executives,CN=Users,DC=test,DC=com">TEST\Senior management</td><td>acl</td><td>WriteDacl over group &#39;Executives&#39;.</td><td><a href="https://attack.mitre.org/techniques/T1098/" target="_blank" rel="noopener">T1098</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>dangerous_ace_anywhere</td><td>Permissions</td><td title="CN=Office Admin,CN=Users,DC=test,DC=com">TEST\Senior management</td><td>acl</td><td>GenericAll over group &#39;Office Admin&#39;.</td><td><a href="https://attack.mitre.org/techniques/T1098/" target="_blank" rel="noopener">T1098</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>laps_not_deployed</td><td>Account Hygiene</td><td title="DC=test,DC=com">test.com</td><td>domain</td><td>Neither ms-Mcs-AdmPwdExpirationTime (legacy LAPS) nor msLAPS-PasswordExpirationTime (Windows LAPS) exists in the schema.</td><td><a href="https://attack.mitre.org/techniques/T1550/002/" target="_blank" rel="noopener">T1550.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>ldap_signing_not_required</td><td>Host Hardening</td><td title="">Domain Controllers</td><td>gpo</td><td>LDAPServerIntegrity = 1 (2 = require).</td><td><a href="https://attack.mitre.org/techniques/T1557/001/" target="_blank" rel="noopener">T1557.001</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>password_in_description</td><td>Account Hygiene</td><td title="CN=Alvira Hatty,CN=Users,DC=test,DC=com">alvira.hatty</td><td>user</td><td>Description (masked): &#39;[masked by collector: 26 chars]&#39;. Enabled: True.</td><td><a href="https://attack.mitre.org/techniques/T1552/" target="_blank" rel="noopener">T1552</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>password_in_description</td><td>Account Hygiene</td><td title="CN=Myrle Ceil,CN=Users,DC=test,DC=com">myrle.ceil</td><td>user</td><td>Description (masked): &#39;[masked by collector: 26 chars]&#39;. Enabled: True.</td><td><a href="https://attack.mitre.org/techniques/T1552/" target="_blank" rel="noopener">T1552</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>password_policy_short</td><td>Domain Configuration</td><td title="DC=test,DC=com">Default Domain Policy</td><td>policy</td><td>Minimum length 7 (baseline 12).</td><td><a href="https://attack.mitre.org/techniques/T1110/" target="_blank" rel="noopener">T1110</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>privileged_account_delegable</td><td>Kerberos</td><td title="CN=admin,CN=Users,DC=test,DC=com">admin</td><td>user</td><td>Member of Domain Admins, Enterprise Admins, Administrators (builtin); not in Protected Users and NOT_DELEGATED not set.</td><td><a href="https://attack.mitre.org/techniques/T1558/" target="_blank" rel="noopener">T1558</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>privileged_account_delegable</td><td>Kerberos</td><td title="CN=Administrator,CN=Users,DC=test,DC=com">Administrator</td><td>user</td><td>Member of Domain Admins, Enterprise Admins, Schema Admins, Administrators (builtin), Group Policy Creator Owners; not in Protected Users and NOT_DELEGATED not set.</td><td><a href="https://attack.mitre.org/techniques/T1558/" target="_blank" rel="noopener">T1558</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>privileged_account_delegable</td><td>Kerberos</td><td title="CN=vboxuser,CN=Users,DC=test,DC=com">vboxuser</td><td>user</td><td>Member of Administrators (builtin); not in Protected Users and NOT_DELEGATED not set.</td><td><a href="https://attack.mitre.org/techniques/T1558/" target="_blank" rel="noopener">T1558</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td>unconstrained_delegation</td><td>Kerberos</td><td title="CN=lab-unconstr,OU=IDWolfLab,DC=test,DC=com">lab-unconstr$</td><td>computer</td><td>TRUSTED_FOR_DELEGATION set on a computer that is not a domain controller.</td><td><a href="https://attack.mitre.org/techniques/T1558/" target="_blank" rel="noopener">T1558</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>anonymous_sam_enum</td><td>Host Hardening</td><td title="">Domain Controllers</td><td>gpo</td><td>RestrictAnonymousSAM = not configured.</td><td><a href="https://attack.mitre.org/techniques/T1087/" target="_blank" rel="noopener">T1087</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>builtin_administrator_hygiene</td><td>Privileged Access</td><td title="CN=Administrator,CN=Users,DC=test,DC=com">Administrator</td><td>user</td><td>RID 500 account: used 1 days ago (routine use suspected).</td><td><a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>cached_credentials</td><td>Host Hardening</td><td title="">Domain Controllers</td><td>gpo</td><td>CachedLogonsCount = not configured (default 10).</td><td><a href="https://attack.mitre.org/techniques/T1003/005/" target="_blank" rel="noopener">T1003.005</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>cmdline_audit_not_enabled</td><td>Host Hardening</td><td title="">Domain Controllers</td><td>gpo</td><td>ProcessCreationIncludeCmdLine_Enabled = not configured.</td><td><a href="https://attack.mitre.org/techniques/T1562/002/" target="_blank" rel="noopener">T1562.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>dc_low_disk</td><td>Operational Health</td><td title="">dctest4.test.com</td><td>dc</td><td>C: has 4.2 GB free of 30.1 GB (14%).</td><td></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>kerberoastable_user</td><td>Kerberos</td><td title="CN=exchange_svc,CN=Managed Service Accounts,DC=test,DC=com">exchange_svc$</td><td>msa</td><td>Standalone managed service account (sMSA) with SPN and a settable password. SPN: exchange_svc/exserver.test.com.</td><td><a href="https://attack.mitre.org/techniques/T1558/003/" target="_blank" rel="noopener">T1558.003</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>kerberoastable_user</td><td>Kerberos</td><td title="CN=http_svc,CN=Managed Service Accounts,DC=test,DC=com">http_svc$</td><td>msa</td><td>Standalone managed service account (sMSA) with SPN and a settable password. SPN: http_svc/httpserver.test.com.</td><td><a href="https://attack.mitre.org/techniques/T1558/003/" target="_blank" rel="noopener">T1558.003</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>kerberoastable_user</td><td>Kerberos</td><td title="CN=lab.delegsvc,OU=IDWolfLab,DC=test,DC=com">lab.delegsvc</td><td>user</td><td>SPN: HTTP/labdeleg.test.com. Password age: 0 days.</td><td><a href="https://attack.mitre.org/techniques/T1558/003/" target="_blank" rel="noopener">T1558.003</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>kerberoastable_user</td><td>Kerberos</td><td title="CN=mssql_svc,CN=Managed Service Accounts,DC=test,DC=com">mssql_svc$</td><td>msa</td><td>Standalone managed service account (sMSA) with SPN and a settable password. SPN: mssql_svc/mssqlserver.test.com.</td><td><a href="https://attack.mitre.org/techniques/T1558/003/" target="_blank" rel="noopener">T1558.003</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>ldap_channel_binding_off</td><td>Host Hardening</td><td title="">Domain Controllers</td><td>gpo</td><td>LdapEnforceChannelBinding = not configured (2 = always).</td><td><a href="https://attack.mitre.org/techniques/T1557/001/" target="_blank" rel="noopener">T1557.001</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>llmnr_enabled</td><td>Host Hardening</td><td title="">Domain Controllers</td><td>gpo</td><td>DNSClient EnableMulticast = not configured (0 = LLMNR disabled).</td><td><a href="https://attack.mitre.org/techniques/T1557/001/" target="_blank" rel="noopener">T1557.001</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>lsass_not_protected</td><td>Host Hardening</td><td title="">Domain Controllers</td><td>gpo</td><td>RunAsPPL = not configured.</td><td><a href="https://attack.mitre.org/techniques/T1003/001/" target="_blank" rel="noopener">T1003.001</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>machine_account_quota</td><td>Account Hygiene</td><td title="DC=test,DC=com">test.com</td><td>domain</td><td>ms-DS-MachineAccountQuota = 10.</td><td><a href="https://attack.mitre.org/techniques/T1136/002/" target="_blank" rel="noopener">T1136.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>password_policy_no_lockout</td><td>Domain Configuration</td><td title="DC=test,DC=com">Default Domain Policy</td><td>policy</td><td>Lockout threshold = 0.</td><td><a href="https://attack.mitre.org/techniques/T1110/003/" target="_blank" rel="noopener">T1110.003</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>powershell_logging_not_enabled</td><td>Host Hardening</td><td title="">Domain Controllers</td><td>gpo</td><td>EnableScriptBlockLogging = not configured.</td><td><a href="https://attack.mitre.org/techniques/T1562/002/" target="_blank" rel="noopener">T1562.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>privileged_password_never_expires</td><td>Privileged Access</td><td title="CN=admin,CN=Users,DC=test,DC=com">admin</td><td>user</td><td>Member of Domain Admins, Enterprise Admins, Administrators (builtin).</td><td><a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>privileged_password_never_expires</td><td>Privileged Access</td><td title="CN=Administrator,CN=Users,DC=test,DC=com">Administrator</td><td>user</td><td>Member of Domain Admins, Enterprise Admins, Schema Admins, Administrators (builtin), Group Policy Creator Owners.</td><td><a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>protected_users_empty</td><td>Kerberos</td><td title="CN=Protected Users,CN=Users,DC=test,DC=com">Protected Users</td><td>group</td><td>Protected Users has no members while 3 principal(s) hold Tier 0 group membership.</td><td><a href="https://attack.mitre.org/techniques/T1550/" target="_blank" rel="noopener">T1550</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>rbcd_configured</td><td>Kerberos</td><td title="CN=lab-rbcdtarget,OU=IDWolfLab,DC=test,DC=com">lab-rbcdtarget$</td><td>computer</td><td>Principals allowed to act on behalf of other identities: lab.rbcdsrc.</td><td><a href="https://attack.mitre.org/techniques/T1550/003/" target="_blank" rel="noopener">T1550.003</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>schema_enterprise_admins_populated</td><td>Privileged Access</td><td title="CN=admin,CN=Users,DC=test,DC=com">admin</td><td>user</td><td>Member of Enterprise Admins via: Enterprise Admins &gt; admin. Account enabled.</td><td><a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>schema_enterprise_admins_populated</td><td>Privileged Access</td><td title="CN=Administrator,CN=Users,DC=test,DC=com">Administrator</td><td>user</td><td>Member of Enterprise Admins via: Enterprise Admins &gt; Administrator. Account enabled.</td><td><a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>schema_enterprise_admins_populated</td><td>Privileged Access</td><td title="CN=Administrator,CN=Users,DC=test,DC=com">Administrator</td><td>user</td><td>Member of Schema Admins via: Schema Admins &gt; Administrator. Account enabled.</td><td><a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>single_dc</td><td>Domain Configuration</td><td title="CN=DCTEST4,OU=Domain Controllers,DC=test,DC=com">DCTEST4</td><td>dc</td><td>Only one writable domain controller.</td><td></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>smb_client_signing_not_required</td><td>Host Hardening</td><td title="">Domain Controllers</td><td>gpo</td><td>LanmanWorkstation RequireSecuritySignature (client) = not configured.</td><td><a href="https://attack.mitre.org/techniques/T1557/001/" target="_blank" rel="noopener">T1557.001</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>spn_account_rc4</td><td>Kerberos</td><td title="CN=lab.delegsvc,OU=IDWolfLab,DC=test,DC=com">lab.delegsvc</td><td>user</td><td>msDS-SupportedEncryptionTypes not set: encryption type falls back to domain/DC defaults, RC4 possible.</td><td><a href="https://attack.mitre.org/techniques/T1558/003/" target="_blank" rel="noopener">T1558.003</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>spooler_on_dc</td><td>Host Hardening</td><td title="">Domain Controllers</td><td>gpo</td><td>Spooler service Start = not configured by GPO (4 = Disabled). Running config: dctest4.test.com (Auto, Running).</td><td><a href="https://attack.mitre.org/techniques/T1547/012/" target="_blank" rel="noopener">T1547.012</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>unc_hardening_disabled</td><td>Host Hardening</td><td title="">Domain Controllers</td><td>gpo</td><td>Hardened UNC Paths not configured for: \\*\SYSVOL, \\*\NETLOGON.</td><td><a href="https://attack.mitre.org/techniques/T1557/" target="_blank" rel="noopener">T1557</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td>auth_policy_silo_unused</td><td>Privileged Access</td><td title="DC=test,DC=com">test.com</td><td>domain</td><td>No authentication policy silo defined while 3 Tier 0 principal(s) exist.</td><td><a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td>dc_subnet_missing</td><td>Domain Configuration</td><td title="DC=test,DC=com">test.com</td><td>domain</td><td>No subnet objects are declared under Sites and Services.</td><td></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td>dns_scavenging_disabled</td><td>Domain Configuration</td><td title="">_msdcs.test.com</td><td>dnszone</td><td>Aging/scavenging not enabled on the zone.</td><td></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td>dns_scavenging_disabled</td><td>Domain Configuration</td><td title="">test.com</td><td>dnszone</td><td>Aging/scavenging not enabled on the zone.</td><td></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td>dns_scavenging_disabled</td><td>Domain Configuration</td><td title="">TrustAnchors</td><td>dnszone</td><td>Aging/scavenging not enabled on the zone.</td><td></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td>kerberos_armoring_not_enforced</td><td>Host Hardening</td><td title="">Domain Controllers</td><td>gpo</td><td>KDC EnableCbacAndArmor = not configured.</td><td><a href="https://attack.mitre.org/techniques/T1558/" target="_blank" rel="noopener">T1558</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td>password_never_expires</td><td>Account Hygiene</td><td title="CN=gabriele,CN=Users,DC=test,DC=com">gabriele</td><td>user</td><td>Password age: 6 days.</td><td><a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td>password_never_expires</td><td>Account Hygiene</td><td title="CN=lab.asrep,OU=IDWolfLab,DC=test,DC=com">lab.asrep</td><td>user</td><td>Password age: 0 days.</td><td><a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td>password_never_expires</td><td>Account Hygiene</td><td title="CN=lab.delegsvc,OU=IDWolfLab,DC=test,DC=com">lab.delegsvc</td><td>user</td><td>Password age: 0 days.</td><td><a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td>password_never_expires</td><td>Account Hygiene</td><td title="CN=lab.entry,OU=IDWolfLab,DC=test,DC=com">lab.entry</td><td>user</td><td>Password age: 0 days.</td><td><a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td>password_never_expires</td><td>Account Hygiene</td><td title="CN=lab.rbcdsrc,OU=IDWolfLab,DC=test,DC=com">lab.rbcdsrc</td><td>user</td><td>Password age: 0 days.</td><td><a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td>password_never_expires</td><td>Account Hygiene</td><td title="CN=lab.svcsync,OU=IDWolfLab,DC=test,DC=com">lab.svcsync</td><td>user</td><td>Password age: 0 days.</td><td><a href="https://attack.mitre.org/techniques/T1078/002/" target="_blank" rel="noopener">T1078.002</a></td></tr>
+<tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td>recycle_bin_disabled</td><td>Domain Configuration</td><td title="DC=test,DC=com">test.com</td><td>domain</td><td>Recycle Bin Feature has no enabled scope.</td><td></td></tr>
+</table></div><div class="filter-status">68 rows</div></details>
+<p class="meta" style="margin-top:32px">Generated by IDWolf from a read-only snapshot. The report contains directory data: handle as confidential.</p>
+</body></html>
