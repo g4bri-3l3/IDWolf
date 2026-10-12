@@ -15,6 +15,7 @@
       - run-time code tricks: Invoke-Expression, encoded commands, Base64
         decoding, downloads, starting processes, scheduled tasks, services;
       - a Graph request that isn't a GET;
+      - a CIM method call other than reading the registry (StdRegProv Get*/Enum*);
       - a web address in the code other than Microsoft Graph, Gemini and the
         MITRE links in the report.
 
@@ -45,8 +46,9 @@ $allowed = [ordered]@{
     'Read Entra ID (Microsoft Graph, GET only: checked below)' = @('Connect-MgGraph', 'Get-MgContext', 'Invoke-MgGraphRequest')
     'Password quality (DSInternals: reads hashes locally, writes only account names)' = @('Get-ADReplAccount', 'Get-ADDBAccount', 'Get-BootKey', 'Test-PasswordQuality')
     'Install a missing prerequisite (only after asking, or with -InstallModules)' = @('Install-Module', 'Install-PackageProvider', 'Add-WindowsCapability', 'Install-WindowsFeature')
-    'Connections for the collection (SYSVOL drive, CIM session to the DNS server)' = @('New-PSDrive', 'Remove-PSDrive', 'New-CimSession', 'Remove-CimSession', 'Get-CimInstance')
-    'Files: read inputs, write the snapshot / report' = @('Get-Content', 'Set-Content', 'Export-Csv', 'Import-Csv', 'Get-ChildItem', 'Select-String', 'Test-Path', 'Resolve-Path', 'Join-Path', 'Split-Path', 'Get-Location', 'New-Item', 'Remove-Item', 'Get-PSDrive')
+    'Connections for the collection (SYSVOL drive, CIM session to the DNS server and the DCs)' = @('New-PSDrive', 'Remove-PSDrive', 'New-CimSession', 'Remove-CimSession', 'Get-CimInstance')
+    'Read a registry value on a DC (StdRegProv, read methods only: checked below)' = @('Invoke-CimMethod')
+    'Files: read inputs, write the snapshot / report' = @('Get-Acl', 'Get-Content', 'Set-Content', 'Export-Csv', 'Import-Csv', 'Get-ChildItem', 'Select-String', 'Test-Path', 'Resolve-Path', 'Join-Path', 'Split-Path', 'Get-Location', 'New-Item', 'Remove-Item', 'Get-PSDrive')
     'Modules and environment' = @('Import-Module', 'Get-Module', 'Get-PackageProvider', 'Get-Command', 'Add-Type', 'Get-Credential', 'Get-Date', 'Start-Sleep')
     'Console' = @('Write-Host', 'Write-Warning', 'Write-Progress', 'Read-Host', 'Out-Null')
     'Data handling' = @('Measure-Command', 'ConvertTo-Json', 'ConvertFrom-Json', 'Select-Object', 'Where-Object', 'ForEach-Object', 'Sort-Object', 'Group-Object', 'Measure-Object', 'New-Object', 'Add-Member')
@@ -122,6 +124,10 @@ foreach ($f in $files) {
         if ($bannedCommands -contains $lc) { $problems.Add("${rel}:${line}: $name is not allowed") }
         if (-not $allowedSet.ContainsKey($lc) -and $name -notmatch $writeVerbs -and $bannedCommands -notcontains $lc) { $problems.Add("${rel}:${line}: $name is not on the reviewed list") }
         if ($lc -eq 'invoke-mggraphrequest' -and $c.Extent.Text -notmatch '(?i)-Method\s+GET\b') { $problems.Add("${rel}:${line}: Graph request that is not a GET") }
+        # StdRegProv also has Set*/Delete* methods: only a literal read method may be named.
+        if ($lc -eq 'invoke-cimmethod' -and ($c.Extent.Text -notmatch "(?i)-ClassName\s+'?StdRegProv'?\s" -or $c.Extent.Text -notmatch "(?i)-MethodName\s+'?(GetDWORDValue|GetQWORDValue|GetStringValue|GetExpandedStringValue|GetMultiStringValue|GetBinaryValue|EnumKey|EnumValues)'?\s")) {
+            $problems.Add("${rel}:${line}: CIM method call that is not a registry read (StdRegProv Get*/Enum*)")
+        }
         if ($lc -in 'set-content', 'export-csv', 'new-item', 'remove-item') { $writes.Add("${rel}:${line}: $($c.Extent.Text.Split("`n")[0].Trim())") }
     }
     # .NET file writes.
@@ -152,5 +158,5 @@ if ($problems.Count) {
     foreach ($p in $problems) { Write-Host "  $p" -ForegroundColor Red }
     exit 1
 }
-Write-Host "PASSED: only read-only directory calls, GET-only Graph, no hidden code, no unexpected network or system changes." -ForegroundColor Green
+Write-Host "PASSED: only read-only directory calls, GET-only Graph, read-only registry queries, no hidden code, no unexpected network or system changes." -ForegroundColor Green
 exit 0

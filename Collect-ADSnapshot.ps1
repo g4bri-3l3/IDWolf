@@ -330,6 +330,39 @@ $hasLapsV2 = Test-SchemaAttribute 'msLAPS-PasswordExpirationTime'
 $hasKeyCred = Test-SchemaAttribute 'msDS-KeyCredentialLink'
 # unixUserPassword comes with the NIS/IDMU schema extension. Only presence is recorded.
 $hasUnixPwdAttr = Test-SchemaAttribute 'unixUserPassword'
+# RFC 2713 Java object classes (javaSerializedObject and friends) let LDAP clients store serialized
+# objects: leftover from old extensions, a deserialization risk. Only class presence is recorded.
+$javaSchemaClasses = @()
+try {
+    foreach ($jc in 'javaContainer', 'javaObject', 'javaSerializedObject', 'javaMarshalledObject', 'javaNamingReference') {
+        if (Get-ADObject -SearchBase $schemaNC -LDAPFilter "(&(objectClass=classSchema)(lDAPDisplayName=$jc))" @common) { $javaSchemaClasses += $jc }
+    }
+}
+catch { Add-CollectionError 'domain.javaSchema' $_.Exception.Message; $javaSchemaClasses = $null }
+# Classes that a user or computer may create under itself (possSuperiors) and that inherit from
+# container: any account can then add one and create objects inside it (CVE-2021-34470 with
+# msExchStorageGroup). Only the class names and the inheritance chain are recorded.
+$possSuperiorClasses = @()
+try {
+    $psHits = @(Get-ADObject -SearchBase $schemaNC -LDAPFilter '(&(objectClass=classSchema)(|(possSuperiors=computer)(possSuperiors=user)))' -Properties lDAPDisplayName, possSuperiors, subClassOf @common | Where-Object { $_ })
+    foreach ($cls in $psHits) {
+        $chain = @()
+        $parent = "$($cls.subClassOf)"
+        while ($parent -and $parent -ne 'top' -and $chain -notcontains $parent -and $chain.Count -lt 20) {
+            $chain += $parent
+            if ($parent -eq 'container') { break }
+            $p = Get-ADObject -SearchBase $schemaNC -LDAPFilter "(&(objectClass=classSchema)(lDAPDisplayName=$parent))" -Properties subClassOf @common | Select-Object -First 1
+            $parent = if ($p) { "$($p.subClassOf)" } else { '' }
+        }
+        $possSuperiorClasses += [ordered]@{
+            name              = "$($cls.lDAPDisplayName)"
+            possSuperiors     = @(@($cls.possSuperiors) | Where-Object { @('computer', 'user') -contains "$_" } | ForEach-Object { "$_" })
+            subClassChain     = $chain
+            inheritsContainer = ($chain -contains 'container')
+        }
+    }
+}
+catch { Add-CollectionError 'domain.possSuperiors' $_.Exception.Message; $possSuperiorClasses = $null }
 
 # LAPS attribute GUIDs differ per forest, so look them up for the LAPS-readers check.
 function Get-SchemaAttrGuid {
@@ -359,9 +392,12 @@ $domainInfo = [ordered]@{
     forestMode              = "$($forest.ForestMode)"
     machineAccountQuota     = $null
     dsHeuristics            = $null
+    smartcardPwdRotation    = $null
     recycleBinEnabled       = $null
     lapsLegacySchema        = $hasLapsLegacy
     lapsV2Schema            = $hasLapsV2
+    javaSchemaClasses       = $javaSchemaClasses
+    possSuperiorClasses     = $possSuperiorClasses
     passwordPolicy          = $null
     fineGrainedPolicies     = $null
     authPolicySiloCount     = $null
@@ -397,6 +433,17 @@ try {
     $domainInfo.machineAccountQuota = $maq.'ms-DS-MachineAccountQuota'
 }
 catch { Add-CollectionError 'domain.machineAccountQuota' $_.Exception.Message }
+
+# 2016+ domains can roll the hidden password of smart-card-only accounts
+# (msDS-ExpirePasswordsOnSmartCardOnlyAccounts); older schemas have no such attribute.
+try {
+    $scAttr = 'msDS-ExpirePasswordsOnSmartCardOnlyAccounts'
+    if (Get-ADObject -SearchBase $schemaNC -LDAPFilter "(lDAPDisplayName=$scAttr)" @common) {
+        $domainInfo.smartcardPwdRotation = [bool](Get-ADObject -Identity $domainDN -Properties $scAttr @common).$scAttr
+    }
+    else { $domainInfo.smartcardPwdRotation = $false }
+}
+catch { Add-CollectionError 'domain.smartcardPwdRotation' $_.Exception.Message }
 
 try {
     $ds = Get-ADObject -Identity "CN=Directory Service,CN=Windows NT,CN=Services,$configNC" -Properties dSHeuristics @common
@@ -511,6 +558,7 @@ try {
                 tgtDelegation           = [bool]$_.TGTDelegation
                 usesRC4Encryption       = [bool]$_.UsesRC4Encryption
                 usesAESKeys             = [bool]$_.UsesAESKeys
+                whenChanged             = ConvertTo-IsoUtc $_.whenChanged
             }
         })
 }
@@ -523,7 +571,7 @@ $principalProps = @(
     'userAccountControl', 'pwdLastSet', 'lastLogonTimestamp', 'whenCreated',
     'servicePrincipalName', 'adminCount', 'primaryGroupID', 'description',
     'sIDHistory', 'msDS-SupportedEncryptionTypes', 'msDS-AllowedToDelegateTo',
-    'PrincipalsAllowedToDelegateToAccount'
+    'PrincipalsAllowedToDelegateToAccount', 'altSecurityIdentities'
 )
 if ($hasKeyCred) { $principalProps += 'msDS-KeyCredentialLink' }
 $principalProps += 'userPassword'
@@ -542,6 +590,21 @@ function Get-WithPropertyFallback {
         Add-CollectionError "rbcd.$Section" "Retrying without optional properties (RBCD / gMSA read principals / key credentials may be incomplete): $($_.Exception.Message)"
         return @(Invoke-WithSpinner -Message $label -ScriptBlock $Query -ArgumentList $reduced, $common -Modules ActiveDirectory)
     }
+}
+
+# Explicit certificate mappings (altSecurityIdentities), by type only (KB5014754): the issuer,
+# subject, serial or e-mail in the mapping are not kept. Kerberos:principal mappings are skipped.
+function ConvertTo-AltSecIdTypes {
+    param($Value)
+    $out = @()
+    foreach ($m in @($Value | Where-Object { $_ })) {
+        $s = "$m"
+        if ($s -notmatch '^(?i)X509:') { continue }
+        $tags = @([regex]::Matches($s, '<([A-Za-z0-9\-]+)>') | ForEach-Object { $_.Groups[1].Value.ToUpper() })
+        $out += if ($tags -contains 'SHA1-PUKEY') { 'SHA1PublicKey' } elseif ($tags -contains 'SKI') { 'SKI' } elseif ($tags -contains 'I' -and $tags -contains 'SR') { 'IssuerSerial' } `
+            elseif ($tags -contains 'RFC822') { 'RFC822' } elseif ($tags -contains 'I' -and $tags -contains 'S') { 'IssuerSubject' } elseif ($tags -contains 'S') { 'SubjectOnly' } else { 'Other' }
+    }
+    return , [string[]]@($out)
 }
 
 function ConvertTo-PrincipalRecord {
@@ -567,6 +630,7 @@ function ConvertTo-PrincipalRecord {
         allowedToDelegateTo   = ConvertTo-StringArray $Obj.'msDS-AllowedToDelegateTo'
         rbcdPrincipals        = ConvertTo-StringArray $Obj.PrincipalsAllowedToDelegateToAccount
         keyCredentialCount    = @($Obj.'msDS-KeyCredentialLink' | Where-Object { $_ }).Count
+        altSecIdTypes         = ConvertTo-AltSecIdTypes $Obj.altSecurityIdentities
         hasUnixPassword       = ((@($Obj.'userPassword' | Where-Object { $_ }).Count -gt 0) -or (@($Obj.'unixUserPassword' | Where-Object { $_ }).Count -gt 0))
     }
     return $rec
@@ -746,6 +810,20 @@ if ($Deep -and -not $SkipAcl) {
     catch { Add-CollectionError 'deepAcls' $_.Exception.Message }
 }
 
+# KDS root keys (-Deep): whoever reads one can compute every gMSA password of the forest
+# (Golden gMSA). Only the security descriptors are read, never the key data.
+$kdsRootKeyAcls = @()
+if ($Deep -and -not $SkipAcl) {
+    try {
+        $kdsBase = "CN=Master Root Keys,CN=Group Key Distribution Service,CN=Services,$configNC"
+        foreach ($k in @(Get-ADObject -SearchBase $kdsBase -SearchScope OneLevel -LDAPFilter '(objectClass=msKds-ProvRootKey)' @common | Where-Object { $_ })) {
+            $rec = Read-ObjectSecurity -Dn $k.DistinguishedName -Target "kds:$($k.Name)" -ObjectClass 'msKds-ProvRootKey' -ErrorSection 'kdsRootKeys'
+            if ($rec) { $kdsRootKeyAcls += $rec }
+        }
+    }
+    catch { Add-CollectionError 'kdsRootKeys' $_.Exception.Message }
+}
+
 # Pre-Windows 2000 Compatible Access (by SID): bad news if Anonymous or Everyone is in it.
 $preWin2000 = $null
 try {
@@ -764,7 +842,7 @@ if ($Credential) {
 # --------------------------------------------------------------------------
 # SYSVOL: Group Policy Preferences cpassword (MS14-025). Path only.
 # --------------------------------------------------------------------------
-$sysvol = [ordered]@{ scanned = $false; cpasswordFiles = @(); scriptSecretFiles = @() }
+$sysvol = [ordered]@{ scanned = $false; cpasswordFiles = @(); scriptSecretFiles = @(); autologonFiles = @(); folderAcls = @() }
 if (-not $SkipSysvol) {
     $policiesPath = "\\$($domain.DNSRoot)\SYSVOL\$($domain.DNSRoot)\Policies"
     $sysvolRoot = "\\$($domain.DNSRoot)\SYSVOL\$($domain.DNSRoot)"
@@ -774,6 +852,10 @@ if (-not $SkipSysvol) {
             $hits = @(Get-ChildItem -LiteralPath $policiesPath -Recurse -Include *.xml -File -ErrorAction SilentlyContinue |
                     Select-String -Pattern 'cpassword="[^"]+"' -List -ErrorAction SilentlyContinue)
             $sysvol.cpasswordFiles = @($hits | ForEach-Object { $_.Path })
+            # GPP registry item writing Winlogon DefaultPassword in clear text: path only.
+            $alHits = @(Get-ChildItem -LiteralPath $policiesPath -Recurse -Filter 'Registry.xml' -File -ErrorAction SilentlyContinue |
+                    Select-String -Pattern 'name="DefaultPassword"' -List -ErrorAction SilentlyContinue)
+            $sysvol.autologonFiles = @($alHits | ForEach-Object { $_.Path })
             # Scripts that mention a password: path only, never the value.
             try {
                 $scriptHits = @(Get-ChildItem -LiteralPath $sysvolRoot -Recurse -Include *.bat, *.cmd, *.ps1, *.vbs, *.kix -File -ErrorAction SilentlyContinue |
@@ -781,6 +863,18 @@ if (-not $SkipSysvol) {
                 $sysvol.scriptSecretFiles = @($scriptHits | ForEach-Object { $_.Path })
             }
             catch { }
+            # NTFS permissions of the two folders every computer runs code from (logon scripts, GPO files).
+            foreach ($fd in @(@('NETLOGON (scripts)', (Join-Path $sysvolRoot 'scripts')), @('Policies', $policiesPath))) {
+                try {
+                    $fAcl = Get-Acl -LiteralPath $fd[1] -ErrorAction Stop
+                    $sysvol.folderAcls += [ordered]@{
+                        folder = $fd[0]; path = $fd[1]
+                        aces   = @($fAcl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | ForEach-Object {
+                                [ordered]@{ sid = "$($_.IdentityReference.Value)"; name = Resolve-SidName "$($_.IdentityReference.Value)"; rights = "$($_.FileSystemRights)"; accessType = "$($_.AccessControlType)"; isInherited = [bool]$_.IsInherited } })
+                    }
+                }
+                catch { Add-CollectionError 'sysvol.acl' "$($fd[1]): $($_.Exception.Message)" }
+            }
             $sysvol.scanned = $true
         }
         else { Add-CollectionError 'sysvol' "Path not reachable: $policiesPath" }
@@ -794,6 +888,82 @@ if (-not $SkipSysvol) {
 # ESC6/7/8/11/16 live on the CA itself, not in LDAP, so they are only flagged
 # for manual review.
 # --------------------------------------------------------------------------
+# RPC filters (netsh rpc filter) are persistent WFP filters kept by BFE in the registry. Look
+# for the coercion interface UUIDs inside them: the names of the interfaces some filter
+# mentions, or $null when the filter store can't be read. Heuristic: a filter that names
+# an interface is taken as covering it; its action and conditions are not decoded.
+$script:CoercionUuids = [ordered]@{
+    'MS-EFSR' = @('c681d488-d850-11d0-8c52-00c04fd90f7e', 'df1941c5-fe89-4e79-bf10-463657acf44d')
+    'MS-DFSNM' = @('4fc742e0-4a10-11cf-8273-00aa004ae673')
+    'MS-EVEN' = @('82273fdc-e32a-18c3-3f78-827929dc23ea')
+}
+function Get-RpcFilterInterfaces {
+    param($CimSession)
+    $hklm = [uint32]2147483650
+    $key = 'SYSTEM\CurrentControlSet\Services\BFE\Parameters\Policy\Persistent\Filter'
+    try {
+        $list = Invoke-CimMethod -CimSession $CimSession -Namespace 'root/default' -ClassName StdRegProv -MethodName EnumValues -Arguments @{ hDefKey = $hklm; sSubKeyName = $key } -OperationTimeoutSec 20 -ErrorAction Stop
+        if (-not $list -or $list.ReturnValue -ne 0) { return $null }
+        $patterns = @{}
+        foreach ($i in $script:CoercionUuids.Keys) { $patterns[$i] = @($script:CoercionUuids[$i] | ForEach-Object { [BitConverter]::ToString(([guid]$_).ToByteArray()) }) }
+        $found = New-Object System.Collections.Generic.List[string]
+        foreach ($vn in @($list.sNames | Select-Object -First 2000)) {
+            $v = Invoke-CimMethod -CimSession $CimSession -Namespace 'root/default' -ClassName StdRegProv -MethodName GetBinaryValue -Arguments @{ hDefKey = $hklm; sSubKeyName = $key; sValueName = "$vn" } -OperationTimeoutSec 20 -ErrorAction Stop
+            if (-not $v -or $v.ReturnValue -ne 0 -or -not $v.uValue) { continue }
+            $hex = [BitConverter]::ToString([byte[]]$v.uValue)
+            foreach ($i in $patterns.Keys) { if (-not $found.Contains($i) -and @($patterns[$i] | Where-Object { $hex.Contains($_) }).Count) { $found.Add($i) } }
+        }
+        return , @($found | Sort-Object)
+    }
+    catch { return $null }
+}
+
+# On-CA registry settings of one CA. error is set (and the rest left $null) when the CA host
+# can't be read; webEnrollment is $null when the installed roles can't be told apart.
+function Read-CaRegistry {
+    param([string]$HostName, [string]$CaName)
+    $r = [ordered]@{ editFlags = $null; interfaceFlags = $null; disableExtensionList = @(); securityAces = @(); webEnrollment = $null; enrollmentWebService = $null; error = '' }
+    if (-not $HostName) { $r.error = 'no DNS host name on the enrollment service'; return $r }
+    $hklm = [uint32]2147483650
+    $cs = $null
+    try {
+        $cp = @{ ComputerName = $HostName; OperationTimeoutSec = 20; ErrorAction = 'Stop' }
+        if ($Credential) { $cp['Credential'] = $Credential }
+        $cs = New-CimSession @cp
+        $cfg = 'SYSTEM\CurrentControlSet\Services\CertSvc\Configuration'
+        # The configuration key is named after the active CA (sanitized name), so ask for it.
+        $act = Invoke-CimMethod -CimSession $cs -Namespace 'root/default' -ClassName StdRegProv -MethodName GetStringValue -Arguments @{ hDefKey = $hklm; sSubKeyName = $cfg; sValueName = 'Active' } -OperationTimeoutSec 20 -ErrorAction Stop
+        $caKey = if ($act -and $act.ReturnValue -eq 0 -and $act.sValue) { "$cfg\$($act.sValue)" } else { "$cfg\$CaName" }
+        $pol = Invoke-CimMethod -CimSession $cs -Namespace 'root/default' -ClassName StdRegProv -MethodName GetStringValue -Arguments @{ hDefKey = $hklm; sSubKeyName = "$caKey\PolicyModules"; sValueName = 'Active' } -OperationTimeoutSec 20 -ErrorAction Stop
+        $polKey = "$caKey\PolicyModules\$(if ($pol -and $pol.ReturnValue -eq 0 -and $pol.sValue) { $pol.sValue } else { 'CertificateAuthority_MicrosoftDefault.Policy' })"
+        $v = Invoke-CimMethod -CimSession $cs -Namespace 'root/default' -ClassName StdRegProv -MethodName GetDWORDValue -Arguments @{ hDefKey = $hklm; sSubKeyName = $polKey; sValueName = 'EditFlags' } -OperationTimeoutSec 20 -ErrorAction Stop
+        if ($v.ReturnValue -ne 0) { throw "CA configuration not found under HKLM\$caKey (is $HostName the CA host?)" }
+        $r.editFlags = [int64]$v.uValue
+        $v = Invoke-CimMethod -CimSession $cs -Namespace 'root/default' -ClassName StdRegProv -MethodName GetDWORDValue -Arguments @{ hDefKey = $hklm; sSubKeyName = $caKey; sValueName = 'InterfaceFlags' } -OperationTimeoutSec 20 -ErrorAction Stop
+        if ($v.ReturnValue -eq 0) { $r.interfaceFlags = [int64]$v.uValue }
+        $v = Invoke-CimMethod -CimSession $cs -Namespace 'root/default' -ClassName StdRegProv -MethodName GetMultiStringValue -Arguments @{ hDefKey = $hklm; sSubKeyName = $polKey; sValueName = 'DisableExtensionList' } -OperationTimeoutSec 20 -ErrorAction Stop
+        if ($v.ReturnValue -eq 0) { $r.disableExtensionList = @($v.sValue | Where-Object { $_ } | ForEach-Object { "$_" }) }
+        # CA permissions (Manage CA = 1, Issue and Manage Certificates = 2, Read = 0x100, Enroll = 0x200).
+        $v = Invoke-CimMethod -CimSession $cs -Namespace 'root/default' -ClassName StdRegProv -MethodName GetBinaryValue -Arguments @{ hDefKey = $hklm; sSubKeyName = $caKey; sValueName = 'Security' } -OperationTimeoutSec 20 -ErrorAction Stop
+        if ($v.ReturnValue -eq 0 -and $v.uValue) {
+            $sd = New-Object System.Security.AccessControl.RawSecurityDescriptor -ArgumentList ([byte[]]$v.uValue), 0
+            $r.securityAces = @($sd.DiscretionaryAcl | Where-Object { $_.AceQualifier -eq 'AccessAllowed' -and $_.SecurityIdentifier } | ForEach-Object {
+                    [ordered]@{ sid = "$($_.SecurityIdentifier.Value)"; name = Resolve-SidName "$($_.SecurityIdentifier.Value)"; mask = [int64]$_.AccessMask } })
+        }
+        else { $r.securityAces = $null }
+        # Web enrollment (ESC8). Role names are only trusted in English: on a localized OS the
+        # answer stays unknown rather than "not installed".
+        $feat = @(Get-CimInstance -CimSession $cs -ClassName Win32_ServerFeature -OperationTimeoutSec 20 -ErrorAction Stop | ForEach-Object { "$($_.Name)" })
+        if (@($feat | Where-Object { $_ -match '^Certification Authority$|Active Directory Certificate Services' }).Count) {
+            $r.webEnrollment = [bool]@($feat | Where-Object { $_ -match 'Certification Authority Web Enrollment' }).Count
+            $r.enrollmentWebService = [bool]@($feat | Where-Object { $_ -match 'Certificate Enrollment Web Service' }).Count
+        }
+    }
+    catch { $r.error = "$($_.Exception.Message)".Trim() }
+    finally { if ($cs) { Remove-CimSession $cs -ErrorAction SilentlyContinue } }
+    return $r
+}
+
 $adcs = [ordered]@{ collected = $false; enrollmentServices = @(); templates = @(); ntAuthCertCount = $null; oidGroupLinks = @(); pkiAcls = @() }
 if (-not $SkipAdcs) {
     $pkiBase = "CN=Public Key Services,CN=Services,$configNC"
@@ -909,6 +1079,13 @@ if (-not $SkipAdcs) {
             }
             $adcs.pkiAcls = $pkiAcls
 
+            # On-CA settings (ESC6/7/8/11/16) live in the CA's registry, not in LDAP. Read them over
+            # CIM on the CA host, read-only (StdRegProv Get* methods). Needs admin rights on the CA.
+            foreach ($e in $enroll) {
+                $e['caRegistry'] = Read-CaRegistry -HostName "$($e.dnsHostName)" -CaName "$($e.name)"
+                if ($e['caRegistry'].error) { Add-CollectionError 'adcs.caRegistry' "$($e.name) on $($e.dnsHostName): $($e['caRegistry'].error)" }
+            }
+
             $adcs.enrollmentServices = $enroll
             $adcs.templates = $templates
             $adcs.collected = $true
@@ -931,7 +1108,7 @@ if (-not $SkipAdcs) {
 # shape as GptTmpl.inf registry values. Best effort: a parse error returns what
 # was read so far.
 function ConvertFrom-RegistryPol {
-    param([string]$Path)
+    param([string]$Path, [string]$Hive = 'MACHINE')
     $out = [ordered]@{}
     if (-not (Test-Path -LiteralPath $Path)) { return $out }
     try { $b = [System.IO.File]::ReadAllBytes($Path) } catch { return $out }
@@ -965,7 +1142,7 @@ function ConvertFrom-RegistryPol {
             $pos += $size
             $pos += 2                                                          # ']'
             if ($key -and $val) {
-                $full = "MACHINE\$key\$val"
+                $full = "$Hive\$key\$val"
                 if ($type -eq 4) { $out[$full] = "4,$data" } else { $out[$full] = "1,$data" }
             }
         }
@@ -1112,8 +1289,9 @@ if (-not $SkipGpo) {
                 # security template: it still sets registry values (LLMNR, Point and Print...).
                 $inf = Join-Path $dir.FullName 'MACHINE\Microsoft\Windows NT\SecEdit\GptTmpl.inf'
                 $pol = Join-Path $dir.FullName 'Machine\registry.pol'
+                $userPol = Join-Path $dir.FullName 'User\registry.pol'
                 $hasInf = Test-Path -LiteralPath $inf
-                if (-not $hasInf -and -not (Test-Path -LiteralPath $pol)) { continue }
+                if (-not $hasInf -and -not (Test-Path -LiteralPath $pol) -and -not (Test-Path -LiteralPath $userPol)) { continue }
                 try {
                     $lines = if ($hasInf) { Get-Content -LiteralPath $inf -ErrorAction Stop } else { @() }
                     $ini = ConvertFrom-IniText -Lines $lines
@@ -1128,11 +1306,30 @@ if (-not $SkipGpo) {
                         try { $polVals = ConvertFrom-RegistryPol $pol; foreach ($pk in $polVals.Keys) { if (-not $regValues.Contains($pk)) { $regValues[$pk] = $polVals[$pk] } } }
                         catch { Add-CollectionError "gpo.pol.$($dir.Name)" $_.Exception.Message }
                     }
+                    # User-side admin templates (AlwaysInstallElevated needs both sides): USER\... keys.
+                    if (Test-Path -LiteralPath $userPol) {
+                        try { $polVals = ConvertFrom-RegistryPol $userPol 'USER'; foreach ($pk in $polVals.Keys) { if (-not $regValues.Contains($pk)) { $regValues[$pk] = $polVals[$pk] } } }
+                        catch { Add-CollectionError "gpo.pol.$($dir.Name)" $_.Exception.Message }
+                    }
+                    # An autologon password pushed as a registry value: keep that it is set, never the value.
+                    foreach ($pk in @($regValues.Keys | Where-Object { $_ -match '\\Winlogon\\DefaultPassword$' })) {
+                        $pv = "$($regValues[$pk])"
+                        $regValues[$pk] = if (($pv -split ',', 2)[-1]) { '1,<masked>' } else { '1,' }
+                    }
+                    $userPolRead = $true
                     $privRights = [ordered]@{}
                     foreach ($l in @($ini['Privilege Rights'] | Where-Object { $_ })) {
                         $eq = $l.IndexOf('=')
                         if ($eq -lt 0) { continue }
                         $privRights[$l.Substring(0, $eq).Trim()] = @($l.Substring($eq + 1).Split(',') | ForEach-Object { $_.Trim().TrimStart('*') } | Where-Object { $_ })
+                    }
+                    # Service startup set by the GPO: "Name",<start>,"<SDDL>" (2 auto, 3 manual, 4 disabled).
+                    $svcStart = [ordered]@{}
+                    foreach ($l in @($ini['Service General Setting'] | Where-Object { $_ })) {
+                        $sp = $l.Split(',')
+                        $sn = $sp[0].Trim().Trim('"')
+                        $sv = 0
+                        if ($sp.Count -ge 2 -and $sn -and [int]::TryParse($sp[1].Trim().Trim('"'), [ref]$sv)) { $svcStart[$sn.ToLower()] = $sv }
                     }
                     $sysAccess = [ordered]@{}
                     foreach ($l in @($ini['System Access'] | Where-Object { $_ })) {
@@ -1161,6 +1358,8 @@ if (-not $SkipGpo) {
                         registryValues = $regValues
                         privilegeRights = $privRights
                         systemAccess   = $sysAccess
+                        serviceStart   = $svcStart
+                        userPolicyRead = $userPolRead
                         auditPolicy    = $auditPolicy
                         ownerSid       = if ($acl) { $acl.ownerSid } else { $null }
                         ownerName      = if ($acl) { $acl.ownerName } else { $null }
@@ -1216,6 +1415,22 @@ function Get-DnsPropertyValue {
     }
     return $null
 }
+# Who may create records in an AD-integrated zone (ADIDNS): Allow CreateChild (or GenericAll) for any
+# child class or for dnsNode. An empty array is an answer; $null means the descriptor could not be read.
+$script:DnsNodeClassGuid = 'e0fa1e8c-9b45-11d0-afdd-00c04fd930c9'
+function Get-DnsZoneCreateChildSids {
+    param([string]$Dn, [string]$Zone)
+    if (-not $Dn) { Add-CollectionError 'dnsZoneAcl' "${Zone}: no directory object for the zone"; return $null }
+    try {
+        $sd = (Get-ADObject -Identity $Dn -Properties nTSecurityDescriptor @common).nTSecurityDescriptor
+        $sids = @($sd.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]) | Where-Object {
+                "$($_.AccessControlType)" -eq 'Allow' -and "$($_.ActiveDirectoryRights)" -match 'CreateChild|GenericAll' -and
+                @('00000000-0000-0000-0000-000000000000', $script:DnsNodeClassGuid) -contains "$($_.ObjectType)".ToLower()
+            } | ForEach-Object { "$($_.IdentityReference.Value)" } | Select-Object -Unique)
+        return , $sids
+    }
+    catch { Add-CollectionError 'dnsZoneAcl' "${Zone}: $($_.Exception.Message)"; return $null }
+}
 function Get-DnsZonesFromAd {
     $data = [ordered]@{ collected = $false; source = 'ldap'; zones = @(); dangerousRecords = @() }
     $forestDN = 'DC=' + ($forest.RootDomain -replace '\.', ',DC=')
@@ -1235,12 +1450,14 @@ function Get-DnsZonesFromAd {
             $seen[$name] = $true
             $upd = Get-DnsPropertyValue $z.dNSProperty 2
             $aging = Get-DnsPropertyValue $z.dNSProperty 0x40
+            $createChild = Get-DnsZoneCreateChildSids -Dn $z.DistinguishedName -Zone $name
             $data.zones += [ordered]@{
                 name              = $name
                 dynamicUpdate     = if ($null -ne $upd -and $updateNames.ContainsKey([int]$upd)) { $updateNames[[int]$upd] } else { '' }
                 secureSecondaries = $null
                 isAdIntegrated    = $true
                 agingEnabled      = if ($null -ne $aging) { [bool]$aging } else { $null }
+                createChildSids   = $createChild
             }
             try {
                 $nodes = @(Get-ADObject -SearchBase $z.DistinguishedName -SearchScope OneLevel `
@@ -1273,12 +1490,14 @@ if (-not $SkipDns) {
         foreach ($z in $zones) {
             $aging = $null
             try { $aging = [bool](Get-DnsServerZoneAging -Name $z.ZoneName @dnsTarget -ErrorAction Stop).AgingEnabled } catch { }
+            $createChild = if ($z.IsDsIntegrated) { Get-DnsZoneCreateChildSids -Dn "$($z.DistinguishedName)" -Zone $z.ZoneName } else { $null }
             $dnsData.zones += [ordered]@{
                 name            = $z.ZoneName
                 dynamicUpdate   = "$($z.DynamicUpdate)"
                 secureSecondaries = "$($z.SecureSecondaries)"
                 isAdIntegrated  = [bool]$z.IsDsIntegrated
                 agingEnabled    = $aging
+                createChildSids = $createChild
             }
             try {
                 foreach ($rr in @(Get-DnsServerResourceRecord -ZoneName $z.ZoneName @dnsTarget -ErrorAction Stop)) {
@@ -1394,7 +1613,7 @@ if (-not $SkipHealth) {
     # (or remote WMI rights); without them this part is "not evaluated".
     $svcNames = 'NTDS', 'ADWS', 'Kdc', 'Netlogon', 'W32Time', 'DFSR', 'IsmServ', 'LanmanServer', 'LanmanWorkstation', 'SamSs', 'RpcSs', 'EventSystem', 'DNS', 'Dnscache'
     $state = @(foreach ($dc in $dcs) {
-            $rec = [ordered]@{ dc = "$($dc.hostName)"; systemDrive = $null; freeGB = $null; sizeGB = $null; stoppedServices = @(); spoolerStartMode = $null; spoolerState = $null; error = '' }
+            $rec = [ordered]@{ dc = "$($dc.hostName)"; systemDrive = $null; freeGB = $null; sizeGB = $null; stoppedServices = @(); spoolerStartMode = $null; spoolerState = $null; webClientStartMode = $null; webClientState = $null; netbiosAdapters = $null; osBuild = $null; osUbr = $null; coercionServices = $null; rpcFilterInterfaces = $null; error = '' }
             $reach = @($healthData.dcReachability | Where-Object { $_.dc -eq "$($dc.hostName)" })[0]
             if ($reach -and -not $reach.reachable) { $rec.error = 'not reachable'; $rec; continue }
             $cs = $null
@@ -1405,20 +1624,48 @@ if (-not $SkipHealth) {
                 $os = Get-CimInstance -CimSession $cs -ClassName Win32_OperatingSystem -OperationTimeoutSec 20 -ErrorAction Stop
                 $disk = Get-CimInstance -CimSession $cs -ClassName Win32_LogicalDisk -Filter "DeviceID='$($os.SystemDrive)'" -OperationTimeoutSec 20 -ErrorAction Stop
                 $rec.systemDrive = "$($os.SystemDrive)"
+                # Patch level = build + update revision (UBR, Windows Server 2016 and later). The UBR is
+                # only in the registry: read it through StdRegProv GetDWORDValue (read-only).
+                $rec.osBuild = "$($os.BuildNumber)"
+                try {
+                    $ubr = Invoke-CimMethod -CimSession $cs -Namespace 'root/default' -ClassName StdRegProv -MethodName GetDWORDValue -Arguments @{ hDefKey = [uint32]2147483650; sSubKeyName = 'SOFTWARE\Microsoft\Windows NT\CurrentVersion'; sValueName = 'UBR' } -OperationTimeoutSec 20 -ErrorAction Stop
+                    if ($ubr -and $ubr.ReturnValue -eq 0) { $rec.osUbr = [int]$ubr.uValue }
+                }
+                catch { }
                 $rec.freeGB = [Math]::Round($disk.FreeSpace / 1GB, 1); $rec.sizeGB = [Math]::Round($disk.Size / 1GB, 1)
                 $flt = ($svcNames | ForEach-Object { "Name='$_'" }) -join ' OR '
                 $rec.stoppedServices = @(Get-CimInstance -CimSession $cs -ClassName Win32_Service -Filter $flt -OperationTimeoutSec 20 -ErrorAction Stop |
                         Where-Object { "$($_.StartMode)" -ne 'Disabled' -and "$($_.State)" -ne 'Running' } | ForEach-Object { "$($_.Name)" })
-                # Print Spooler is wanted OFF on a DC, so it's recorded apart from the "stopped" list.
-                $sp = @(Get-CimInstance -CimSession $cs -ClassName Win32_Service -Filter "Name='Spooler'" -OperationTimeoutSec 20 -ErrorAction Stop)[0]
+                # Print Spooler and WebClient (WebDAV) are wanted OFF on a DC (coercion), so they're
+                # recorded apart from the "stopped" list. 'absent' = service not installed.
+                $off = @(Get-CimInstance -CimSession $cs -ClassName Win32_Service -Filter "Name='Spooler' OR Name='WebClient' OR Name='EFS' OR Name='Dfs' OR Name='EventLog'" -OperationTimeoutSec 20 -ErrorAction Stop)
+                # Services behind the coercion interfaces (MS-EFSR, MS-DFSNM, MS-EVEN): state only.
+                $rec.coercionServices = [ordered]@{}
+                foreach ($cn in 'EFS', 'Dfs', 'EventLog') {
+                    $cv = @($off | Where-Object { "$($_.Name)" -eq $cn })[0]
+                    $rec.coercionServices[$cn] = if ($cv) { "$($cv.StartMode)/$($cv.State)" } else { 'absent' }
+                }
+                $rec.rpcFilterInterfaces = Get-RpcFilterInterfaces -CimSession $cs
+                $sp = @($off | Where-Object { "$($_.Name)" -eq 'Spooler' })[0]
                 if ($sp) { $rec.spoolerStartMode = "$($sp.StartMode)"; $rec.spoolerState = "$($sp.State)" }
                 else { $rec.spoolerStartMode = 'absent'; $rec.spoolerState = 'absent' }
+                $wcs = @($off | Where-Object { "$($_.Name)" -eq 'WebClient' })[0]
+                if ($wcs) { $rec.webClientStartMode = "$($wcs.StartMode)"; $rec.webClientState = "$($wcs.State)" }
+                else { $rec.webClientStartMode = 'absent'; $rec.webClientState = 'absent' }
+                # NetBIOS over TCP/IP per IP-enabled adapter: 0 = from DHCP (on with a static IP), 1 = on, 2 = off.
+                $rec.netbiosAdapters = @(Get-CimInstance -CimSession $cs -ClassName Win32_NetworkAdapterConfiguration -Filter 'IPEnabled=TRUE' -OperationTimeoutSec 20 -ErrorAction Stop |
+                        ForEach-Object { [ordered]@{ adapter = "$($_.Description)"; netbiosOption = $(if ($null -ne $_.TcpipNetbiosOptions) { [int]$_.TcpipNetbiosOptions } else { $null }) } })
             }
             catch { $rec.error = "$($_.Exception.Message)".Trim() }
             finally { if ($cs) { Remove-CimSession $cs -ErrorAction SilentlyContinue } }
             $rec
         })
     $healthData['dcState'] = $state
+    # Some DCs read, others refused: say which, since the live checks only cover the ones read.
+    $deniedDcs = @($state | Where-Object { $_.error -and $_.error -ne 'not reachable' })
+    if ($deniedDcs.Count -and @($state | Where-Object { -not $_.error }).Count) {
+        Write-Host "  Warning: services and network settings could not be read on $(@($deniedDcs | ForEach-Object { $_.dc }) -join ', ') (needs admin rights on each DC). Checks that read them live cover only the other DCs and are listed as not fully evaluated." -ForegroundColor Yellow
+    }
     if ($dcs.Count -and -not @($state | Where-Object { -not $_.error }).Count) {
         Add-CollectionError 'health.dcState' "Could not read disk space and services on any DC (needs admin rights on the DCs): $(@($state)[0].error)"
         $isAdminHs = $false
@@ -1455,6 +1702,7 @@ $snapshot = [ordered]@{
     foreignPrincipals = $fsps
     acls              = $acls
     deepAcls          = $deepAcls
+    kdsRootKeyAcls    = $kdsRootKeyAcls
     preWin2000        = $preWin2000
     adcs              = $adcs
     gpo               = $gpoData

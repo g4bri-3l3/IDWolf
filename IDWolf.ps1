@@ -41,7 +41,7 @@
 .PARAMETER ApiKey
     Gemini API key. Defaults to $env:GEMINI_API_KEY.
 .PARAMETER Model
-    Gemini model name. Defaults to gemini-3.7-flash.
+    Gemini model name. Defaults to gemini-3.8-flash.
 .PARAMETER AiMaxAttempts
     How many times to try Gemini on a timeout or a busy server (429/5xx).
     Default 3; 0 keeps trying until it works (Ctrl+C to stop).
@@ -93,16 +93,17 @@ Param(
     [int]$BuiltinAdminRecentDays = 30,
     [int]$DcPasswordMaxAgeDays = 90,
     [string]$PasswordQualityFile = "",
+    [System.Security.SecureString]$BundlePassword = $null,
     [switch]$SkipLLM,
     [switch]$SendToAI,
     [string]$AiDryRun = "",
     [string]$ApiKey = $env:GEMINI_API_KEY,
-    [string]$Model = "gemini-3.7-flash",
+    [string]$Model = "gemini-3.8-flash",
     [int]$AiMaxAttempts = 3
 )
 
 $ErrorActionPreference = 'Stop'
-$script:MooseADVersion = "1.0"
+$script:IDWolfVersion = "1.0"
 
 $libDir = Join-Path $PSScriptRoot 'lib'
 foreach ($f in @('Common.ps1', 'Checks.ps1', 'ChecksHost.ps1', 'Reporting.ps1', 'Graph.ps1', 'AI.ps1', 'ChecksEntra.ps1', 'Compliance.ps1', 'Bundle.ps1')) {
@@ -111,7 +112,7 @@ foreach ($f in @('Common.ps1', 'Checks.ps1', 'ChecksHost.ps1', 'Reporting.ps1', 
     . $p
 }
 
-function Show-MooseBanner {
+function Show-IDWolfBanner {
     $b = @'
 ######################################################################
 #                      .
@@ -128,7 +129,7 @@ function Show-MooseBanner {
 ######################################################################
 '@
     Write-Host $b -ForegroundColor DarkYellow
-    Write-Host "  v$script:MooseADVersion  offline analyzer (no AD module needed)" -ForegroundColor DarkYellow
+    Write-Host "  v$script:IDWolfVersion  offline analyzer (no AD module needed)" -ForegroundColor DarkYellow
 }
 
 # Read-Host with a default shown in brackets; empty input keeps the default.
@@ -192,7 +193,7 @@ function Read-Path {
 # Guided setup when there's no -Snapshot: a few questions, then a short
 # review menu before running.
 function Invoke-AnalyzerSetup {
-    Show-MooseBanner
+    Show-IDWolfBanner
     Write-Host ""
     Write-Host "Interactive setup. Press Enter to accept the [default]." -ForegroundColor Cyan
 
@@ -200,6 +201,7 @@ function Invoke-AnalyzerSetup {
     $cands = @(Get-ChildItem -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)snapshot|adsnap|entra' } | Select-Object -ExpandProperty Name)
     if ($cands.Count -eq 0) { $cands = @(Get-ChildItem -Filter *.json -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) }
     $cands = @($cands) + @(Get-ChildItem -Filter *.zip -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)idwolf|snap|entra' } | Select-Object -ExpandProperty Name)
+    $cands = @($cands) + @(Get-ChildItem -Filter *.idwolf -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
     $snap = ""
     if ($cands.Count -gt 0) {
         Write-Host "`nSnapshot files found here:" -ForegroundColor Cyan
@@ -215,8 +217,9 @@ function Invoke-AnalyzerSetup {
     # AD or Entra decides which questions make sense.
     $kind = 'ad'; $zipHasPq = $false
     try {
-        if ($snap -match '(?i)\.zip$') {
-            $b = Expand-IDWolfBundle -Path $snap
+        if (Test-IDWolfBundleFile $snap) {
+            if ((Test-IDWolfEncryptedBundle $snap) -and -not $BundlePassword) { $BundlePassword = Read-Host 'Bundle password (hidden)' -AsSecureString }
+            $b = Expand-IDWolfBundle -Path $snap -Password $BundlePassword
             try { $peek = ([System.IO.File]::ReadAllText($b.Snapshot) | ConvertFrom-Json).meta; $zipHasPq = [bool]$b.PasswordQuality }
             finally { Remove-IDWolfBundle $b }
         }
@@ -305,14 +308,18 @@ if (-not $Snapshot) {
 $rule = '#' * 70
 Write-Host $rule -ForegroundColor DarkYellow
 # Padded so the closing # lines up whatever the version string.
-Write-Host (("#  IDWolf v$script:MooseADVersion    Active Directory Hygiene Analyzer (offline)").PadRight(69) + '#') -ForegroundColor DarkYellow
+Write-Host (("#  IDWolf v$script:IDWolfVersion    Active Directory Hygiene Analyzer (offline)").PadRight(69) + '#') -ForegroundColor DarkYellow
 Write-Host $rule -ForegroundColor DarkYellow
 
 $start = Get-Date
 # A zip from another machine: read what's inside, then delete the extracted copy.
 $bundlePqText = $null
-if ($Snapshot -match '(?i)\.zip$') {
-    $bundle = Expand-IDWolfBundle -Path $Snapshot
+if ($Snapshot -and (Test-IDWolfBundleFile $Snapshot)) {
+    if ((Test-IDWolfEncryptedBundle $Snapshot) -and -not $BundlePassword) {
+        # Non-interactive runs must pass -BundlePassword (a SecureString); never a plain string.
+        $BundlePassword = Read-Host "Password for the encrypted bundle $([System.IO.Path]::GetFileName($Snapshot)) (hidden)" -AsSecureString
+    }
+    $bundle = Expand-IDWolfBundle -Path $Snapshot -Password $BundlePassword
     try {
         $snap = Import-ADSnapshot -Path $bundle.Snapshot
         if ($bundle.PasswordQuality) { $bundlePqText = [System.IO.File]::ReadAllText($bundle.PasswordQuality) }
@@ -376,13 +383,13 @@ if ("$($snap.meta.kind)" -eq 'entra') {
         }
     }
 
-    $html = ConvertTo-EntraReportHtml -Snapshot $snap -Findings $eActive -Score $eScore -NotEvaluated $eNotEval -ToolVersion $script:MooseADVersion -ElapsedText $elapsedText -AiResult $eAi
+    $html = ConvertTo-EntraReportHtml -Snapshot $snap -Findings $eActive -Score $eScore -NotEvaluated $eNotEval -ToolVersion $script:IDWolfVersion -ElapsedText $elapsedText -AiResult $eAi
     [System.IO.File]::WriteAllText($htmlFull, $html, (New-Object System.Text.UTF8Encoding($false)))
     Export-FindingsCsv -Findings $eActive -Path $OutCsv
     if ($OutJson) {
         # The report has no comparison section for Entra yet; the SIEM feed does.
         $eComparison = if ($CompareTo) { Get-FindingsComparison -Findings $eActive -PreviousCsv $CompareTo } else { $null }
-        Export-FindingsJsonl -Findings $eActive -Snapshot $snap -Path $OutJson -ToolVersion $script:MooseADVersion `
+        Export-FindingsJsonl -Findings $eActive -Snapshot $snap -Path $OutJson -ToolVersion $script:IDWolfVersion `
             -Score $eScore -Comparison $eComparison -NotEvaluated $eNotEval -AcceptedCount @($eSplit.Accepted).Count
     }
 
@@ -443,12 +450,12 @@ $elapsed = (Get-Date) - $start
 $elapsedText = "{0:N1}s" -f $elapsed.TotalSeconds
 
 $html = ConvertTo-ReportHtml -Snapshot $snap -Index $index -PrivMap $privMap -Split $split -Score $score `
-    -NotEvaluated $notEvaluated -Comparison $comparison -Config $config -ToolVersion $script:MooseADVersion -ElapsedText $elapsedText
+    -NotEvaluated $notEvaluated -Comparison $comparison -Config $config -ToolVersion $script:IDWolfVersion -ElapsedText $elapsedText
 $htmlFull = if ([System.IO.Path]::IsPathRooted($OutHtml)) { $OutHtml } else { Join-Path (Get-Location).Path $OutHtml }
 [System.IO.File]::WriteAllText($htmlFull, $html, (New-Object System.Text.UTF8Encoding($false)))
 Export-FindingsCsv -Findings $active -Path $OutCsv
 if ($OutJson) {
-    Export-FindingsJsonl -Findings $active -Snapshot $snap -Path $OutJson -ToolVersion $script:MooseADVersion `
+    Export-FindingsJsonl -Findings $active -Snapshot $snap -Path $OutJson -ToolVersion $script:IDWolfVersion `
         -Score $score -Comparison $comparison -NotEvaluated $notEvaluated -AcceptedCount @($split.Accepted).Count
 }
 
@@ -507,6 +514,6 @@ Write-Host "Gemini reply (still pseudonymized) kept at $responseFile"
 $aiResult = ConvertFrom-AiResponse -Raw $raw -Pz $pz -Findings $active -Model $Model
 
 $html = ConvertTo-ReportHtml -Snapshot $snap -Index $index -PrivMap $privMap -Split $split -Score $score `
-    -NotEvaluated $notEvaluated -Comparison $comparison -Config $config -ToolVersion $script:MooseADVersion -ElapsedText $elapsedText -AiResult $aiResult
+    -NotEvaluated $notEvaluated -Comparison $comparison -Config $config -ToolVersion $script:IDWolfVersion -ElapsedText $elapsedText -AiResult $aiResult
 [System.IO.File]::WriteAllText($htmlFull, $html, (New-Object System.Text.UTF8Encoding($false)))
 Write-Host "AI section added to $OutHtml ($(@($aiResult.RemediationPlan).Count) remediation items)." -ForegroundColor Green

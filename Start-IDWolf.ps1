@@ -89,12 +89,26 @@ function Ts { Get-Date -Format 'yyyyMMdd_HHmmss' }
 # Collect here, analyze elsewhere: one zip with a hash for each file inside.
 function Invoke-Package {
     param([string]$Snapshot, [string]$PasswordQuality = '')
-    $zipOut = Read-Path "Zip path" ("idwolf_{0}.zip" -f (Ts))
+    # A password wraps the zip in an encrypted container (.idwolf); Enter alone keeps a plain zip.
+    $pw1 = Read-Host 'Password to encrypt the package (hidden; Enter for a plain zip)' -AsSecureString
+    $pw = $null
+    if ($pw1.Length -gt 0) {
+        $pw2 = Read-Host 'Same password again' -AsSecureString
+        $same = $false
+        $b1 = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($pw1); $b2 = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($pw2)
+        try { $same = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($b1) -ceq [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($b2) }
+        finally { [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($b1); [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($b2) }
+        if (-not $same) { Write-Host 'The two passwords differ: nothing packaged.' -ForegroundColor Red; return }
+        if ($pw1.Length -lt 12) { Write-Host 'Use at least 12 characters: nothing packaged.' -ForegroundColor Red; return }
+        $pw = $pw1
+    }
+    $zipOut = Read-Path "Package path" ("idwolf_{0}.{1}" -f (Ts), $(if ($pw) { 'idwolf' } else { 'zip' }))
     try {
-        $full = New-IDWolfBundle -Snapshot $Snapshot -PasswordQuality $PasswordQuality -OutFile $zipOut
+        $full = New-IDWolfBundle -Snapshot $Snapshot -PasswordQuality $PasswordQuality -OutFile $zipOut -Password $pw
         Write-Host "Ready: $full" -ForegroundColor Green
         Write-Host "Copy it to the analysis machine and run: .\IDWolf.ps1 -Snapshot $([System.IO.Path]::GetFileName($full))" -ForegroundColor Cyan
-        Write-Host "It holds directory data (and account names with weak passwords, if included): move it like any confidential file, then delete the copies." -ForegroundColor Yellow
+        if ($pw) { Write-Host "Encrypted: IDWolf.ps1 asks for the password when it opens it. Send the password over a different channel than the file." -ForegroundColor Cyan }
+        else { Write-Host "It holds directory data (and account names with weak passwords, if included): move it like any confidential file, then delete the copies." -ForegroundColor Yellow }
     }
     catch { Write-Host "Packaging failed: $($_.Exception.Message)" -ForegroundColor Red }
 }
@@ -192,7 +206,7 @@ while ($true) {
                 elseif ($next -ne 'S') {
                     $ap = @{ Snapshot = $out; OutHtml = (Read-Path "Report HTML path" ("report_{0}.html" -f (Ts))) }
                     if ($pqOut) { $ap['PasswordQualityFile'] = $pqOut }
-                    $m = Read-Host "Gemini model [gemini-3.7-flash]"
+                    $m = Read-Host "Gemini model [gemini-3.8-flash]"
                     if ($m) { $ap['Model'] = $m.Trim() }
                     $r = Read-Host "Gemini attempts on timeout / busy server, 0 = keep trying [3]"
                     if ($r -match '^\d+$') { $ap['AiMaxAttempts'] = [int]$r }
@@ -226,7 +240,7 @@ while ($true) {
                 # No -SendToAI: the analyzer writes <report>_ai_prompt.txt first, shows its path, asks before
                 # sending, and asks for the API key then if there is none. Nothing leaves before that "y".
                 Write-Host "The exact text for Gemini will be saved next to the report as $([System.IO.Path]::GetFileNameWithoutExtension($rep))_ai_prompt.txt, and you confirm before anything is sent." -ForegroundColor Cyan
-                $m = Read-Host "Gemini model [gemini-3.7-flash]"
+                $m = Read-Host "Gemini model [gemini-3.8-flash]"
                 if ($m) { $ap['Model'] = $m.Trim() }
                     $r = Read-Host "Gemini attempts on timeout / busy server, 0 = keep trying [3]"
                     if ($r -match '^\d+$') { $ap['AiMaxAttempts'] = [int]$r }
@@ -264,7 +278,7 @@ while ($true) {
                 if ($next -eq 'Z') { Invoke-Package -Snapshot $out }
                 elseif ($next -ne 'S') {
                     $ap = @{ Snapshot = $out; OutHtml = (Read-Path "Report HTML path" ("report_{0}.html" -f (Ts))) }
-                    $m = Read-Host "Gemini model [gemini-3.7-flash]"
+                    $m = Read-Host "Gemini model [gemini-3.8-flash]"
                     if ($m) { $ap['Model'] = $m.Trim() }
                     $r = Read-Host "Gemini attempts on timeout / busy server, 0 = keep trying [3]"
                     if ($r -match '^\d+$') { $ap['AiMaxAttempts'] = [int]$r }

@@ -9,7 +9,7 @@
       Application.Read.All, AuditLog.Read.All, UserAuthenticationMethod.Read.All,
       Policy.Read.DeviceConfiguration, AccessReview.Read.All,
       OnPremDirectorySynchronization.Read.All, RoleManagementPolicy.Read.Directory,
-      EntitlementManagement.Read.All
+      EntitlementManagement.Read.All, PrivilegedEligibilitySchedule.Read.AzureADGroup
     Global Reader is enough. PIM data needs Entra ID P2; sign-in activity
     needs P1.
 
@@ -86,7 +86,7 @@ Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
 
 $scopes = 'Directory.Read.All', 'Policy.Read.All', 'RoleManagement.Read.Directory', 'Application.Read.All', 'AuditLog.Read.All', 'UserAuthenticationMethod.Read.All',
     'Policy.Read.DeviceConfiguration', 'AccessReview.Read.All', 'OnPremDirectorySynchronization.Read.All', 'RoleManagementPolicy.Read.Directory',
-    'EntitlementManagement.Read.All'
+    'EntitlementManagement.Read.All', 'PrivilegedEligibilitySchedule.Read.AzureADGroup'
 $ctx = $null
 try { $ctx = Get-MgContext } catch { }
 if ($ClientId) {
@@ -194,6 +194,7 @@ try {
                 includeUsers        = @($_.conditions.users.includeUsers)
                 excludeUsers        = @($_.conditions.users.excludeUsers)
                 excludeGroups       = @($_.conditions.users.excludeGroups)
+                includeGroups       = @($_.conditions.users.includeGroups)
                 includeRoles        = @($_.conditions.users.includeRoles)
                 includeApplications = @($_.conditions.applications.includeApplications)
                 includeUserActions  = @($_.conditions.applications.includeUserActions)
@@ -353,18 +354,40 @@ try {
 }
 catch { Add-CollectionError 'accessReviews' $_.Exception.Message }
 
-# PIM activation rules for Global Admin and Privileged Role Admin: is approval required?
-$pimPolicies = $null
+# PIM role settings of the privileged roles: approval (pimPolicies, Global Admin and Privileged
+# Role Admin, kept for older analyzers) and the full activation / assignment rules (pimRules).
+$privRoleIds = '62e90394-69f5-4237-9190-012177145e10', 'e8611ab8-c189-46e8-94e1-60213ab1f814', '194ae4cb-b126-40b2-bd5b-6091b380977d', '9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3',
+    '158c047a-c907-4556-b7ef-446551a6b5f7', '966707d0-3269-4727-9be2-8c3a10f19b9d', 'fe930be7-5e62-47db-91af-98c3a49a38b1', '29232cdf-9323-42fd-ade2-1d097af3e4de',
+    'f28a1f50-f6e7-4571-818b-6a12f2af6b6c', '7be44c8a-adaf-4e2a-84d6-ab2649e08a13', 'b1be1c3e-b65d-4f19-8427-f6fa0d97feb9', 'b0f54661-2d74-4c50-afa3-1ec803f12efe',
+    '729827e3-9c14-49f7-bb1b-9608f156bbb8', 'e3973bdf-4987-49ae-837a-ba8e231c7286'
+$pimPolicies = $null; $pimRules = $null
 try {
-    $pimPolicies = [ordered]@{}
-    foreach ($rid in '62e90394-69f5-4237-9190-012177145e10', 'e8611ab8-c189-46e8-94e1-60213ab1f814') {
+    $pimPolicies = [ordered]@{}; $pimRules = [ordered]@{}
+    foreach ($rid in $privRoleIds) {
         $f = [uri]::EscapeDataString("scopeId eq '/' and scopeType eq 'DirectoryRole' and roleDefinitionId eq '$rid'")
         $a = @(Get-Graph "policies/roleManagementPolicyAssignments?`$filter=$f&`$expand=policy(`$expand=rules)" -All)[0]
-        $rule = @($a.policy.rules | Where-Object { "$($_.id)" -eq 'Approval_EndUser_Assignment' })[0]
-        $pimPolicies[$rid] = [bool]$rule.setting.isApprovalRequired
+        if (-not $a) { continue }
+        $rules = @($a.policy.rules)
+        $byId = { param($id) @($rules | Where-Object { "$($_.id)" -eq $id })[0] }
+        $appr = & $byId 'Approval_EndUser_Assignment'
+        $enab = & $byId 'Enablement_EndUser_Assignment'
+        $actx = & $byId 'AuthenticationContext_EndUser_Assignment'
+        $actExp = & $byId 'Expiration_EndUser_Assignment'
+        $eligExp = & $byId 'Expiration_Admin_Eligibility'
+        $assExp = & $byId 'Expiration_Admin_Assignment'
+        if ($rid -in '62e90394-69f5-4237-9190-012177145e10', 'e8611ab8-c189-46e8-94e1-60213ab1f814') { $pimPolicies[$rid] = [bool]$appr.setting.isApprovalRequired }
+        $pimRules[$rid] = [ordered]@{
+            approval              = [bool]$appr.setting.isApprovalRequired
+            mfa                   = (@($enab.enabledRules) -contains 'MultiFactorAuthentication')
+            justification         = (@($enab.enabledRules) -contains 'Justification')
+            authContext           = [bool]$actx.isEnabled
+            maxActivation         = "$($actExp.maximumDuration)"
+            eligibleExpiryRequired = [bool]$eligExp.isExpirationRequired
+            activeExpiryRequired  = [bool]$assExp.isExpirationRequired
+        }
     }
 }
-catch { Add-CollectionError 'pimPolicies' $_.Exception.Message; $pimPolicies = $null }
+catch { Add-CollectionError 'pimPolicies' $_.Exception.Message; $pimPolicies = $null; $pimRules = $null }
 
 # Licence plans, to tell an admin account with mailbox and Teams from an identity-only one.
 $skus = $null
@@ -395,6 +418,15 @@ try {
         })
 }
 catch { Add-CollectionError 'directoryRoles' $_.Exception.Message }
+
+# Role assignments with their scope: "/" is tenant-wide, anything else an administrative unit
+# or a single object. Conditional Access policies that target roles skip scoped assignments.
+$roleAssignments = $null
+try {
+    $roleAssignments = @(Get-Graph 'roleManagement/directory/roleAssignments?$select=principalId,roleDefinitionId,directoryScopeId' -All | ForEach-Object {
+            [ordered]@{ principalId = "$($_.principalId)"; roleDefinitionId = "$($_.roleDefinitionId)"; directoryScopeId = "$($_.directoryScopeId)" } })
+}
+catch { Add-CollectionError 'roleAssignments' $_.Exception.Message }
 
 # Users, with MFA registration state from the reports endpoint
 $mfaByUser = @{}; $mfaCapable = @{}; $mfaMethods = @{}
@@ -450,9 +482,58 @@ try {
 catch { Add-CollectionError 'perUserMfa' $_.Exception.Message; $perUserMfa = $null }
 
 # Applications and service principals: credential expiry and high-privilege grants
+# Groups that gate access: excluded from or targeted by Conditional Access, or holding an
+# admin role (directly or through PIM). Visibility, dynamic rule and owners only; members
+# are not read. A PIM principal that is not a group answers 404 and is skipped.
+$groups = $null
+try {
+    $gids = New-Object System.Collections.Generic.List[string]
+    foreach ($p in @($caPolicies | Where-Object { $_ })) { foreach ($g in @($p.excludeGroups) + @($p.includeGroups)) { if ($g -and -not $gids.Contains("$g")) { $gids.Add("$g") } } }
+    foreach ($r in @($roles | Where-Object { $_ })) { foreach ($k in @($r.memberTypes.Keys)) { if ("$($r.memberTypes[$k])" -eq 'group' -and -not $gids.Contains("$k")) { $gids.Add("$k") } } }
+    $userIds = @{}; foreach ($u in @($users | Where-Object { $_ })) { $userIds["$($u.id)"] = $true }
+    if ($pim) { foreach ($a in @($pim.active) + @($pim.eligible)) { if ($a -and $a.principalId -and -not $userIds.ContainsKey("$($a.principalId)") -and -not $gids.Contains("$($a.principalId)")) { $gids.Add("$($a.principalId)") } } }
+    # Groups that hold a role: role members of type group, plus PIM principals that turn out to be groups.
+    $roleGroupIds = @{}
+    foreach ($r in @($roles | Where-Object { $_ })) { foreach ($k in @($r.memberTypes.Keys)) { if ("$($r.memberTypes[$k])" -eq 'group') { $roleGroupIds["$k"] = $true } } }
+    if ($pim) { foreach ($a in @($pim.active) + @($pim.eligible)) { if ($a -and $a.principalId -and -not $userIds.ContainsKey("$($a.principalId)")) { $roleGroupIds["$($a.principalId)"] = $true } } }
+    $gErr = 0; $pimGroupErr = ''
+    $groups = @(foreach ($gid in $gids) {
+            $g = $null
+            try { $g = Get-Graph "groups/$gid`?`$select=id,displayName,visibility,groupTypes,membershipRule,isAssignableToRole,securityEnabled,onPremisesSyncEnabled" }
+            catch { if ("$($_.Exception.Message)" -notmatch '404|NotFound|ResourceNotFound') { $gErr++ }; continue }
+            $ownerTypes = [ordered]@{}
+            try { foreach ($o in @(Get-Graph "groups/$gid/owners?`$select=id" -All)) { $ownerTypes["$($o.id)"] = ("$($o.'@odata.type')" -replace '^#microsoft\.graph\.', '') } }
+            catch { $gErr++ }
+            # PIM for Groups: who is eligible to become member or owner (only groups holding a role).
+            $pimElig = $null
+            if ($roleGroupIds.ContainsKey("$gid")) {
+                try {
+                    $pf = [uri]::EscapeDataString("groupId eq '$gid'")
+                    $pimElig = @(Get-Graph "identityGovernance/privilegedAccess/group/eligibilityScheduleInstances?`$filter=$pf" -All | ForEach-Object { [ordered]@{ principalId = "$($_.principalId)"; accessId = "$($_.accessId)" } })
+                }
+                catch { $pimGroupErr = "$($_.Exception.Message)" }
+            }
+            [ordered]@{
+                id                 = "$($g.id)"
+                displayName        = "$($g.displayName)"
+                pimEligible        = $pimElig
+                visibility         = "$($g.visibility)"
+                unified            = (@($g.groupTypes) -contains 'Unified')
+                dynamic            = (@($g.groupTypes) -contains 'DynamicMembership')
+                membershipRule     = "$($g.membershipRule)"
+                isAssignableToRole = [bool]$g.isAssignableToRole
+                onPremSync         = [bool]$g.onPremisesSyncEnabled
+                ownerTypes         = $ownerTypes
+            }
+        })
+    if ($gErr) { Add-CollectionError 'groups' "$gErr group or owner read(s) failed: those groups may be missing" }
+    if ($pimGroupErr) { Add-CollectionError 'pimForGroups' "PIM for Groups eligibility not readable: $pimGroupErr" }
+}
+catch { Add-CollectionError 'groups' $_.Exception.Message }
+
 $apps = @()
 try {
-    $apps = @(Get-Graph 'applications' -All | ForEach-Object {
+    $apps = @(Get-Graph 'applications?$select=id,displayName,appId,passwordCredentials,keyCredentials,web,spa,publicClient,signInAudience,servicePrincipalLockConfiguration' -All | ForEach-Object {
             [ordered]@{
                 id           = $_.id
                 displayName  = $_.displayName
@@ -461,6 +542,8 @@ try {
                 keyCred      = @($_.keyCredentials | ForEach-Object { IsoUtc $_.endDateTime })
                 secrets      = @($_.passwordCredentials | ForEach-Object { [ordered]@{ start = IsoUtc $_.startDateTime; end = IsoUtc $_.endDateTime } })
                 redirectUris = @(@($_.web.redirectUris) + @($_.spa.redirectUris) + @($_.publicClient.redirectUris) | Where-Object { $_ } | ForEach-Object { "$_" })
+                signInAudience = "$($_.signInAudience)"
+                instanceLock = [bool]($_.servicePrincipalLockConfiguration.isEnabled -and $_.servicePrincipalLockConfiguration.allProperties)
             }
         })
 }
@@ -497,16 +580,29 @@ if ($grantErrors) { Add-CollectionError 'servicePrincipals.appRoleAssignments' "
 # credential and act as the app. Only those apps, to keep the call count low.
 $riskyRoles = '9e3f62cf-ca93-4989-b6ce-bf83c28f9fe8', '19dbc75e-c2e2-444c-a770-ec69d8559fc7', '1bfefb4e-e0b5-418b-a88f-73c46d2cc8e9', '06b708a9-e830-4db3-a914-8e69da51d44f',
     '62a82d76-70ea-41e2-9197-370581804d09', '741f803b-c850-494e-b5df-cde7c675a1ca', '50483e42-d915-4231-9639-7fdb7fd190e5'
+$spInRole = @{}; foreach ($r in @($roles | Where-Object { $_ })) { foreach ($k in @($r.memberTypes.Keys)) { if ("$($r.memberTypes[$k])" -eq 'servicePrincipal') { $spInRole["$k"] = $true } } }
 try {
-    foreach ($sp in @($servicePrincipals | Where-Object { @($_.appRoleIds | Where-Object { $riskyRoles -contains "$_" }).Count })) {
-        $owners = @()
-        try { $owners += @(Get-Graph "servicePrincipals/$($sp.id)/owners" -All | ForEach-Object { "$($_.id)" }) } catch { }
+    foreach ($sp in @($servicePrincipals | Where-Object { $spInRole.ContainsKey("$($_.id)") -or @($_.appRoleIds | Where-Object { $riskyRoles -contains "$_" }).Count })) {
+        $owners = @(); $ownerTypes = [ordered]@{}
+        try { foreach ($o in @(Get-Graph "servicePrincipals/$($sp.id)/owners" -All)) { $owners += "$($o.id)"; $ownerTypes["$($o.id)"] = ("$($o.'@odata.type')" -replace '^#microsoft\.graph\.', '') } } catch { }
         $app = @($apps | Where-Object { $_.appId -eq $sp.appId })[0]
-        if ($app) { try { $owners += @(Get-Graph "applications/$($app.id)/owners" -All | ForEach-Object { "$($_.id)" }) } catch { } }
+        if ($app) { try { foreach ($o in @(Get-Graph "applications/$($app.id)/owners" -All)) { $owners += "$($o.id)"; $ownerTypes["$($o.id)"] = ("$($o.'@odata.type')" -replace '^#microsoft\.graph\.', '') } } catch { } }
         $sp['owners'] = @($owners | Select-Object -Unique)
+        $sp['ownerTypes'] = $ownerTypes
     }
 }
 catch { Add-CollectionError 'appOwners' $_.Exception.Message }
+
+# Last sign-in of each service principal (beta report, needs Entra ID P1): used only for the
+# privileged ones. appId -> last sign-in in any flow.
+$spSignIns = $null
+try {
+    $spSignIns = [ordered]@{}
+    foreach ($a in @(Get-Graph 'https://graph.microsoft.com/beta/reports/servicePrincipalSignInActivities' -All)) {
+        if ($a.appId) { $spSignIns["$($a.appId)"] = IsoUtc $a.lastSignInActivity.lastSignInDateTime }
+    }
+}
+catch { Add-CollectionError 'spSignIns' $_.Exception.Message; $spSignIns = $null }
 
 # Delegated permissions granted to apps (by an admin for everyone, or by users).
 $oauthGrants = $null
@@ -536,7 +632,7 @@ $accessPackages = $null
 try {
     $accessPackages = @(Get-Graph 'identityGovernance/entitlementManagement/assignmentPolicies?$expand=accessPackage' -All | ForEach-Object {
             [ordered]@{
-                id = $_.id; displayName = $_.displayName; accessPackage = "$($_.accessPackage.displayName)"
+                id = $_.id; displayName = $_.displayName; accessPackage = "$($_.accessPackage.displayName)"; accessPackageId = "$($_.accessPackage.id)"
                 allowedTargetScope = "$($_.allowedTargetScope)"
                 selfAddEnabled = [bool]$_.requestorSettings.enableTargetsToSelfAddAccess
                 approvalRequired = [bool]$_.requestApprovalSettings.isApprovalRequiredForAdd
@@ -546,11 +642,24 @@ try {
         })
 }
 catch { Add-CollectionError 'accessPackages' $_.Exception.Message }
+# What each package grants (group memberships, Entra roles, app roles): origin system and ids.
+$accessPackageGrants = $null
+if ($accessPackages) {
+    try {
+        $accessPackageGrants = [ordered]@{}
+        foreach ($apid in @($accessPackages | ForEach-Object { $_.accessPackageId } | Where-Object { $_ } | Select-Object -Unique)) {
+            $pkg = Get-Graph "identityGovernance/entitlementManagement/accessPackages/$apid`?`$expand=resourceRoleScopes(`$expand=role,scope)"
+            $accessPackageGrants[$apid] = @(@($pkg.resourceRoleScopes) | ForEach-Object {
+                    [ordered]@{ originSystem = "$($_.role.originSystem)"; roleOriginId = "$($_.role.originId)"; scopeOriginId = "$($_.scope.originId)"; roleName = "$($_.role.displayName)" } })
+        }
+    }
+    catch { Add-CollectionError 'accessPackageGrants' $_.Exception.Message; $accessPackageGrants = $null }
+}
 
 # --------------------------------------------------------------------------
 $snapshot = [ordered]@{
     meta = [ordered]@{
-        tool = 'IDWolf'; kind = 'entra'; schemaVersion = 5; collectorVersion = $script:CollectorVersion
+        tool = 'IDWolf'; kind = 'entra'; schemaVersion = 7; collectorVersion = $script:CollectorVersion
         collectedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
         tenantId = $ctx.TenantId; account = $ctx.Account
         collectionErrors = $script:Errors.ToArray(); synthetic = $false
@@ -579,6 +688,11 @@ $snapshot = [ordered]@{
     crossTenant       = $crossTenant
     accessPackages    = $accessPackages
     conditionalAccess = $caPolicies
+    groups            = $groups
+    pimRules          = $pimRules
+    roleAssignments   = $roleAssignments
+    spSignIns         = $spSignIns
+    accessPackageGrants = $accessPackageGrants
     directoryRoles    = $roles
     users             = $users
     applications      = $apps

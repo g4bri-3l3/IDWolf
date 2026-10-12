@@ -20,12 +20,12 @@ nothing but the native ActiveDirectory module, then analyzes that snapshot
 **offline** and gives you an HTML report, a findings CSV and, if you want, JSON
 Lines for your SIEM.
 
-On the AD side it runs **136 checks**: Kerberos, privileged access, account
+On the AD side it runs **166 checks**: Kerberos, privileged access, account
 hygiene, domain configuration, permissions, DNS, AD CS (ESC1-5, 9, 10, 13, 15),
 operational health (replication, DHCP, backups), host hardening read from the
 GPOs (SMB and LDAP signing, NTLM, LM hash, user rights) and password quality,
 all without ever handling a password hash. A separate collector covers
-**Microsoft Entra ID** with **75 checks**, mapped to the CIS Microsoft 365
+**Microsoft Entra ID** with **86 checks**, mapped to the CIS Microsoft 365
 benchmark.
 
 If you like, a Gemini step can write an executive summary and a remediation
@@ -70,14 +70,14 @@ works that out by itself.
 |---|---|---|
 | Kerberos | 14 | Kerberoasting, AS-REP roasting, RC4/DES, delegation (unconstrained, constrained, RBCD, orphan targets open to SPN-jacking), krbtgt age, Protected Users |
 | Privileged access | 18 | Tier 0 membership by SID through nesting and primary group, dormant / foreign / computer admins, operator groups, DnsAdmins, RID 500, silos, GPOs making everyone local admin, RODC password replication policy and Tier 0 credentials cached on RODCs |
-| Account hygiene | 17 | inactive and never-used accounts, passwords not required / never expiring / in descriptions, sIDHistory, LAPS deployment and rotation, obsolete OS |
-| Domain configuration | 24 | password policies and FGPPs, functional level, Recycle Bin, anonymous LDAP, trusts, DNS zones and WPAD records, DC hygiene |
-| Permissions | 13 | DCSync rights, dangerous ACEs on Tier 0 (or anywhere with `-Deep`: including write access to logon script, profile path, certificate mapping, account flags and account restrictions, the RBCD attribute), owners, DirSync readers of confidential attributes (SyncLAPSPassword), GPP passwords, script secrets, gMSA and LAPS readers, Shadow Credentials, GPO takeover, GPO scripts and tasks run from shares |
-| Certificate services | 13 | ESC1-5, 9, 10, 13, 15, weak CA keys, expiring CAs; ESC6-8, 11 and 16 flagged for a manual look |
-| Host hardening (GPO) | 23 | SMB/LDAP signing and channel binding, NTLM/LM, WDigest, LSA protection, audit policy, logging, ZeroLogon, LLMNR, Spooler, Point and Print (PrintNightmare), cached logons |
+| Account hygiene | 19 | inactive and never-used accounts, passwords not required / never expiring / in descriptions, sIDHistory, LAPS deployment and rotation, obsolete OS |
+| Domain configuration | 28 | password policies and FGPPs, functional level, Recycle Bin, anonymous LDAP, trusts, DNS zones and WPAD records, DC hygiene |
+| Permissions | 15 | DCSync rights, dangerous ACEs on Tier 0 (or anywhere with `-Deep`: including write access to logon script, profile path, certificate mapping, account flags and account restrictions, the RBCD attribute), owners, DirSync readers of confidential attributes (SyncLAPSPassword), GPP passwords, script secrets, gMSA and LAPS readers, Shadow Credentials, GPO takeover, GPO scripts and tasks run from shares |
+| Certificate services | 18 | ESC1-5, 9, 10, 13, 15, weak CA keys, expiring CAs; ESC6, 7, 8, 11 and 16 read on the CA itself (admin rights on the CA host), with a manual-look note for any CA that could not be read |
+| Host hardening (GPO) | 40 | SMB/LDAP signing and channel binding, NTLM/LM, WDigest, LSA protection, audit policy, logging, ZeroLogon, LLMNR, mDNS, NBT-NS (live on DCs), null sessions, Spooler, WebClient (GPO and live on DCs), noPac patch level and coercion interfaces (live on DCs), Point and Print (PrintNightmare), cached logons, AlwaysInstallElevated, autologon passwords in GPOs, WSUS over HTTP, RDP (NLA, Restricted Admin), Credential Guard, application control, IPv6 / mitm6, WPAD auto-discovery, Windows Script Host, force logoff |
 | Password quality | 5 | duplicate, empty, default, breached and reversible passwords, without ever handling a hash |
 | Operational health | 9 | replication, backups, DHCP on a DC, FSMO holders, unreachable DCs, clock skew between DCs, disk space and stopped services on DCs |
-| **Entra ID** | 75 | MFA (registration, strength, Authenticator settings), Conditional Access (legacy auth, device code, risk, managed devices, locations, token protection, session limits), PIM (standing access, approval), admins (cloud-only, licences, inactive, emergency access), devices (join, local admins, LAPS, BitLocker), guests, apps (consent, permissions, credential policy), password settings, risky app consents, app owners, credentials on Microsoft apps, sync health, federation, B2B direct connect, access packages, workload identity Conditional Access; every CIS Microsoft 365 v7 control that Graph can read |
+| **Entra ID** | 86 | MFA (registration, strength, Authenticator settings), Conditional Access (legacy auth, device code, risk, managed devices, locations, token protection, session limits), PIM (standing access, approval, activation and assignment settings, PIM for Groups owners), admins (cloud-only, licences, inactive, emergency access), devices (join, local admins, LAPS, BitLocker), guests, apps (consent, permissions, credential policy), password settings, risky app consents, app owners, groups behind Conditional Access exclusions and admin roles, the Entra Connect app, look-alike app names, credentials on Microsoft apps, sync health, federation, B2B direct connect, access packages, workload identity Conditional Access; every CIS Microsoft 365 v7 control that Graph can read |
 
 The full list of checks is further down. How they map to CIS, PingCastle, the
 InfosecMatter Top 16, HardenAD and the rest is in [`COVERAGE.md`](COVERAGE.md).
@@ -116,12 +116,12 @@ October 2026. If something here is out of date or wrong, please say so.
 | Proves it can't write to the directory (built-in code review) | **Yes** | – | – | – | – (has a fix mode) | – |
 | Collect once, analyze later on another machine, offline | **Yes** | partial (re-renders its XML report) | – | yes (import into the server) | – | – |
 | AI summary, remediation plan, attack-path story, fix scripts, exploitability ranking | **Yes** (names tokenized first, nothing sent without consent) | – | – | – | – | – |
-| AD hygiene checklist | 136 checks | yes | yes | – (paths, not a checklist) | – | – |
+| AD hygiene checklist | 166 checks | yes | yes | – (paths, not a checklist) | – | – |
 | AD CS (ESC) | ESC1-5, 9, 10, 13, 15 | some | some | yes, as graph edges | **broadest**, with fixes | – |
 | Password quality (duplicates, breached) | yes, hashless | – | – | – | – | – |
 | Host hardening read from GPOs | yes | yes | yes | – | – | – |
 | DC health | replication, backup age, FSMO holders, reachability, clock skew, disk space, stopped services | backup age, DC registration, DCs not updated | ? | – | – | – |
-| Entra ID | 75 checks, CIS M365 v7 + non-human identities | **102 checks** (4.0; the list isn't public, so the overlap with IDWolf is unknown) | yes | yes (AzureHound) | – | **broadest** (CIS, CISA, EIDSCA) |
+| Entra ID | 86 checks, CIS M365 v7 + non-human identities | **102 checks** (4.0; the list isn't public, so the overlap with IDWolf is unknown) | yes | yes (AzureHound) | – | **broadest** (CIS, CISA, EIDSCA) |
 | Attack-path view | map in the report + BloodHound export | control-path map | – | **the reference** | – | – |
 
 A "–" means the feature isn't in that tool's free edition as far as I know, not
@@ -184,6 +184,25 @@ move it like any confidential file and delete the copies when you're done. Only
 the analyzing machine needs the Gemini key. Nothing goes to Gemini from the
 server.
 
+**Encrypted package.** When the launcher packages files it asks for a password
+(at least 12 characters, typed twice; Enter alone keeps a plain zip). With a
+password you get an `.idwolf` file instead of a zip: the zip is encrypted with
+AES-256, with a key derived from the password (PBKDF2-SHA256, 600,000 rounds;
+PBKDF2-SHA1 with more rounds on a .NET older than 4.7.2), and an HMAC-SHA256
+covers the whole file. A wrong password or a changed byte is refused before
+anything is decrypted, so this also catches tampering, which the manifest
+alone doesn't. The analyzer recognizes the file by its header and asks for the
+password; in a script pass it as a `SecureString`:
+
+```powershell
+.\IDWolf.ps1 -Snapshot .\idwolf_20261006_201500.idwolf -BundlePassword (Read-Host -AsSecureString)
+```
+
+The password is never taken as plain text on the command line, never written
+anywhere, and the decrypted zip stays in memory. Only IDWolf opens the file (it
+is not a password-protected zip that 7-Zip would read). Send the password over a
+different channel than the file.
+
 ## Collecting from AD
 
 ```powershell
@@ -233,7 +252,8 @@ collectors talk to anything. `IDWolf.ps1`, the analysis, needs no network at all
 |---|---|---|---|---|
 | the collecting machine | a DC (or `-Server`) | TCP 9389 (ADWS) | every `Get-AD*` read: users, groups, ACLs, trusts, replication metadata | the collection fails |
 | the collecting machine | `\\<domain>\SYSVOL` (a DC) | TCP 445 (SMB) | GPP passwords, GPO security templates, scripts | SYSVOL and GPO checks *not evaluated* |
-| the collecting machine | every DC | TCP 5985 (WinRM) | disk space and core services (CIM), needs admin rights there | `dc_low_disk`, `dc_service_stopped` *not evaluated* |
+| the collecting machine | every DC | TCP 5985 (WinRM) | disk space, services, NetBIOS settings, OS build and RPC filters (CIM, plus registry reads: the update revision and the RPC filter store); needs admin rights on each DC (in practice Domain Admins, or delegated remote WMI rights) | `dc_low_disk`, `dc_service_stopped`, `webclient_on_dc`, `nbtns_enabled_dc`, `nopac_unpatched_dc`, `coercion_unfiltered_dc` *not evaluated* (only partly evaluated if some DCs refuse) |
+| the collecting machine | every CA host | TCP 5985 (WinRM) | CA registry settings and installed roles (CIM); needs admin rights on the CA host | `adcs_esc6/7/8/11/16` *not evaluated*, `adcs_manual_checks` instead |
 | the collecting machine | the DNS server | WinRM (TCP 5985) for the DnsServer cmdlets; otherwise AD-integrated zones over ADWS | DNS zones, aging, zone transfer setting | DNS checks reduced or *not evaluated* |
 | the collecting machine | every DC | UDP 123 (NTP) | clock offset between DCs | `dc_time_skew` *not evaluated* |
 | the collecting machine | a DC | RPC (TCP 135 and the dynamic range) | `repadmin /showbackup`, last backup date | `ad_backup_overdue` not evaluated |
@@ -257,14 +277,15 @@ you need more.
 |---|---|---|
 | Users, computers, groups, SPNs, delegation, RBCD, sIDHistory, key credentials | Kerberos, privileged access, most account hygiene | standard user |
 | Password policy, dsHeuristics, trusts, DCs, MAQ, Recycle Bin, functional level | most domain configuration | standard user |
-| Tier 0 ACLs, SYSVOL scan, GPO ACLs | `dcsync_rights`, `dangerous_ace_tier0`, `gpp_cpassword`, `gpo_dangerous_acl`... | standard user |
+| Tier 0 ACLs, SYSVOL scan (including the NETLOGON and Policies folder permissions), GPO ACLs | `dcsync_rights`, `dangerous_ace_tier0`, `gpp_cpassword`, `sysvol_writable`, `gpo_dangerous_acl`... | standard user |
 | AD CS templates, CAs, issuance policies | `adcs_*` | standard user |
-| GPO templates in SYSVOL (GptTmpl.inf, registry.pol, audit.csv) | host hardening, `adcs_esc10` | standard user |
+| CA registry and installed roles (CIM on each CA host) | `adcs_esc6`, `adcs_esc7`, `adcs_esc8`, `adcs_esc11`, `adcs_esc16` | local admin on the CA host (CA servers are Tier 0, so usually Domain Admins). Otherwise *not evaluated* and `adcs_manual_checks` |
+| GPO templates in SYSVOL (GptTmpl.inf, machine and user registry.pol, audit.csv) | host hardening, `adcs_esc10` | standard user |
 | DNS zones | `dns_*` | standard user over LDAP; zone transfer needs DnsAdmins or admin on the DNS server |
 | Replication, authorized DHCP, last backup, FSMO holders, DC reachability, DC clocks (`w32tm`) | operational health | standard user (`repadmin` for the backup line) |
-| Disk space and core services on the DCs (CIM) | `dc_low_disk`, `dc_service_stopped` | admin rights on the DCs (otherwise *not evaluated*) |
+| Disk space, core services, Spooler, WebClient, NetBIOS per adapter, OS build and update revision, coercion services and RPC filters on the DCs (CIM) | `dc_low_disk`, `dc_service_stopped`, `webclient_on_dc`, `nbtns_enabled_dc`, `nopac_unpatched_dc`, `coercion_unfiltered_dc` | local admin on each DC, so in practice Domain Admins (or remote WMI rights delegated on the DCs). Otherwise *not evaluated*; if only some DCs refuse, the checks say which ones and are listed as only partly evaluated |
 | Fine-grained password policies | `fgpp_weak` | delegated read or Domain Admin |
-| Every object's ACL (`-Deep`) | `dangerous_ace_anywhere`, `laps_readers` | broad read (delegated auditor or DA) |
+| Every object's ACL and the KDS root keys (`-Deep`) | `dangerous_ace_anywhere`, `laps_readers`, `kds_root_key_readable` | broad read (delegated auditor or DA) |
 | Password quality | `pwq_*` | DCSync rights, or an offline NTDS.dit |
 
 Anything the collector couldn't read is reported as *not evaluated*, never as
@@ -279,9 +300,12 @@ the FGPP container or run `-Deep` as a delegated auditor.
 The only difference with `-Deep` is that the collector reads the ACL of
 **every** user, computer, group and OU, not just the Tier 0 objects (domain
 root, AdminSDHolder, privileged groups, the DC OU and DC objects, GPOs,
-certificate templates). That adds two checks: `dangerous_ace_anywhere`, a
-non-privileged principal with GenericAll, WriteDacl, reset password and so on
-over anything, and `laps_readers`, who can read LAPS passwords. It also gives
+certificate templates), plus the KDS root keys. That adds three checks:
+`dangerous_ace_anywhere`, a non-privileged principal with GenericAll, WriteDacl,
+reset password and so on over anything, `laps_readers`, who can read LAPS
+passwords, and `kds_root_key_readable`, who can read a KDS root key and so
+compute every gMSA password (Golden gMSA). Only the permissions of the root
+keys are read, never the key itself. It also gives
 the BloodHound export the edges outside Tier 0. It's still read-only, just slow
 on big domains, and it needs broad read rights.
 
@@ -289,9 +313,9 @@ on big domains, and it needs broad read rights.
 
 Listing zones through the DnsServer cmdlets needs admin rights on the DNS
 server, which a normal user doesn't have. When that fails, the collector reads
-the AD-integrated zones over LDAP instead. You still get dynamic updates, aging
-and the wildcard, WPAD and ISATAP records. Only the zone transfer setting is
-missing, because it lives in the DNS server's registry. If you run the
+the AD-integrated zones over LDAP instead. You still get dynamic updates, aging,
+the wildcard, WPAD and ISATAP records, and who can create records in each zone.
+Only the zone transfer setting is missing, because it lives in the DNS server's registry. If you run the
 collector on the DC itself, start PowerShell *as administrator*. Without
 elevation, UAC strips your admin groups and the full DNS read fails.
 
@@ -388,7 +412,7 @@ The collector signs in to Microsoft Graph itself, using read-only scopes
 RoleManagement.Read.Directory, RoleManagementPolicy.Read.Directory,
 Application.Read.All, AuditLog.Read.All, UserAuthenticationMethod.Read.All,
 AccessReview.Read.All, OnPremDirectorySynchronization.Read.All,
-EntitlementManagement.Read.All),
+EntitlementManagement.Read.All, PrivilegedEligibilitySchedule.Read.AzureADGroup),
 and only sends GET requests. It needs just the `Microsoft.Graph.Authentication`
 module and offers to install it for the current user, without admin rights.
 `-InstallModules` skips the question.
@@ -437,6 +461,7 @@ analyze. The newer checks just show as *not evaluated* until you collect again.
 | `-CompareTo` | off | an earlier findings CSV: new / resolved / still there |
 | `-ExceptionsFile` | off | accepted risks, see below |
 | `-PasswordQualityFile` | off (or the one in the zip) | report from `Export-PasswordQuality.ps1` |
+| `-BundlePassword` | prompt | password of an encrypted `.idwolf` package, as a `SecureString` |
 | `-KrbtgtMaxAgeDays` / `-KrbtgtCriticalDays` | 180 / 365 | krbtgt rotation |
 | `-PrivInactiveDays` | 90 | inactive privileged accounts |
 | `-InactiveDays` | 180 | inactive standard users |
@@ -452,7 +477,7 @@ analyze. The newer checks just show as *not evaluated* until you collect again.
 | `-SendToAI` | off | send without asking |
 | `-AiDryRun` | off | write the exact prompt to a file, send nothing |
 | `-AiMaxAttempts` | 3 | Gemini attempts on timeout or a busy server; 0 keeps trying |
-| `-ApiKey` / `-Model` | `$env:GEMINI_API_KEY` / `gemini-3.7-flash` | Gemini settings |
+| `-ApiKey` / `-Model` | `$env:GEMINI_API_KEY` / `gemini-3.8-flash` | Gemini settings |
 
 ## AD checks
 
@@ -510,11 +535,13 @@ particular object.
 |---|---|---|---|
 | `password_not_required` | Medium | T1078.002 | Password not required (PASSWD_NOTREQD) |
 | `reversible_encryption_account` | High | T1556.005 | Password stored with reversible encryption |
+| `altsecid_weak_mapping` | Medium | T1649 | Weak explicit certificate mapping on an account (ESC14) |
 | `unix_password_present` | High | T1552 | UNIX password attribute populated |
 | `password_in_description` | High | T1552 | Possible password in description |
 | `circular_group_nesting` | Low |  | Circular group nesting |
 | `inactive_user` | Low | T1078.002 | Enabled user inactive |
 | `never_logged_on_user` | Low | T1078.002 | Enabled user never logged on |
+| `smartcard_password_not_rotated` | Medium | T1550.002 | Smart-card-only account whose password is never rotated |
 | `password_never_expires` | Low | T1078.002 | Password never expires |
 | `guest_enabled` | Medium | T1078.001 | Guest account enabled |
 | `sid_history` | Medium | T1134.005 | sIDHistory populated |
@@ -550,7 +577,11 @@ particular object.
 | `trust_tgt_delegation` | High | T1558 | TGT delegation enabled across forest trust |
 | `trust_no_selective_auth` | Low |  | Inbound trust without selective authentication |
 | `trust_rc4` | Medium | T1558 | Trust uses RC4 |
+| `trust_inactive` | Low |  | Trust that looks unused |
+| `schema_class_poss_superior` | High | T1136.002 | Schema class lets any user or computer create containers |
+| `schema_java_objects` | Low |  | Java object classes present in the schema |
 | `dns_insecure_updates` | High | T1557 | DNS zone allows non-secure dynamic updates |
+| `dns_zone_create_child` | Medium | T1557 | Any user can create records in a DNS zone |
 | `dns_zone_transfer_allowed` | Medium | T1590 | DNS zone transfer allowed to any server |
 | `dns_scavenging_disabled` | Low |  | DNS aging/scavenging disabled |
 | `dns_dangerous_record` | High | T1557 | Dangerous DNS record (wildcard / WPAD / ISATAP) |
@@ -578,8 +609,10 @@ particular object.
 | `dangerous_ace_tier0` | Critical | T1098 | Dangerous permission on Tier 0 object |
 | `nonstandard_owner_tier0` | High | T1098 | Non-default owner of Tier 0 object |
 | `gpp_cpassword` | Critical | T1552.006 | Group Policy Preferences password in SYSVOL |
+| `sysvol_writable` | Critical | T1484.001 | NETLOGON or SYSVOL Policies folder writable by non-Tier 0 principals |
 | `sysvol_script_secrets` | High | T1552.001 | Possible credential in a SYSVOL logon script |
 | `dangerous_ace_anywhere` | High | T1098 | Dangerous permission held by a non-privileged principal |
+| `kds_root_key_readable` | High | T1003 | Non-Tier 0 principal can read a KDS root key (Golden gMSA) |
 | `laps_readers` | High | T1098 | Non-Tier 0 principal can read LAPS passwords |
 | `pre_win2000_anonymous` | High | T1087 | Pre-Windows 2000 Compatible Access includes Anonymous/Everyone |
 | `gmsa_password_readable` | High | T1649 | gMSA password readable by a non-Tier 0 principal |
@@ -602,7 +635,12 @@ particular object.
 | `adcs_low_priv_enroll` | Medium | T1649 | Client-auth template enrollable by all users |
 | `adcs_ca_cert_expiring` | Medium |  | CA certificate expiring or expired |
 | `adcs_weak_ca_key` | High | T1649 | CA certificate uses a weak key or signature |
-| `adcs_manual_checks` | Low | T1649 | AD CS checks that require on-CA verification (ESC6/ESC7/ESC8/ESC11/ESC16) |
+| `adcs_esc6` | High | T1649 | CA accepts a requester-supplied SAN on any request (ESC6) |
+| `adcs_esc7` | High | T1649 | Non-Tier 0 principal can manage the CA (ESC7) |
+| `adcs_esc8` | High | T1557.001 | Web enrollment on the CA (ESC8 NTLM relay) |
+| `adcs_esc11` | High | T1557.001 | CA does not require encrypted RPC requests (ESC11) |
+| `adcs_esc16` | High | T1649 | CA no longer adds the SID security extension (ESC16) |
+| `adcs_manual_checks` | Low | T1649 | AD CS checks not verified on the CA (ESC6/ESC7/ESC8/ESC11/ESC16) |
 | `adcs_esc10` | High | T1649 | Weak certificate binding on domain controllers (ESC10) |
 
 **Host Hardening**
@@ -624,6 +662,23 @@ particular object.
 | `smb_client_signing_not_required` | Medium | T1557.001 | SMB client signing not required |
 | `netlogon_vulnerable_channel` | Critical | T1210 | Netlogon secure channel enforcement disabled (ZeroLogon exposure) |
 | `llmnr_enabled` | Medium | T1557.001 | LLMNR not disabled |
+| `mdns_enabled` | Medium | T1557.001 | mDNS not disabled |
+| `webclient_not_disabled` | Low | T1187 | WebClient (WebDAV) service not disabled by GPO |
+| `webclient_on_dc` | High | T1187 | WebClient (WebDAV) service enabled on a domain controller |
+| `nbtns_enabled_dc` | Medium | T1557.001 | NetBIOS over TCP/IP enabled on a domain controller |
+| `nopac_unpatched_dc` | High | T1068 | Domain controller missing the noPac fix (CVE-2021-42278 / 42287) |
+| `coercion_unfiltered_dc` | Medium | T1187 | Coercion interfaces open on a domain controller |
+| `always_install_elevated` | High | T1548 | AlwaysInstallElevated set by a GPO |
+| `gpo_autologon_password` | Critical | T1552.006 | Autologon password stored in a GPO |
+| `wsus_http` | High | T1557 | Windows Update server over HTTP |
+| `rdp_nla_disabled` | Medium | T1021.001 | RDP Network Level Authentication turned off |
+| `rdp_restricted_admin` | Medium | T1550.002 | RDP Restricted Admin mode enabled |
+| `credential_guard_not_configured` | Low | T1003.001 | No GPO enables Credential Guard |
+| `app_control_missing` | Low | T1204.002 | No application control policy in any GPO |
+| `force_logoff_disabled` | Low |  | Sessions are not closed when logon hours expire |
+| `ipv6_dhcpv6_takeover` | Low | T1557 | IPv6 left on without a GPO against rogue DHCPv6 (mitm6) |
+| `wsh_enabled` | Low | T1059.005 | Windows Script Host not disabled by GPO |
+| `wpad_not_disabled` | Low | T1557.001 | WPAD auto-discovery not disabled by GPO |
 | `spooler_on_dc` | Medium | T1547.012 | Print Spooler not disabled on domain controllers |
 | `cached_credentials` | Medium | T1003.005 | Too many cached logon credentials |
 | `smb1_server_enabled` | High | T1210 | SMBv1 not disabled on domain controllers |
@@ -643,8 +698,11 @@ particular object.
 | `pwq_breached_password` | High | T1110.004 | Account using a known-breached password |
 | `pwq_cleartext_stored` | High | T1003 | Password recoverable in cleartext (reversible encryption) |
 
-**Notes.** ESC6/7/8/11/16 live on the CA, not in LDAP, so `adcs_manual_checks` lists
-them for a manual look. Host hardening reads what the GPOs set; a value
+**Notes.** ESC6/7/8/11/16 live on the CA, not in LDAP. The collector reads them from
+the CA's registry and installed roles over CIM, which needs admin rights on the CA
+host; for every CA it couldn't read, `adcs_manual_checks` lists them for a manual
+look and the five checks are *not evaluated*. ESC8 sees that web enrollment is
+installed, not whether IIS enforces HTTPS with EPA. Host hardening reads what the GPOs set; a value
 changed by hand on a DC isn't visible. Password quality only ever sees account
 names.
 
@@ -741,6 +799,17 @@ Two permanent Global Admins are fine: those are the emergency access accounts.
 | `entra_app_management_policy_weak` | Low | T1552.001 | No tenant-wide rules for app credentials |
 | `entra_risky_delegated_grant` | High | T1528 | Third-party app with risky delegated permissions |
 | `entra_privileged_app_owner` | High | T1098.001 | Regular user owns an app with tenant-takeover permissions |
+| `entra_ca_excluded_group_weak` | High | T1556.009 | Conditional Access exclusion group anyone can get into |
+| `entra_privileged_group_owner` | High | T1098.003 | Group holding an admin role owned by a non-admin |
+| `entra_connect_app_extra_credentials` | High | T1098.001 | Entra Connect application with extra credentials |
+| `entra_sp_lookalike_name` | Medium | T1036 | Service principal name with look-alike characters |
+| `entra_pim_role_settings_weak` | Medium | T1078.004 | Weak PIM settings on privileged roles |
+| `entra_scoped_admin_outside_ca` | Medium | T1078.004 | Admins with a scoped role are outside the admin Conditional Access policies |
+| `entra_privileged_app_sp_owner` | High | T1098.001 | Service principal owns a privileged application |
+| `entra_privileged_app_inactive` | Medium | T1078.004 | Privileged application not used for months |
+| `entra_app_instance_lock_off` | Low | T1098.001 | Multi-tenant app without App instance property lock |
+| `entra_access_package_grants_admin` | High | T1098.003 | Access package grants admin access through self-request without approval |
+| `entra_app_scoped_admin_privileged` | High | T1098.001 | App administrator scoped to a privileged application |
 | `entra_first_party_sp_credentials` | High | T1098.001 | Credential added to a Microsoft first-party app |
 | `entra_app_insecure_redirect` | Low | T1528 | App with an insecure redirect URI |
 | `entra_app_secret_long_lived` | Low | T1552.001 | Application secret valid for too long |
@@ -958,10 +1027,10 @@ collections run there, and some bugs only show up there.
   fake Graph.
 - The AI layer is tested offline: no real name in the prompt, the token round
   trip, and invented check IDs being dropped.
-- Reference results: the AD `demo` gives **165 findings** (20 Critical, 66 High,
-  60 Medium, 19 Low) and 17 Tier 0 principals, and 173 with the example
-  password report. `-Deep` gives 169. `partial` gives 157. The Entra tenant
-  gives 75. In total there are **392 assertions**.
+- Reference results: the AD `demo` gives **193 findings** (25 Critical, 75 High,
+  67 Medium, 26 Low) and 17 Tier 0 principals, and 201 with the example
+  password report. `-Deep` gives 198. `partial` gives 183. The Entra tenant
+  gives 86. In total there are **514 assertions**.
 - `tests/lab/` is for a throw-away lab domain, never for production.
   `New-LabAttackPaths.ps1` plants a four-step ACL chain and a few delegation
   findings. It **writes to AD**, asks you to type the domain name first, and has
@@ -986,7 +1055,7 @@ collections run there, and some bugs only show up there.
   account sees them. If that account can't read the attribute, the list comes
   back empty with no error.
 - Host hardening comes from the GPOs, so a setting changed by hand on a DC isn't
-  visible. The exception is the Print Spooler, whose real state is read from each
+  visible. The exceptions are the Print Spooler, the WebClient service, NetBIOS over TCP/IP, the build used for the noPac check and the coercion services and RPC filters, whose real state is read from each
   DC when the collector has admin rights on it.
 - The Entra collector has only been run against one small test tenant without
   Entra ID P1 or P2. Everything that needs those licences (Conditional Access,

@@ -5,17 +5,25 @@ how to check that before running it, and how to get evidence while it runs.
 
 ## What it does, and what it never does
 
-- **AD: reads only.** The collector uses `Get-AD*` cmdlets, reads SYSVOL and
+- **AD: reads only.** The collector uses `Get-AD*` cmdlets, reads SYSVOL (files and the permissions of the NETLOGON and Policies folders) and
   asks DNS, DHCP, `repadmin` and `w32tm` (time) for status. With admin rights on
-  the DCs it also reads, over CIM, their free disk space and which core services
-  are running. There is no command in the code
+  the DCs it also reads, over CIM, their free disk space, which core services
+  are running, the state of Print Spooler and WebClient, the NetBIOS setting
+  of each network adapter and the OS build. For the build it reads one registry
+  value (the update revision, `UBR`) through `StdRegProv`; the safety review
+  fails on any CIM method other than a registry read. On each AD CS CA host it
+  reads, the same way, the CA policy and interface flags, the CA permissions and
+  the installed roles (ESC6/7/8/11/16). On the DCs it also reads the state of the
+  EFS, DFS Namespace and EventLog services and looks for the coercion interface
+  UUIDs in the RPC filter store (BFE, read-only); no RPC interface is ever
+  called. There is no command in the code
   that creates, changes or deletes anything in AD, DNS, DHCP or GPOs.
 - **Entra ID: reads only.** Read-only Graph scopes and GET requests only.
 - **No binaries, no hidden code.** Plain PowerShell you can read. No
   `Invoke-Expression`, no Base64, no encoded commands, nothing downloaded and
   run, no services, scheduled tasks or registry changes.
 - **Writes only its own output**: the snapshot JSON, the report files, the
-  zip for analysis elsewhere if you ask for it, and temporary folders for the
+  zip (or, with a password, the AES-256 encrypted `.idwolf` package; the password is read hidden and never stored) for analysis elsewhere if you ask for it, and temporary folders for the
   BloodHound zip and for reading that zip (deleted right after). The scheduled-run script also
   deletes its own old run folders (only names like `ad_20261006_020000`
   inside the output folder you give it).
