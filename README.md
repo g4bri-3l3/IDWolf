@@ -16,8 +16,14 @@
 
 ![A tour of an IDWolf report from a lab domain, one captioned slide every three seconds](examples/lab_report.gif)
 
-*A real report from a throw-away lab domain: the score, the charts, the attack-path
-map with its chains, the Tier 0 members, the AI summary and the findings.*
+*A real report from a throw-away lab domain: the score, the charts, the AI summary
+with its verdict on chaining the findings into domain compromise, the attack vectors
+seen in recent attacks, the attack-path map, the Tier 0 members and the findings.*
+
+IDWolf is tested on a real Active Directory lab, not only on synthetic data: a
+domain populated with [Vulnerable-AD](https://github.com/safebuffer/vulnerable-AD)
+and with the project's own scripts in `tests/lab/`, which plant ACL chains,
+delegation and other misconfigurations.
 
 IDWolf is a hygiene audit for Active Directory and Microsoft Entra ID, written
 in plain PowerShell. It takes a **read-only snapshot** of your directory using
@@ -49,8 +55,9 @@ and can be mailed as it is.
 GitHub shows HTML files as plain text, so download the samples and open them in
 a browser:
 
-- `examples/lab_report.html` is the report in the GIF. It comes from a real lab
-  domain and includes the optional Gemini summary.
+- `examples/lab_report.html` is the report in the GIF. It comes from the lab
+  domain (populated with Vulnerable-AD and the `tests/lab/` scripts) and
+  includes the optional Gemini summary.
 - `examples/demo_report.html` is built on a fictional domain, with
   a deep collection and password quality. Its findings CSV and JSON Lines sit
   next to it.
@@ -904,6 +911,10 @@ This is how your data is protected:
   at an internal gateway. Timeouts and busy-server errors are retried
   (`-AiMaxAttempts`, where 0 means keep trying, with a growing pause of up to a
   minute). If the connection fails, the message shows the real cause.
+- **HTTP 503 (model overloaded).** When Gemini keeps answering 503, a smaller
+  model often gets through: run again with, for example,
+  `-Model gemini-3.5-flash-lite`. The current model names are listed in the
+  [Gemini models page](https://ai.google.dev/gemini-api/docs/models).
 
 The model is asked for defensive output only.
 
@@ -1087,6 +1098,10 @@ collections run there, and some bugs only show up there.
   `-Deep` snapshot of that lab shows the whole chain in the attack-path map.
   `New-LabChildDomain.ps1` builds a child domain with users and admins. It also
   writes, and it hasn't been tested without a domain. See `SECURITY.md`.
+- Besides the synthetic data, IDWolf is run against that real lab
+  domain, populated with [Vulnerable-AD](https://github.com/safebuffer/vulnerable-AD)
+  on top of the `tests/lab/` scripts. `examples/lab_report.html` is one of
+  those runs.
 - `tests/New-ReportGif.ps1 -Report x.html` makes a GIF of a report, one
   captioned slide per section. It needs Windows PowerShell 5.1 and Edge or Chrome. For anything you
   publish, build the GIF from a report made with synthetic data, because a real

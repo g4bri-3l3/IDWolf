@@ -69,6 +69,7 @@ if ($isEntra) {
         @{ Sel = '.chart-row'; Idx = 1; Text = ''; Caption = 'The tenant itself: users by type and origin, MFA registration, sign-in activity, privileged roles and service principals.' }
         @{ Sel = 'summary h2'; Idx = 0; Text = 'Tenant at a glance'; Caption = 'Tenant at a glance: directory sync, domains, security defaults, Conditional Access policies, licence and app registrations.' }
         @{ Sel = '.ai-section'; Idx = 0; Text = ''; Caption = 'Optional Gemini summary and remediation plan. Names were replaced by tokens before anything was sent.' }
+        @{ Sel = '.ai-section h3'; Idx = 0; Text = 'chained into full compromise'; Caption = 'Gemini''s verdict: can the findings be chained into tenant compromise, from what starting access, and which link breaks each chain.' }
         @{ Sel = 'blockquote.warn'; Idx = 0; Text = ''; Caption = 'Incomplete coverage: checks that could not be evaluated are listed, never counted as clean.' }
         @{ Sel = 'summary h2'; Idx = 0; Text = 'Findings by check'; Caption = 'One block per triggered check: why it matters, how to fix it, the MITRE link and the affected objects.' }
     )
@@ -79,6 +80,8 @@ else {
         @{ Sel = '.chart-row'; Idx = 0; Text = ''; Caption = 'Findings by severity and category, who is in Tier 0, and how active the enabled users are.' }
         @{ Sel = '.chart-row'; Idx = 1; Text = ''; Caption = 'The directory itself: accounts by kind, password age and settings, computers by OS and activity, groups by scope, password quality.' }
         @{ Sel = '.ai-section'; Idx = 0; Text = ''; Caption = 'Optional Gemini summary and remediation plan. Names were replaced by tokens before anything was sent.' }
+        @{ Sel = '.ai-section h3'; Idx = 0; Text = 'chained into full compromise'; Caption = 'Gemini''s verdict: can the findings be chained into domain compromise, from what starting access, and which link breaks each chain.' }
+        @{ Sel = '.ai-section h3'; Idx = 0; Text = 'Attack vectors seen in recent attacks'; Caption = 'Findings that match attack vectors used in publicly known attacks, starting from IDWolf''s own list of recent attacks.' }
         @{ Sel = 'summary h2'; Idx = 0; Text = 'Attack-path map'; Caption = 'Attack-path map: every principal with a path to Tier 0. A chain reads left to right, one column per step; a dashed arrow is an assumption.' }
         @{ Sel = 'h3'; Idx = 0; Text = 'Tier 0 members'; Caption = 'Tier 0 members: the accounts that already hold Tier 0 rights. They are the target of the paths, not a source.' }
         @{ Sel = 'blockquote.warn'; Idx = 0; Text = ''; Caption = 'Incomplete coverage: checks that could not be evaluated are listed, never counted as clean.' }

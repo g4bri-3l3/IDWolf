@@ -573,7 +573,7 @@ $fake = [PSCustomObject]@{
     )
     compromise_assessment = [PSCustomObject]@{ verdict = 'LIKELY'; starting_point = 'any domain user'; summary = "Through $tok."
         chains = @(
-            [PSCustomObject]@{ title = 'Roast then DA'; checks = @('kerberoastable_user', 'made_up', 'privileged_kerberoastable'); objects = @($tok); narrative = "Rotate $tok to break it." }
+            [PSCustomObject]@{ title = 'Roast then DA'; starting_point = "$tok"; checks = @('kerberoastable_user', 'made_up', 'privileged_kerberoastable'); objects = @($tok); narrative = "Rotate $tok to break it." }
             [PSCustomObject]@{ title = 'Invented chain'; checks = @('made_up'); objects = @(); narrative = 'x' }
         ) }
 }
@@ -592,7 +592,7 @@ Assert-True (@($ai.Triage).Count -eq 2) 'triage drops unknown-check rows'
 Assert-True (@($ai.Triage)[0].Rank -eq 1 -and (@($ai.Triage)[0].Checks -join ',') -eq 'rbcd_configured') 'triage sorted by rank'
 Assert-True (@($ai.KnownExploitation).Count -eq 1 -and $ai.KnownExploitation[0].Relevance -eq 'svc_sql_admin has an SPN.') 'known exploitation: invented checks dropped, de-tokenized'
 $cmpA = $ai.CompromiseAssessment
-Assert-True ($cmpA.Verdict -eq 'likely' -and $cmpA.Summary -eq 'Through svc_sql_admin.' -and @($cmpA.Chains).Count -eq 1 -and ($cmpA.Chains[0].Checks -join ',') -eq 'kerberoastable_user,privileged_kerberoastable' -and $cmpA.Chains[0].Narrative -eq 'Rotate svc_sql_admin to break it.') 'compromise assessment: verdict normalized, invented checks and chains dropped, de-tokenized'
+Assert-True ($cmpA.Verdict -eq 'likely' -and $cmpA.Summary -eq 'Through svc_sql_admin.' -and @($cmpA.Chains).Count -eq 1 -and ($cmpA.Chains[0].Checks -join ',') -eq 'kerberoastable_user,privileged_kerberoastable' -and $cmpA.Chains[0].Narrative -eq 'Rotate svc_sql_admin to break it.' -and $cmpA.Chains[0].StartingPoint -eq 'svc_sql_admin') 'compromise assessment: verdict normalized, invented checks and chains dropped, de-tokenized'
 Assert-True (($prompt -match '(?m)^Recent attack vectors') -and ($prompt -match '(?m)^- kerberoastable_user: Kerberoasting') -and ($prompt -match '(?m)^- adcs_esc8: ') -and ($prompt -notmatch '(?m)^- badsuccessor_dmsa_create: ')) 'prompt lists only the fired checks tied to recent attacks'
 $allChecks = @($script:CheckCatalog.Keys) + @($script:EntraCheckCatalog.Keys)
 Assert-True (@($script:AiRecentAttackVectors.Keys | Where-Object { $allChecks -notcontains $_ }).Count -eq 0) "recent attack vector list names only real checks (unknown: $(@($script:AiRecentAttackVectors.Keys | Where-Object { $allChecks -notcontains $_ }) -join ', '))"
@@ -606,7 +606,7 @@ $snapPq | Add-Member -NotePropertyName passwordQuality -NotePropertyValue ([PSCu
 Assert-True ((Get-AdInfoChartsRow -Snapshot $snapPq -Index $r.Index) -match 'Password quality') 'password-quality donut appears when a report is attached'
 Assert-True ((Get-AdInfoChartsRow -Snapshot $demo -Index $r.Index) -notmatch 'Password quality') 'no password-quality donut without a report'
 Assert-True ($html2 -match 'Attack paths toward Tier 0' -and $html2 -match 'ai-script' -and $html2 -match 'Exploitability triage') 'HTML renders the new AI sections (paths, scripts, triage)'
-Assert-True ($html2 -match 'chained into full compromise' -and $html2 -match 'Verdict: likely' -and $html2 -match 'Attack vectors seen in recent attacks') 'HTML renders the compromise assessment and the recent attack vectors'
+Assert-True ($html2 -match 'chained into full compromise' -and $html2 -match 'Verdict: likely' -and $html2 -match 'from: svc_sql_admin' -and $html2 -match 'Attack vectors seen in recent attacks') 'HTML renders the compromise assessment and the recent attack vectors'
 
 # ------------------------------------------------------------ host / GPO
 Write-Host "[host/gpo]"

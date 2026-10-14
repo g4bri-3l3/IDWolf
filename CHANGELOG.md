@@ -43,14 +43,22 @@ re-collect.
   tenant (likely / possible / unlikely), from what starting access, with up to four chains and
   the link that breaks each. Both are shown in the AI section of the report; items citing checks
   that didn't fire are dropped, as for the other parts.
+- AI step: each chain of the compromise assessment has its own starting point, and the
+  top-level one is the least access among the chains (it could say "any domain user" for a
+  chain that starts from a specific account). An HTTP 503 now suggests a smaller model
+  (`-Model gemini-3.5-flash-lite`); the README says so too.
+- `examples\lab_report.html` and `lab_report.gif` rebuilt from a 1.2 run on the lab domain
+  (populated with Vulnerable-AD and the `tests/lab/` scripts) with the Gemini summary; the GIF
+  has two more slides, for the compromise verdict and the recent attack vectors. README: the lab
+  testing is now stated next to the GIF and in Testing.
 - Default outputs go to an `output` folder under the current directory: snapshots, reports,
   password-quality reports, BloodHound zips and packages, when you don't give a path. The menu
   and the analyzer wizard also offer the snapshots they find in `output`. Explicit paths work as
   before.
 - `examples\`: synthetic snapshots and deterministic reports rebuilt (the demo with `-Deep` and
   password quality: 206 findings, since the demo has no Windows Server 2025 DC and the regression
-  adds one for BadSuccessor; the Entra tenant: 89). The AI files and the lab report still come
-  from 1.0: refreshing them needs the Gemini key and the lab domain.
+  adds one for BadSuccessor; the Entra tenant: 89). The demo AI files still come
+  from 1.0.
 - README: the report GIF moved to the top, the comparison table has an ADScan column and a
   "Report" row, and a new "Recent attacks" table lists the vectors behind the main incidents and
   research of 2023-2026 with the checks for each.

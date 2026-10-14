@@ -215,12 +215,16 @@ Produce:
    compromise of the domain (Domain Admin or equivalent control; for an
    Entra tenant, Global Administrator or equivalent)? Unlike attack_paths,
    you may combine any findings (for example coercion, a relay target and a
-   certificate template). Give: verdict (likely | possible | unlikely),
-   starting_point (the least access the chain needs: unauthenticated on the
-   network, any domain user, any tenant user, or a specific account or group
-   token), a 2-3 sentence summary, and up to 4 chains. Each chain: a title,
-   the check ids in order, the key object tokens, and a narrative of the
-   impact and the single link whose fix breaks the chain. Use only the
+   certificate template). Give: verdict (likely | possible | unlikely), a
+   2-3 sentence summary, and up to 4 chains. Each chain: a title, its own
+   starting_point (the access an attacker must already have for THAT chain:
+   unauthenticated on the network, any domain user, any tenant user, or a
+   specific account or group token when the chain starts from an object
+   that is not open to everyone, such as a principal that already holds a
+   right), the check ids in order, the key object tokens, and a narrative of
+   the impact and the single link whose fix breaks the chain. The top-level
+   starting_point is the least access among all the chains; never say "any
+   domain user" there when every chain starts from a specific account. Use only the
    findings: when a chain also depends on something the findings do not
    show (a patch level, network reachability), say so. Same rule as above:
    what grants control, never how to exploit it.
@@ -240,7 +244,7 @@ Respond with one JSON object only, no markdown fences:
   "triage": [ { "rank": 1, "checks": ["..."], "objects": ["..."], "rationale": "..." } ],
   "known_exploitation": [ { "checks": ["..."], "vector": "...", "public": "...", "relevance": "..." } ],
   "compromise_assessment": { "verdict": "likely|possible|unlikely", "starting_point": "...", "summary": "...",
-      "chains": [ { "title": "...", "checks": ["..."], "objects": ["..."], "narrative": "..." } ] } }
+      "chains": [ { "title": "...", "starting_point": "...", "checks": ["..."], "objects": ["..."], "narrative": "..." } ] } }
 "@
 
 # Checks tied to attack vectors seen in public incidents or research, mostly 2023-2026
@@ -451,6 +455,7 @@ function Invoke-GeminiAnalysis {
             Start-Sleep -Seconds $wait; $result = $null; continue
         }
         Write-Host "ERROR: Gemini call failed: HTTP $($result.StatusCode). $($result.Body)" -ForegroundColor Red
+        if ($result.StatusCode -eq 503) { Write-Host "The model is overloaded. A smaller one often gets through: run again with -Model gemini-3.5-flash-lite (see ai.google.dev/gemini-api/docs/models)." -ForegroundColor Yellow }
         return $null
     }
     if (-not $result) { return $null }
@@ -534,6 +539,7 @@ function ConvertFrom-AiResponse {
             if ($checks.Count -eq 0) { continue }
             $chains += [PSCustomObject]@{
                 Title     = & $u $ch.title
+                StartingPoint = & $u $ch.starting_point
                 Checks    = $checks
                 Objects   = @($ch.objects | Where-Object { $_ } | Select-Object -First 8 | ForEach-Object { & $u $_ })
                 Narrative = & $u $ch.narrative
@@ -574,12 +580,13 @@ function ConvertTo-AiSectionHtml {
         & $w '<h3>Can the findings be chained into full compromise?</h3>'
         $facts = @()
         if ($cmp.Verdict) { $facts += "<b>Verdict: $(& $H $cmp.Verdict)</b>" }
-        if ($cmp.StartingPoint) { $facts += "starting from: $(& $H $cmp.StartingPoint)" }
+        if ($cmp.StartingPoint) { $facts += "least access needed: $(& $H $cmp.StartingPoint)" }
         if ($facts.Count) { & $w "<p>$($facts -join ' &middot; ')</p>" }
         if ($cmp.Summary) { & $w "<p>$(& $H $cmp.Summary)</p>" }
         foreach ($c in @($cmp.Chains)) {
             $objs = if (@($c.Objects).Count -gt 0) { "<br><span class='meta'>Objects: $(& $H ($c.Objects -join ', '))</span>" } else { '' }
-            & $w "<div style='margin:10px 0'><b>$(& $H $c.Title)</b><div class='meta' style='margin:4px 0'>$((@($c.Checks) | ForEach-Object { "<code>$_</code>" }) -join ' &rarr; ')</div><div>$(& $H $c.Narrative)</div>$objs</div>"
+            $from = if ($c.StartingPoint) { " <span class='check-id'>from: $(& $H $c.StartingPoint)</span>" } else { '' }
+            & $w "<div style='margin:10px 0'><b>$(& $H $c.Title)</b>$from<div class='meta' style='margin:4px 0'>$((@($c.Checks) | ForEach-Object { "<code>$_</code>" }) -join ' &rarr; ')</div><div>$(& $H $c.Narrative)</div>$objs</div>"
         }
     }
     if ($AiResult.ComparisonNarrative) { & $w "<h3>Trend since previous run</h3><p>$(& $H $AiResult.ComparisonNarrative)</p>" }
