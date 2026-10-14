@@ -3,6 +3,16 @@
 You shouldn't have to take our word for it. This page says what IDWolf does,
 how to check that before running it, and how to get evidence while it runs.
 
+## Reporting a vulnerability
+
+Please report security issues privately, not in a public issue. Use GitHub's
+**"Report a vulnerability"** button under the repository's
+[Security tab](https://github.com/g4bri-3l3/IDWolf/security/advisories/new)
+(Private Vulnerability Reporting). Include the affected file and version, how to
+reproduce it, and the impact. You'll get an acknowledgement, and once a fix is
+out the advisory is published with credit if you want it. Please don't include
+real directory data in the report.
+
 ## What it does, and what it never does
 
 - **AD: reads only.** The collector uses `Get-AD*` cmdlets, reads SYSVOL (files and the permissions of the NETLOGON and Policies folders) and

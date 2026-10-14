@@ -13,6 +13,7 @@
 ```
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![OpenSSF Baseline](https://www.bestpractices.dev/projects/15416/baseline)](https://www.bestpractices.dev/projects/15416)
 
 ![A tour of an IDWolf report from a lab domain, one captioned slide every three seconds](examples/lab_report.gif)
 
