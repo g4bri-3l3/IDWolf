@@ -202,6 +202,28 @@ Produce:
    environment (chained paths, reachability, privilege of the affected
    objects), not by static severity alone. Each: a rank (1 = fix first),
    the check ids, the key object tokens, and a one sentence rationale.
+9. known_exploitation: which fired checks match attack vectors used in
+   publicly reported attacks or published research of roughly the last
+   three years. Start from the "Recent attack vectors" section of the input
+   (the local tool's own list); add another fired check only if you are
+   confident it belongs. Each: the check ids, the vector, what is publicly
+   known (name a campaign, threat actor or CVE only when you are sure of it;
+   otherwise say it is widely reported in intrusions), and why it matters
+   here (which objects or conditions in the findings). Never invent
+   incidents, dates or CVE numbers.
+10. compromise_assessment: can the findings be chained into full
+   compromise of the domain (Domain Admin or equivalent control; for an
+   Entra tenant, Global Administrator or equivalent)? Unlike attack_paths,
+   you may combine any findings (for example coercion, a relay target and a
+   certificate template). Give: verdict (likely | possible | unlikely),
+   starting_point (the least access the chain needs: unauthenticated on the
+   network, any domain user, any tenant user, or a specific account or group
+   token), a 2-3 sentence summary, and up to 4 chains. Each chain: a title,
+   the check ids in order, the key object tokens, and a narrative of the
+   impact and the single link whose fix breaks the chain. Use only the
+   findings: when a chain also depends on something the findings do not
+   show (a patch level, network reachability), say so. Same rule as above:
+   what grants control, never how to exploit it.
 
 If no findings are provided, say so plainly and return empty lists.
 
@@ -215,8 +237,73 @@ Respond with one JSON object only, no markdown fences:
   "attack_paths": [ { "title": "...", "severity": "Critical|High|Medium|Low",
       "steps": ["TOKEN -> technique", "..."], "narrative": "..." } ],
   "remediation_scripts": [ { "check": "...", "powershell": "...", "caveats": "..." } ],
-  "triage": [ { "rank": 1, "checks": ["..."], "objects": ["..."], "rationale": "..." } ] }
+  "triage": [ { "rank": 1, "checks": ["..."], "objects": ["..."], "rationale": "..." } ],
+  "known_exploitation": [ { "checks": ["..."], "vector": "...", "public": "...", "relevance": "..." } ],
+  "compromise_assessment": { "verdict": "likely|possible|unlikely", "starting_point": "...", "summary": "...",
+      "chains": [ { "title": "...", "checks": ["..."], "objects": ["..."], "narrative": "..." } ] } }
 "@
+
+# Checks tied to attack vectors seen in public incidents or research, mostly 2023-2026
+# (the "Recent attacks" table in README.md and COVERAGE.md). Ordered, so the prompt is
+# the same in every process. Labels hold no directory names.
+$script:AiRecentAttackVectors = [ordered]@{
+    badsuccessor_dmsa_create             = 'BadSuccessor: dMSA successor link on Windows Server 2025 (CVE-2025-53779, 2025)'
+    kds_root_key_readable                = 'Golden gMSA / Golden dMSA: managed service account passwords from the KDS root key (2025)'
+    coercion_unfiltered_dc               = 'Coercion of a DC (PetitPotam family) feeding NTLM relay (CVE-2025-24054 exploited in 2025)'
+    webclient_on_dc                      = 'Coercion over WebDAV for NTLM relay to LDAP or AD CS'
+    webclient_not_disabled               = 'Coercion over WebDAV for NTLM relay to LDAP or AD CS'
+    adcs_esc8                            = 'NTLM relay to AD CS web enrollment (ESC8), common in ransomware intrusions'
+    adcs_esc11                           = 'NTLM relay to AD CS RPC enrollment (ESC11)'
+    ldap_signing_not_required            = 'NTLM relay to LDAP on the DCs'
+    ldap_channel_binding_off             = 'NTLM relay to LDAPS on the DCs'
+    ntlm_weak_lmcompat                   = 'NTLMv1 downgrade and relay'
+    smb_signing_not_required             = 'NTLM relay and reflection over SMB (CVE-2025-33073, 2025)'
+    smb_client_signing_not_required      = 'NTLM relay and reflection over SMB (CVE-2025-33073, 2025)'
+    adcs_esc1                            = 'AD CS certificate template abuse (ESC1), common in ransomware intrusions'
+    adcs_esc2                            = 'AD CS certificate template abuse (ESC2)'
+    adcs_esc3                            = 'AD CS enrollment agent abuse (ESC3)'
+    adcs_esc4                            = 'AD CS template ACL abuse (ESC4)'
+    adcs_esc15                           = 'AD CS EKUwu (ESC15, CVE-2024-49019, 2024)'
+    adcs_esc16                           = 'AD CS SID extension disabled CA-wide (ESC16, 2025)'
+    kerberoastable_user                  = 'Kerberoasting, seen in ransomware intrusions through 2026'
+    privileged_kerberoastable            = 'Kerberoasting of a privileged account, seen in ransomware intrusions through 2026'
+    spn_account_rc4                      = 'Kerberoasting with RC4 tickets (faster offline cracking)'
+    asrep_roastable                      = 'AS-REP roasting'
+    shadow_credentials_present           = 'Shadow Credentials (msDS-KeyCredentialLink)'
+    nopac_unpatched_dc                   = 'noPac (CVE-2021-42278/42287), still used by ransomware operators'
+    gpp_cpassword                        = 'Group Policy Preferences passwords in SYSVOL, routinely harvested in intrusions'
+    netlogon_vulnerable_channel          = 'ZeroLogon (CVE-2020-1472), still exploited'
+    point_and_print_unsafe               = 'PrintNightmare (Point and Print)'
+    entra_admin_synced_from_onprem       = 'Hybrid identity abuse: synced admins (Entra Connect, SyncJacking, 2025)'
+    entra_connect_app_extra_credentials  = 'Entra Connect abuse (Black Hat 2025 research)'
+    entra_smart_lockout_weak             = 'Password spraying, the main cloud initial access vector (Microsoft, 2026)'
+    entra_banned_passwords_off           = 'Password spraying, the main cloud initial access vector (Microsoft, 2026)'
+    entra_legacy_auth_allowed            = 'Password spraying through legacy authentication'
+    entra_admins_without_mfa             = 'Password spraying and credential stuffing against admins'
+    entra_device_code_flow_allowed       = 'Device code phishing (Storm-2372 and later kits, 2025-2026)'
+    entra_no_phishing_resistant_admins   = 'Adversary-in-the-middle phishing and session token theft'
+    entra_token_protection_off           = 'Session token theft and replay'
+    entra_users_can_consent              = 'OAuth consent phishing'
+    entra_risky_delegated_grant          = 'OAuth consent phishing and over-privileged apps'
+    entra_app_high_privilege             = 'Over-privileged OAuth apps (Midnight Blizzard, 2024)'
+    entra_privileged_app_sp_owner        = 'Escalation through service principal ownership (Entra Agent ID flaw, 2026)'
+    entra_privileged_app_owner           = 'Escalation through app ownership'
+    entra_intune_no_multi_admin_approval = 'Mass device wipe from a compromised Intune admin (Stryker, reported 2026)'
+    entra_intune_role_weak_group         = 'Code execution on all managed devices through Intune'
+}
+
+# One line per fired check that is in the list above, in list order.
+function Get-AiRecentVectorLines {
+    param($Findings)
+    $fired = @{}; foreach ($f in @($Findings | Where-Object { $_ })) { $fired["$($f.Type)"] = $true }
+    $out = New-Object System.Collections.Generic.List[string]
+    foreach ($k in $script:AiRecentAttackVectors.Keys) { if ($fired.ContainsKey($k)) { $out.Add("- ${k}: $($script:AiRecentAttackVectors[$k])") } }
+    if ($out.Count -gt 0) {
+        $out.Insert(0, 'Recent attack vectors (fired checks that the local tool links to attacks seen in public incidents or research; start known_exploitation from these):')
+        $out.Insert(0, '')
+    }
+    return , $out.ToArray()
+}
 
 function New-AiPrompt {
     param($Findings, $Pz, $Snapshot, $Score, $Comparison, [int]$MaxObjectsPerCheck = 12)
@@ -245,6 +332,7 @@ function New-AiPrompt {
             foreach ($pl in $pathLines) { $lines.Add($pl) }
         }
     }
+    foreach ($vl in (Get-AiRecentVectorLines -Findings $Findings)) { $lines.Add($vl) }
     if ($Comparison -and (@($Comparison.New).Count + @($Comparison.Resolved).Count) -gt 0) {
         $lines.Add('')
         $lines.Add('Comparison with the previous run (already computed):')
@@ -430,6 +518,31 @@ function ConvertFrom-AiResponse {
         }
     }
     $triage = @($triage | Sort-Object { if ($_.Rank -gt 0) { $_.Rank } else { 9999 } })
+    $known = @()
+    foreach ($ke in @($Raw.known_exploitation | Where-Object { $_ })) {
+        $checks = @($ke.checks | Where-Object { $valid.ContainsKey("$_") })
+        if ($checks.Count -eq 0) { continue }
+        $known += [PSCustomObject]@{ Checks = $checks; Vector = & $u $ke.vector; Public = & $u $ke.public; Relevance = & $u $ke.relevance }
+    }
+    $compromise = $null
+    $ca = $Raw.compromise_assessment
+    if ($ca) {
+        $verdict = "$($ca.verdict)".ToLower(); if (@('likely', 'possible', 'unlikely') -notcontains $verdict) { $verdict = '' }
+        $chains = @()
+        foreach ($ch in @($ca.chains | Where-Object { $_ })) {
+            $checks = @($ch.checks | Where-Object { $valid.ContainsKey("$_") })
+            if ($checks.Count -eq 0) { continue }
+            $chains += [PSCustomObject]@{
+                Title     = & $u $ch.title
+                Checks    = $checks
+                Objects   = @($ch.objects | Where-Object { $_ } | Select-Object -First 8 | ForEach-Object { & $u $_ })
+                Narrative = & $u $ch.narrative
+            }
+        }
+        if ($verdict -or $ca.summary -or $chains.Count) {
+            $compromise = [PSCustomObject]@{ Verdict = $verdict; StartingPoint = & $u $ca.starting_point; Summary = & $u $ca.summary; Chains = @($chains | Select-Object -First 4) }
+        }
+    }
 
     return [PSCustomObject]@{
         Model               = $Model
@@ -441,6 +554,8 @@ function ConvertFrom-AiResponse {
         AttackPaths         = $attackPaths
         RemediationScripts  = $remScripts
         Triage              = $triage
+        KnownExploitation   = $known
+        CompromiseAssessment = $compromise
         MaskedIdentifiers   = $Pz.Reverse.Count
     }
 }
@@ -454,6 +569,19 @@ function ConvertTo-AiSectionHtml {
     # HTML entity, not a literal emoji: PS 5.1 reads these BOM-less files as ANSI.
     & $w "<h2><span class='ai-robot' role='img' aria-label='AI' style='margin-right:8px'>&#x1F916;</span>AI summary and remediation plan</h2>"
     & $w "<p>$(& $H $AiResult.ExecutiveSummary)</p>"
+    $cmp = $AiResult.CompromiseAssessment
+    if ($cmp) {
+        & $w '<h3>Can the findings be chained into full compromise?</h3>'
+        $facts = @()
+        if ($cmp.Verdict) { $facts += "<b>Verdict: $(& $H $cmp.Verdict)</b>" }
+        if ($cmp.StartingPoint) { $facts += "starting from: $(& $H $cmp.StartingPoint)" }
+        if ($facts.Count) { & $w "<p>$($facts -join ' &middot; ')</p>" }
+        if ($cmp.Summary) { & $w "<p>$(& $H $cmp.Summary)</p>" }
+        foreach ($c in @($cmp.Chains)) {
+            $objs = if (@($c.Objects).Count -gt 0) { "<br><span class='meta'>Objects: $(& $H ($c.Objects -join ', '))</span>" } else { '' }
+            & $w "<div style='margin:10px 0'><b>$(& $H $c.Title)</b><div class='meta' style='margin:4px 0'>$((@($c.Checks) | ForEach-Object { "<code>$_</code>" }) -join ' &rarr; ')</div><div>$(& $H $c.Narrative)</div>$objs</div>"
+        }
+    }
     if ($AiResult.ComparisonNarrative) { & $w "<h3>Trend since previous run</h3><p>$(& $H $AiResult.ComparisonNarrative)</p>" }
     if (@($AiResult.QuickWins).Count -gt 0) {
         & $w '<h3>Quick wins</h3><ul>'
@@ -484,6 +612,13 @@ function ConvertTo-AiSectionHtml {
             $i++
             $rank = if ($t.Rank -gt 0) { $t.Rank } else { $i }
             & $w "<tr class='data-row'><td>$rank</td><td>$(($t.Checks | ForEach-Object { "<code>$_</code>" }) -join ' ')</td><td>$(& $H ($t.Objects -join ', '))</td><td>$(& $H $t.Rationale)</td></tr>"
+        }
+        & $w '</table></div>'
+    }
+    if (@($AiResult.KnownExploitation).Count -gt 0) {
+        & $w "<h3>Attack vectors seen in recent attacks</h3><div class='table-wrap'><table class='ai-triage'><tr><th>Checks</th><th>Vector</th><th>Publicly known</th><th>Why it matters here</th></tr>"
+        foreach ($k in $AiResult.KnownExploitation) {
+            & $w "<tr class='data-row'><td>$(($k.Checks | ForEach-Object { "<code>$_</code>" }) -join ' ')</td><td>$(& $H $k.Vector)</td><td>$(& $H $k.Public)</td><td>$(& $H $k.Relevance)</td></tr>"
         }
         & $w '</table></div>'
     }

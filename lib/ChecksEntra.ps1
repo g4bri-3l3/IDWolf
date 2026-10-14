@@ -1562,6 +1562,7 @@ function New-EntraAiPrompt {
         $lines.Add("## [$worst] $($g.Name): $($meta.Title) ($($g.Count))")
         foreach ($f in ($g.Group | Select-Object -First 12)) { $lines.Add("- [$($f.Severity)] $(Protect-EntraText $Pz $f.Object): $(Protect-EntraText $Pz $f.Detail)") }
     }
+    if (Get-Command Get-AiRecentVectorLines -ErrorAction SilentlyContinue) { foreach ($vl in (Get-AiRecentVectorLines -Findings $Findings)) { $lines.Add($vl) } }
     return ($lines -join "`n")
 }
 

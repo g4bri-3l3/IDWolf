@@ -35,6 +35,14 @@ re-collect.
   groups are kept, not the name. A tenant without an Intune licence records a collection error
   and both checks show as "not evaluated". The groups the Intune roles are given to are read like
   the other gating groups (visibility, dynamic rule, role-assignable flag, owners).
+- AI step: two new parts of the answer. `known_exploitation` lists the findings that match
+  attack vectors used in publicly known attacks of the last few years; the prompt now carries
+  IDWolf's own list of the fired checks tied to recent attacks (the README "Recent attacks"
+  table), and the model is told not to invent incidents or CVE numbers. `compromise_assessment`
+  says whether the findings can be chained into full compromise of the domain or the Entra
+  tenant (likely / possible / unlikely), from what starting access, with up to four chains and
+  the link that breaks each. Both are shown in the AI section of the report; items citing checks
+  that didn't fire are dropped, as for the other parts.
 - Default outputs go to an `output` folder under the current directory: snapshots, reports,
   password-quality reports, BloodHound zips and packages, when you don't give a path. The menu
   and the analyzer wizard also offer the snapshots they find in `output`. Explicit paths work as
@@ -53,7 +61,7 @@ re-collect.
   into the attack-technique table, a generic DC health table and the Entra "Beyond CIS" table.
   New "Recent attacks, 2023-2026" section, with what isn't covered yet (SCCM, ESC17, apps on
   Azure AD Graph).
-- Tests: 528 assertions. Reference results: demo 193, partial 183, `-Deep` 198, the Entra tenant 89.
+- Tests: 534 assertions. Reference results: demo 193, partial 183, `-Deep` 198, the Entra tenant 89.
 
 ## 1.1 - 2026-10-12
 

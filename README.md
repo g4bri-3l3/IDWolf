@@ -867,7 +867,15 @@ Once the report is on disk, IDWolf can ask Gemini for:
 - a trend story, when you use `-CompareTo`;
 - the real attack paths toward Tier 0, explained in defensive terms;
 - PowerShell snippets to fix a check, with names left as placeholders;
-- the findings re-ranked by how exploitable they really are in your environment.
+- the findings re-ranked by how exploitable they really are in your environment;
+- which findings match attack vectors used in publicly known attacks of the last
+  few years. IDWolf sends its own list of the fired checks tied to recent attacks
+  (the [Recent attacks](#recent-attacks) table), and the model is told never to
+  invent incidents or CVE numbers;
+- a verdict on whether the findings can be chained into full compromise of the
+  domain (or of the Entra tenant): likely, possible or unlikely, the least access
+  the chain needs, and up to four chains, each with the one link whose fix breaks
+  it.
 
 This is how your data is protected:
 
@@ -1071,7 +1079,7 @@ collections run there, and some bugs only show up there.
 - Reference results: the AD `demo` gives **193 findings** (25 Critical, 75 High,
   67 Medium, 26 Low) and 17 Tier 0 principals, and 201 with the example
   password report. `-Deep` gives 198. `partial` gives 183. The Entra tenant
-  gives 89. In total there are **528 assertions**.
+  gives 89. In total there are **534 assertions**.
 - `tests/lab/` is for a throw-away lab domain, never for production.
   `New-LabAttackPaths.ps1` plants a four-step ACL chain and a few delegation
   findings. It **writes to AD**, asks you to type the domain name first, and has

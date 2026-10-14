@@ -567,6 +567,15 @@ $fake = [PSCustomObject]@{
         [PSCustomObject]@{ rank = 1; checks = @('rbcd_configured'); objects = @(); rationale = 'direct to DC' }
         [PSCustomObject]@{ rank = 3; checks = @('made_up'); objects = @(); rationale = 'drop me' }
     )
+    known_exploitation = @(
+        [PSCustomObject]@{ checks = @('kerberoastable_user'); vector = 'Kerberoasting'; public = 'Widely reported in ransomware intrusions.'; relevance = "$tok has an SPN." }
+        [PSCustomObject]@{ checks = @('made_up'); vector = 'Invented'; public = 'x'; relevance = 'x' }
+    )
+    compromise_assessment = [PSCustomObject]@{ verdict = 'LIKELY'; starting_point = 'any domain user'; summary = "Through $tok."
+        chains = @(
+            [PSCustomObject]@{ title = 'Roast then DA'; checks = @('kerberoastable_user', 'made_up', 'privileged_kerberoastable'); objects = @($tok); narrative = "Rotate $tok to break it." }
+            [PSCustomObject]@{ title = 'Invented chain'; checks = @('made_up'); objects = @(); narrative = 'x' }
+        ) }
 }
 $ai = ConvertFrom-AiResponse -Raw $fake -Pz $pz -Findings $r.Findings -Model 'test'
 Assert-True (@($ai.RemediationPlan).Count -eq 1) 'plan items referencing only unknown checks are dropped'
@@ -581,6 +590,12 @@ Assert-True (@($ai.RemediationScripts).Count -eq 1) 'remediation script with unk
 Assert-True (@($ai.RemediationScripts)[0].PowerShell -match 'Set-ADComputer svc_sql_admin') 'remediation script de-tokenized'
 Assert-True (@($ai.Triage).Count -eq 2) 'triage drops unknown-check rows'
 Assert-True (@($ai.Triage)[0].Rank -eq 1 -and (@($ai.Triage)[0].Checks -join ',') -eq 'rbcd_configured') 'triage sorted by rank'
+Assert-True (@($ai.KnownExploitation).Count -eq 1 -and $ai.KnownExploitation[0].Relevance -eq 'svc_sql_admin has an SPN.') 'known exploitation: invented checks dropped, de-tokenized'
+$cmpA = $ai.CompromiseAssessment
+Assert-True ($cmpA.Verdict -eq 'likely' -and $cmpA.Summary -eq 'Through svc_sql_admin.' -and @($cmpA.Chains).Count -eq 1 -and ($cmpA.Chains[0].Checks -join ',') -eq 'kerberoastable_user,privileged_kerberoastable' -and $cmpA.Chains[0].Narrative -eq 'Rotate svc_sql_admin to break it.') 'compromise assessment: verdict normalized, invented checks and chains dropped, de-tokenized'
+Assert-True (($prompt -match '(?m)^Recent attack vectors') -and ($prompt -match '(?m)^- kerberoastable_user: Kerberoasting') -and ($prompt -match '(?m)^- adcs_esc8: ') -and ($prompt -notmatch '(?m)^- badsuccessor_dmsa_create: ')) 'prompt lists only the fired checks tied to recent attacks'
+$allChecks = @($script:CheckCatalog.Keys) + @($script:EntraCheckCatalog.Keys)
+Assert-True (@($script:AiRecentAttackVectors.Keys | Where-Object { $allChecks -notcontains $_ }).Count -eq 0) "recent attack vector list names only real checks (unknown: $(@($script:AiRecentAttackVectors.Keys | Where-Object { $allChecks -notcontains $_ }) -join ', '))"
 $html2 = ConvertTo-ReportHtml -Snapshot $demo -Index $r.Index -PrivMap $r.PrivMap -Split $split -Score $score -NotEvaluated @() -Comparison $null -Config $config -ToolVersion 'test' -ElapsedText '0s' -AiResult $ai
 Assert-True ($html2 -match 'ai-section' -and $html2 -match 'chart-row' -and ([regex]::Matches($html2, "class='pie-chart-wrap'")).Count -ge 4) 'HTML with AI section and the donut charts'
 Assert-True (([regex]::Matches($html2, "pie-chart-title'>(All accounts|Password age|Password settings|Computers by operating system|Enabled computers by activity|Groups by scope)")).Count -ge 5) 'HTML has the directory donuts (accounts, password age and settings, computers, groups)'
@@ -591,6 +606,7 @@ $snapPq | Add-Member -NotePropertyName passwordQuality -NotePropertyValue ([PSCu
 Assert-True ((Get-AdInfoChartsRow -Snapshot $snapPq -Index $r.Index) -match 'Password quality') 'password-quality donut appears when a report is attached'
 Assert-True ((Get-AdInfoChartsRow -Snapshot $demo -Index $r.Index) -notmatch 'Password quality') 'no password-quality donut without a report'
 Assert-True ($html2 -match 'Attack paths toward Tier 0' -and $html2 -match 'ai-script' -and $html2 -match 'Exploitability triage') 'HTML renders the new AI sections (paths, scripts, triage)'
+Assert-True ($html2 -match 'chained into full compromise' -and $html2 -match 'Verdict: likely' -and $html2 -match 'Attack vectors seen in recent attacks') 'HTML renders the compromise assessment and the recent attack vectors'
 
 # ------------------------------------------------------------ host / GPO
 Write-Host "[host/gpo]"
@@ -1016,6 +1032,7 @@ Assert-True (($neV1 -contains 'entra_no_phishing_resistant_admins') -and ($neV1 
 $epz = New-EntraPseudonymizer -Snapshot $entra
 $eprompt = New-EntraAiPrompt -Findings $ef -Pz $epz -Snapshot $entra -Score (Get-HygieneScore -Findings $ef)
 Assert-True (@(Test-EntraLeak -Pz $epz -Text $eprompt).Count -eq 0) "entra leak check clean: $((Test-EntraLeak -Pz $epz -Text $eprompt) -join ', ')"
+Assert-True ($eprompt -match '(?m)^Recent attack vectors' -and $eprompt -match '(?m)^- entra_intune_no_multi_admin_approval: Mass device wipe' -and $eprompt -match '(?m)^- entra_users_can_consent: OAuth consent phishing') 'entra prompt lists the fired checks tied to recent attacks'
 foreach ($secret in 'moosebank', 'onmicrosoft', 'bob.admin', 'Backup Automation', '11111111-2222', 'gmail') {
     Assert-True ($eprompt.IndexOf($secret, [StringComparison]::OrdinalIgnoreCase) -lt 0) "entra prompt must not contain '$secret'"
 }
