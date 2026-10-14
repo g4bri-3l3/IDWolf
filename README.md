@@ -179,6 +179,39 @@ explains what it does and doesn't do, and how to check that yourself.
 command, every write and every network address, and fails on anything that
 could change the directory.
 
+### Against the commercial platforms
+
+IDWolf is not a competitor to the commercial identity-security platforms: it is
+a free, point-in-time check, while they are continuous products with real-time
+detection, response and vendor support. The table is based on public
+documentation as of October 2026; pricing and details change often.
+
+| | IDWolf | Microsoft Defender for Identity | Semperis DSP | Tenable Identity Exposure |
+|---|---|---|---|---|
+| What it is | AD + Entra hygiene audit, point in time | ITDR: identity threat detection | AD/Entra posture + detection + recovery | AD/Entra exposure management, continuous |
+| Licence / cost | Open source, MIT, free | Paid (bundled in Defender / M365 E5) | Commercial, subscription | Commercial, subscription |
+| Model | PowerShell scripts, run by hand | Sensors on the DCs + cloud (SaaS) | Agentless or agent, continuous | Agentless, continuous |
+| Analyze offline, on another machine | **Yes** | No (cloud, real time) | No | No |
+| Provably read-only (built-in code review) | **Yes** | n/a (closed product) | n/a | n/a |
+| Real-time detection and alerting | – (a snapshot) | **Yes**, the core of it | **Yes** (IoE / IoC) | **Yes** (IoE / IoA) |
+| Response / auto-remediation | – (gives a plan and scripts to review) | partial (via XDR) | **Yes**, plus forest recovery | partial |
+| SIEM / XDR integration | JSON Lines | **Yes** (Defender XDR, Sentinel) | yes | yes |
+| Attack-path view | yes (report + BloodHound export) | yes (Exposure Management) | yes | **yes**, a strong point |
+| Hygiene / posture checklist | 167 AD + 88 Entra, with CIS/MITRE/NIS2… | via Secure Score | yes (indicators) | yes (indicators) |
+| AI review with chaining and a compromise verdict | **Yes** (names tokenized first) | – | – | – |
+| Support | community | vendor, SLA | vendor, SLA | vendor, SLA |
+
+Where IDWolf loses: no continuous detection, no real-time response, no recovery,
+no SLA support. To watch a domain 24/7 or contain a live attack, these platforms
+are the answer. Where IDWolf fits: it is free and transparent, runs in half an
+hour with no agents and nothing sent to a cloud, and you can prove it is
+read-only. That makes it useful *before* buying a platform (to size the problem
+and build the case), *between* audits, on isolated or air-gapped domains, or for
+a consultant who cannot install software on a client's domain. The regulatory
+mapping (NIS2, ISO 27001, DORA, GDPR) and the AI layer are not usually offered by
+the commercial tools in the same shape. Semperis Purple Knight and Microsoft
+Secure Score are the closest free point-in-time comparisons.
+
 ## Quick start
 
 ```powershell
