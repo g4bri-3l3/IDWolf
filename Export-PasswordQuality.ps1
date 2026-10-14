@@ -207,7 +207,11 @@ if (-not ($q.PSObject.Properties['WeakPassword'] -or $q.PSObject.Properties['Wea
     exit 1
 }
 
-if (-not $OutFile) { $OutFile = "passwordquality_{0}_{1}.json" -f $domainDns, (Get-Date -Format 'yyyyMMdd_HHmmss') }
+if (-not $OutFile) {
+    # Unnamed outputs go to .\output, not next to everything else.
+    $od = Join-Path (Get-Location).Path 'output'; if (-not (Test-Path -LiteralPath $od)) { New-Item -ItemType Directory -Path $od | Out-Null }
+    $OutFile = Join-Path $od ("passwordquality_{0}_{1}.json" -f $domainDns, (Get-Date -Format 'yyyyMMdd_HHmmss'))
+}
 $json = $report | ConvertTo-Json -Depth 6
 # And in case PS 5.1 still wrote a {} somewhere.
 $json = [regex]::Replace($json, '(?<=[^\\]"):\s*\{\s*\}', ': null')

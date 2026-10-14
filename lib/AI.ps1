@@ -325,8 +325,8 @@ function Invoke-GeminiAnalysis {
         generationConfig   = @{ temperature = 0.2; responseMimeType = 'application/json' }
     } | ConvertTo-Json -Depth 10
     # Key in a header, not the URL, so it stays out of proxy logs.
-    # MOOSEAD_GEMINI_BASEURL points at an internal gateway (or the test endpoint).
-    $base = if ($env:MOOSEAD_GEMINI_BASEURL) { $env:MOOSEAD_GEMINI_BASEURL.TrimEnd('/') } else { 'https://generativelanguage.googleapis.com' }
+    # IDWOLF_GEMINI_BASEURL points at an internal gateway (or the test endpoint).
+    $base = if ($env:IDWOLF_GEMINI_BASEURL) { $env:IDWOLF_GEMINI_BASEURL.TrimEnd('/') } else { 'https://generativelanguage.googleapis.com' }
     $uri = "$base/v1beta/models/${Model}:generateContent"
     $transient = @(429, 500, 502, 503, 504)
     $result = $null

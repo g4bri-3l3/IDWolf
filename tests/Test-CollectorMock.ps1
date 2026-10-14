@@ -6,7 +6,7 @@
 #>
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$tmp = Join-Path ([System.IO.Path]::GetTempPath()) "moosead_mock_$PID"
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) "idwolf_mock_$PID"
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 $sep = [System.IO.Path]::PathSeparator
 $env:PSModulePath = (Join-Path $PSScriptRoot 'mock') + $sep + $env:PSModulePath
@@ -21,11 +21,16 @@ $errSections = @($snap.meta.collectionErrors | ForEach-Object { $_.section })
 Check ($errSections -contains 'rbcd.users') 'RBCD property fallback recorded'
 Check ($errSections -contains 'domain.fineGrainedPolicies') 'FGPP access error recorded'
 Check ($errSections -contains 'acl.DomainControllersOU') 'ACL access error recorded'
+Check ($errSections -contains 'adcs.caRegistry') 'unreadable CA host recorded (no CIM in the mock)'
 Check (@($snap.users).Count -eq 4) 'users collected after fallback'
 $svc = $snap.users | Where-Object samAccountName -eq 'svc_sql'
 Check ($svc.descriptionSuspicious -and $svc.description -notmatch 'Summer2020') 'password in description masked at collection'
 Check (-not ($snap.users | Where-Object samAccountName -eq 'mario').descriptionSuspicious) 'no false positive on Italian description'
 Check (@(@($snap.acls | Where-Object target -eq 'DomainRoot').aces | Where-Object { $_.objectType -eq '1131f6ad-9c07-11d1-f79f-00c04fc2dcd2' }).Count -eq 1) 'ACE GUIDs serialized as strings'
+# OU and container ACLs: only explicit create/control ACEs are kept (BadSuccessor).
+$staff = @($snap.ouAcls | Where-Object { $_.distinguishedName -eq 'OU=Staff,DC=mock,DC=local' })
+Check (@($snap.ouAcls).Count -eq 2 -and $staff.Count -eq 1) "OU and top-level container ACLs collected (got $(@($snap.ouAcls).Count))"
+Check ((@($staff[0].aces | ForEach-Object { "$($_.sid)|$($_.rights)|$($_.objectType)" }) -join ';') -match '^S-1-5-21-[\d-]+-512\|GenericAll\|00000000-0000-0000-0000-000000000000;S-1-5-21-[\d-]+-1301\|CreateChild\|0feb936f-47b3-49f2-9386-1dedc2c23765$') "OU ACL keeps explicit create/control ACEs only (got $(@($staff[0].aces | ForEach-Object { "$($_.sid)|$($_.rights)" }) -join ';'))"
 # RODC policy: DN-String values of msDS-RevealedList come out as plain DNs.
 $rodcPol = @($snap.domainControllers | Where-Object { $_.isReadOnly })[0].rodcPolicy
 Check ((@($rodcPol.revealed) -join '|') -eq 'CN=Administrator,CN=Users,DC=mock,DC=local|CN=mario,CN=Users,DC=mock,DC=local|CN=RODC1,OU=Domain Controllers,DC=mock,DC=local') "msDS-RevealedList parsed to DNs (got $(@($rodcPol.revealed) -join '|'))"
@@ -33,10 +38,14 @@ Check (@($rodcPol.allowed).Count -eq 2 -and $rodcPol.managedBy -match '^CN=mario
 # AD CS: the 8 PKI containers, the CA object and the CA server's computer account.
 Check ($snap.adcs.collected -and @($snap.adcs.pkiAcls).Count -eq 10 -and @($snap.adcs.pkiAcls | Where-Object { $_.target -eq 'CA host:PC1$' }).Count -eq 1) "PKI object ACLs collected (got $(@($snap.adcs.pkiAcls).Count))"
 
+$psc = @($snap.domain.possSuperiorClasses)
+Check ($psc.Count -eq 1 -and $psc[0].name -eq 'msExchStorageGroup' -and $psc[0].inheritsContainer -and (@($psc[0].possSuperiors) -join ',') -eq 'computer') "schema possSuperiors probe (got $($psc | ConvertTo-Json -Compress -Depth 3))"
+
 # DNS: no DnsServer RPC in the mock, so the LDAP fallback must parse the zone.
 Check ("$($snap.dns.source)" -eq 'ldap' -and $snap.dns.collected) 'DNS falls back to LDAP when RPC is unavailable'
 $mz = @($snap.dns.zones)[0]
 Check (@($snap.dns.zones).Count -eq 1 -and $mz.dynamicUpdate -eq 'NonsecureAndSecure' -and $mz.agingEnabled -eq $false) 'dnsProperty parsed (allow update, aging)'
+Check (@($mz.createChildSids) -contains 'S-1-5-11') "zone CreateChild grantees read from the zone ACL (got $(@($mz.createChildSids) -join ', '))"
 Check (@($snap.dns.dangerousRecords | Where-Object { $_.name -eq 'wpad' -and $_.type -eq 'A' }).Count -eq 1) 'WPAD dnsNode found over LDAP'
 
 $csv = Join-Path $tmp 'mock.csv'

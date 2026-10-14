@@ -32,6 +32,8 @@ $script:ENC_AES = 0x18
 # trustAttributes bits
 $script:TRUST_TREAT_AS_EXTERNAL = 0x40
 $script:TRUST_ENABLE_TGT_DELEGATION = 0x800
+# Trust passwords rotate every 30 days while the trust is alive: a TDO untouched for this long looks abandoned.
+$script:TRUST_INACTIVE_DAYS = 180
 
 # --------------------------------------------------------------------------
 # Tier 0 groups. Rid: domain SID; RootRid: forest root SID; Sid: builtin.

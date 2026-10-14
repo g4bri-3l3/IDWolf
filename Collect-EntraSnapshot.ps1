@@ -9,15 +9,16 @@
       Application.Read.All, AuditLog.Read.All, UserAuthenticationMethod.Read.All,
       Policy.Read.DeviceConfiguration, AccessReview.Read.All,
       OnPremDirectorySynchronization.Read.All, RoleManagementPolicy.Read.Directory,
-      EntitlementManagement.Read.All, PrivilegedEligibilitySchedule.Read.AzureADGroup
+      EntitlementManagement.Read.All, PrivilegedEligibilitySchedule.Read.AzureADGroup,
+      DeviceManagementRBAC.Read.All
     Global Reader is enough. PIM data needs Entra ID P2; sign-in activity
-    needs P1.
+    needs P1; Intune roles need an Intune licence.
 
     Not yet run against a real tenant: check the output the first time.
     Sections that fail are recorded and their checks show as "not evaluated".
 
 .PARAMETER OutFile
-    Snapshot path. Default: entrasnapshot_<tenant>_<timestamp>.json
+    Snapshot path. Default: output\entrasnapshot_<tenant>_<timestamp>.json
 .PARAMETER TenantId
     Optional tenant id to connect to.
 .PARAMETER MaxUsers
@@ -54,7 +55,7 @@ Param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.0"
+$script:CollectorVersion = "1.2"
 $script:Errors = New-Object System.Collections.Generic.List[object]
 function Add-CollectionError {
     param([string]$Section, [string]$Message)
@@ -86,7 +87,7 @@ Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
 
 $scopes = 'Directory.Read.All', 'Policy.Read.All', 'RoleManagement.Read.Directory', 'Application.Read.All', 'AuditLog.Read.All', 'UserAuthenticationMethod.Read.All',
     'Policy.Read.DeviceConfiguration', 'AccessReview.Read.All', 'OnPremDirectorySynchronization.Read.All', 'RoleManagementPolicy.Read.Directory',
-    'EntitlementManagement.Read.All', 'PrivilegedEligibilitySchedule.Read.AzureADGroup'
+    'EntitlementManagement.Read.All', 'PrivilegedEligibilitySchedule.Read.AzureADGroup', 'DeviceManagementRBAC.Read.All'
 $ctx = $null
 try { $ctx = Get-MgContext } catch { }
 if ($ClientId) {
@@ -481,6 +482,37 @@ try {
 }
 catch { Add-CollectionError 'perUserMfa' $_.Exception.Message; $perUserMfa = $null }
 
+# Intune RBAC: each role assignment with its role (built-in flag, allowed actions) and the
+# admin groups it is given to. Needs an Intune licence and DeviceManagementRBAC.Read.All;
+# without them the section fails. Not yet checked against a real tenant.
+$intuneRoles = $null
+try {
+    $intuneRoles = @(foreach ($d in @(Get-Graph 'deviceManagement/roleDefinitions' -All)) {
+            $acts = @(foreach ($rp in @($d.rolePermissions)) { foreach ($ra in @($rp.resourceActions)) { @($ra.allowedResourceActions) } }) | Where-Object { $_ } | ForEach-Object { "$_" } | Sort-Object -Unique
+            foreach ($a in @(Get-Graph "deviceManagement/roleDefinitions/$($d.id)/roleAssignments" -All)) {
+                # The base roleAssignment type has no members: read the Intune assignment itself then.
+                if ($null -eq $a.PSObject.Properties['members']) { $a = Get-Graph "deviceManagement/roleAssignments/$($a.id)" }
+                [ordered]@{
+                    id = "$($a.id)"; displayName = "$($a.displayName)"
+                    roleId = "$($d.id)"; roleName = "$($d.displayName)"; isBuiltIn = [bool]$d.isBuiltIn; actions = @($acts)
+                    members = @(@($a.members) | Where-Object { $_ } | ForEach-Object { "$_" }); resourceScopes = @(@($a.resourceScopes) | Where-Object { $_ } | ForEach-Object { "$_" })
+                }
+            }
+        })
+}
+catch { Add-CollectionError 'intuneRoles' $_.Exception.Message; $intuneRoles = $null }
+
+# Intune Multi Admin Approval: which operation types need a second admin (device wipe,
+# scripts, apps, roles). Beta only; same licence and scope as the Intune roles. Policy names
+# are not kept, only their type, platform and number of approver groups.
+$intuneApprovalPolicies = $null
+try {
+    $intuneApprovalPolicies = @(Get-Graph 'https://graph.microsoft.com/beta/deviceManagement/operationApprovalPolicies' -All | Where-Object { $_ } | ForEach-Object {
+            [ordered]@{ id = "$($_.id)"; policyType = "$($_.policyType)"; policyPlatform = "$($_.policyPlatform)"; approverGroupCount = @(@($_.approverGroupIds) | Where-Object { $_ }).Count }
+        })
+}
+catch { Add-CollectionError 'intuneApprovalPolicies' $_.Exception.Message; $intuneApprovalPolicies = $null }
+
 # Applications and service principals: credential expiry and high-privilege grants
 # Groups that gate access: excluded from or targeted by Conditional Access, or holding an
 # admin role (directly or through PIM). Visibility, dynamic rule and owners only; members
@@ -490,6 +522,7 @@ try {
     $gids = New-Object System.Collections.Generic.List[string]
     foreach ($p in @($caPolicies | Where-Object { $_ })) { foreach ($g in @($p.excludeGroups) + @($p.includeGroups)) { if ($g -and -not $gids.Contains("$g")) { $gids.Add("$g") } } }
     foreach ($r in @($roles | Where-Object { $_ })) { foreach ($k in @($r.memberTypes.Keys)) { if ("$($r.memberTypes[$k])" -eq 'group' -and -not $gids.Contains("$k")) { $gids.Add("$k") } } }
+    foreach ($ia in @($intuneRoles | Where-Object { $_ })) { foreach ($g in @($ia.members)) { if ($g -and -not $gids.Contains("$g")) { $gids.Add("$g") } } }
     $userIds = @{}; foreach ($u in @($users | Where-Object { $_ })) { $userIds["$($u.id)"] = $true }
     if ($pim) { foreach ($a in @($pim.active) + @($pim.eligible)) { if ($a -and $a.principalId -and -not $userIds.ContainsKey("$($a.principalId)") -and -not $gids.Contains("$($a.principalId)")) { $gids.Add("$($a.principalId)") } } }
     # Groups that hold a role: role members of type group, plus PIM principals that turn out to be groups.
@@ -659,7 +692,7 @@ if ($accessPackages) {
 # --------------------------------------------------------------------------
 $snapshot = [ordered]@{
     meta = [ordered]@{
-        tool = 'IDWolf'; kind = 'entra'; schemaVersion = 7; collectorVersion = $script:CollectorVersion
+        tool = 'IDWolf'; kind = 'entra'; schemaVersion = 9; collectorVersion = $script:CollectorVersion
         collectedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
         tenantId = $ctx.TenantId; account = $ctx.Account
         collectionErrors = $script:Errors.ToArray(); synthetic = $false
@@ -693,6 +726,8 @@ $snapshot = [ordered]@{
     roleAssignments   = $roleAssignments
     spSignIns         = $spSignIns
     accessPackageGrants = $accessPackageGrants
+    intuneRoles       = $intuneRoles
+    intuneApprovalPolicies = $intuneApprovalPolicies
     directoryRoles    = $roles
     users             = $users
     applications      = $apps
@@ -701,7 +736,9 @@ $snapshot = [ordered]@{
 
 if (-not $OutFile) {
     $tn = if ($org -and $org.displayName) { ($org.displayName -replace '[^\w\-]', '_') } elseif ($ctx.TenantId) { "$($ctx.TenantId)" } else { 'tenant' }
-    $OutFile = "entrasnapshot_{0}_{1}.json" -f $tn, (Get-Date -Format 'yyyyMMdd_HHmmss')
+    # Unnamed outputs go to .\output, not next to everything else.
+    $od = Join-Path (Get-Location).Path 'output'; if (-not (Test-Path -LiteralPath $od)) { New-Item -ItemType Directory -Path $od | Out-Null }
+    $OutFile = Join-Path $od ("entrasnapshot_{0}_{1}.json" -f $tn, (Get-Date -Format 'yyyyMMdd_HHmmss'))
 }
 $json = $snapshot | ConvertTo-Json -Depth 8
 # PS 5.1 writes an empty function result as {}: make it null.

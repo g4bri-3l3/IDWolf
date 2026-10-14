@@ -138,8 +138,8 @@ function Get-MitreLink {
 
 # Wolf-fur palette, charcoal to silver. Only severity and risk keep a muted
 # colour, because there it means something.
-$script:WolfCategoryRamp = @('#15171A', '#2A2E33', '#40454B', '#575D64', '#6F767D', '#888F96', '#A2A8AE', '#BCC1C6', '#D3D7DB')
-$script:WolfSeverityColors = @('#A23B3B', '#B0703A', '#A88B2E', '#7F868D')
+$script:WolfCategoryRamp = @('#161513', '#2B2925', '#45413A', '#5F5A51', '#78726A', '#8F887C', '#ABA497', '#C6BFB0', '#DDD6C8')
+$script:WolfSeverityColors = @('#E2372A', '#EF8A6F', '#F2B632', '#B9B1A1')
 
 # Same wolf as the console banner. Single-quoted: the art has a backtick in it.
 $script:WolfAscii = @'
@@ -169,7 +169,7 @@ function Get-SvgPieChart {
     $r = ($Size / 2) - ($strokeWidth / 2) - 1
     $circ = [Math]::Round(2 * [Math]::PI * $r, 2)
     $inv = [Globalization.CultureInfo]::InvariantCulture
-    $rings = "<circle cx='$cx' cy='$cy' r='$($r.ToString($inv))' fill='none' stroke='#E4E7EA' stroke-width='$($strokeWidth.ToString($inv))' />"
+    $rings = "<circle cx='$cx' cy='$cy' r='$($r.ToString($inv))' fill='none' stroke='#E8E2D4' stroke-width='$($strokeWidth.ToString($inv))' />"
     $legend = ""; $cum = 0
     for ($i = 0; $i -lt $Labels.Count; $i++) {
         $v = $Values[$i]
@@ -181,7 +181,7 @@ function Get-SvgPieChart {
         $pct = [Math]::Round(($v / $total) * 100, 1).ToString($inv)
         $legend += "<div class='pie-legend-item'><span class='pie-legend-swatch' style='background:$($Colors[$i])'></span>$(ConvertTo-HtmlSafe $Labels[$i]) ($v, $pct%)</div>"
     }
-    $svg = "<svg viewBox='0 0 $Size $Size' width='$Size' height='$Size' role='img'><g transform='rotate(-90 $cx $cy)'>$rings</g><text x='$cx' y='$($cy - 2)' text-anchor='middle' font-size='20' font-weight='600' fill='#23262A'>$total</text><text x='$cx' y='$($cy + 14)' text-anchor='middle' font-size='9' fill='#5E656C'>$CenterLabel</text></svg>"
+    $svg = "<svg viewBox='0 0 $Size $Size' width='$Size' height='$Size' role='img'><g transform='rotate(-90 $cx $cy)'>$rings</g><text x='$cx' y='$($cy - 2)' text-anchor='middle' font-size='20' font-weight='600' fill='#161513'>$total</text><text x='$cx' y='$($cy + 14)' text-anchor='middle' font-size='9' fill='#5F5A51'>$CenterLabel</text></svg>"
     return "<div class='pie-chart-wrap'>$svg<div class='pie-legend'>$legend</div></div>"
 }
 
@@ -208,7 +208,7 @@ function Get-ChartsRowHtml {
     }
     $tierPie = Get-SvgPieChart -Labels @('Active admins', 'Dormant (90d+)', 'Service accounts', 'Disabled', 'Computers', 'Foreign / unresolved') `
         -Values @($t.active, $t.dormant, $t.service, $t.disabled, $t.computer, $t.foreign) `
-        -Colors @('#2A2E33', '#A88B2E', '#4A5058', '#C9CED3', '#9AA0A6', '#A23B3B') -CenterLabel 'Tier 0'
+        -Colors @('#2B2925', '#F2B632', '#161513', '#D3CCBD', '#A39C8F', '#E2372A') -CenterLabel 'Tier 0'
 
     # Enabled user accounts by activity (standard + privileged, no MSA).
     $a = @{ recent = 0; inactive = 0; never = 0 }
@@ -217,7 +217,7 @@ function Get-ChartsRowHtml {
         if ($null -eq $ll) { $a.never++ } elseif ($ll -gt 180) { $a.inactive++ } else { $a.recent++ }
     }
     $actPie = Get-SvgPieChart -Labels @('Logon within 180d', 'Inactive 180d+', 'Never logged on') -Values @($a.recent, $a.inactive, $a.never) `
-        -Colors @('#2A2E33', '#888F96', '#C9CED3') -CenterLabel 'enabled users'
+        -Colors @('#2B2925', '#8F887C', '#D3CCBD') -CenterLabel 'enabled users'
 
     $h = "<div class='chart-row'>"
     $h += "<div><div class='pie-chart-title'>Findings by severity</div>$sevPie</div>"
@@ -244,18 +244,18 @@ function Get-AdInfoChartsRow {
     $enabled = @($users | Where-Object { $_.enabled })
     $svc = @($enabled | Where-Object { & $isSvc $_ }).Count
     & $add 'All accounts' 'accounts' @('User accounts', 'Service accounts', 'Disabled users', 'Computers') `
-        @(($enabled.Count - $svc), $svc, ($users.Count - $enabled.Count), @($Index.Computers).Count) @('#2A2E33', '#6F767D', '#C9CED3', '#A88B2E')
+        @(($enabled.Count - $svc), $svc, ($users.Count - $enabled.Count), @($Index.Computers).Count) @('#2B2925', '#78726A', '#D3CCBD', '#F2B632')
 
     $pw = @{ recent = 0; mid = 0; old = 0; never = 0 }
     foreach ($u in $enabled) {
         $a = Get-AgeDays $u.pwdLastSet
         if ($null -eq $a) { $pw.never++ } elseif ($a -le 90) { $pw.recent++ } elseif ($a -le 365) { $pw.mid++ } else { $pw.old++ }
     }
-    & $add 'Password age (enabled accounts)' 'accounts' @('Changed within 90d', '91 to 365 days', 'Over 1 year', 'Never set') @($pw.recent, $pw.mid, $pw.old, $pw.never) @('#2A2E33', '#888F96', '#A23B3B', '#C9CED3')
+    & $add 'Password age (enabled accounts)' 'accounts' @('Changed within 90d', '91 to 365 days', 'Over 1 year', 'Never set') @($pw.recent, $pw.mid, $pw.old, $pw.never) @('#2B2925', '#8F887C', '#E2372A', '#D3CCBD')
 
     $notReq = @($enabled | Where-Object { Test-Uac $_ 'PASSWD_NOTREQD' }).Count
     $never = @($enabled | Where-Object { -not (Test-Uac $_ 'PASSWD_NOTREQD') -and (Test-Uac $_ 'DONT_EXPIRE_PASSWORD') }).Count
-    & $add 'Password settings (enabled accounts)' 'accounts' @('Expires normally', 'Never expires', 'Password not required') @(($enabled.Count - $notReq - $never), $never, $notReq) @('#2A2E33', '#A88B2E', '#A23B3B')
+    & $add 'Password settings (enabled accounts)' 'accounts' @('Expires normally', 'Never expires', 'Password not required') @(($enabled.Count - $notReq - $never), $never, $notReq) @('#2B2925', '#F2B632', '#E2372A')
 
     $comps = @($Index.Computers)
     $osNames = @{}
@@ -272,11 +272,11 @@ function Get-AdInfoChartsRow {
         $a = Get-AgeDays $c.lastLogonTimestamp
         if ($null -eq $a) { $cn++ } elseif ($a -le 90) { $cr++ } else { $cs++ }
     }
-    & $add 'Enabled computers by activity' 'computers' @('Seen within 90d', 'Stale 90d+', 'Never logged on') @($cr, $cs, $cn) @('#2A2E33', '#888F96', '#C9CED3')
+    & $add 'Enabled computers by activity' 'computers' @('Seen within 90d', 'Stale 90d+', 'Never logged on') @($cr, $cs, $cn) @('#2B2925', '#8F887C', '#D3CCBD')
 
     $grp = @{ Global = 0; DomainLocal = 0; Universal = 0 }
     foreach ($g in @($Index.Groups)) { $s = "$($g.groupScope)"; if ($grp.ContainsKey($s)) { $grp[$s]++ } }
-    & $add 'Groups by scope' 'groups' @('Global', 'Domain local', 'Universal') @($grp.Global, $grp.DomainLocal, $grp.Universal) @('#2A2E33', '#888F96', '#C9CED3')
+    & $add 'Groups by scope' 'groups' @('Global', 'Domain local', 'Universal') @($grp.Global, $grp.DomainLocal, $grp.Universal) @('#2B2925', '#8F887C', '#D3CCBD')
 
     # Password quality (DSInternals), worst problem per account. Only with a report attached.
     $pq = $Snapshot.passwordQuality
@@ -297,10 +297,142 @@ function Get-AdInfoChartsRow {
         $clean = [Math]::Max(0, $enabled.Count - $seen.Count)
         $pqLabels = @('No weakness found') + @($lists.Keys)
         $pqVals = @($clean) + @($counts)
-        & $add 'Password quality (enabled accounts)' 'accounts' $pqLabels $pqVals @('#2A2E33', '#A23B3B', '#8C2F2F', '#B0703A', '#A88B2E', '#888F96')
+        & $add 'Password quality (enabled accounts)' 'accounts' $pqLabels $pqVals @('#2B2925', '#E2372A', '#A8261C', '#EF8A6F', '#F2B632', '#8F887C')
     }
     if (-not $pies.Count) { return '' }
     return "<div class='chart-row'>$($pies -join '')</div>"
+}
+
+# The report theme, shared by the AD and the Entra report: one <style> block, no external
+# resource (system font stacks), so the HTML opens the same on an offline machine.
+function Get-IDWolfThemeCss {
+    return @'
+<style>
+  /* "Keycap" theme: paper, ink, hard shadows. Self-contained: system font stacks, no web fonts. */
+  :root {
+    --paper: #F3EFE6; --surface: #FFFDF8; --tint: #E8E2D4; --ink: #161513; --muted: #5F5A51;
+    --red: #E2372A; --red-soft: #FBD9D2; --coral: #EF8A6F; --amber: #F2B632; --amber-soft: #FBE7B5; --green: #84CC5F;
+    --line: 3px solid var(--ink);
+    --shadow: 7px 7px 0 var(--ink); --shadow-sm: 4px 4px 0 var(--ink); --shadow-xs: 3px 3px 0 var(--ink);
+    --display: "Bahnschrift", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    --body: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif;
+    --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+  }
+  body {
+    max-width: 1240px; margin: 0 auto; padding: 28px 24px 64px; color: var(--ink); line-height: 1.5;
+    font-family: var(--body); font-size: 15px; -webkit-font-smoothing: antialiased;
+    background: var(--paper) radial-gradient(circle, rgba(22, 21, 19, .10) 1.1px, transparent 1.5px) 0 0 / 18px 18px;
+  }
+  @media (max-width: 700px) { body { padding: 16px 16px 40px; } .wolf-logo { font-size: 7px; } }
+  :focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+
+  h1 {
+    font-family: var(--display); font-weight: 800; letter-spacing: -0.04em; line-height: .95; font-size: clamp(2rem, 4.6vw, 3.4rem);
+    border: var(--line); border-radius: 22px; background: var(--surface); box-shadow: var(--shadow); padding: 22px 26px; margin: 0 0 28px;
+  }
+  h1.title { display: flex; align-items: center; gap: 22px; }
+  .wolf-logo {
+    font-family: var(--mono); font-size: 10px; line-height: 1.05; font-weight: 700; margin: 0; flex-shrink: 0;
+    color: var(--surface); background: var(--ink); border-radius: 14px; padding: 10px 12px; box-shadow: 4px 4px 0 var(--red);
+  }
+  h2 { margin: 0; font-family: var(--display); font-weight: 750; letter-spacing: -0.03em; font-size: clamp(1.35rem, 2.4vw, 1.9rem); color: var(--ink); }
+  h3 { font-family: var(--display); letter-spacing: -0.02em; }
+  .meta { font-family: var(--mono); font-size: 12px; line-height: 1.55; letter-spacing: .01em; color: var(--muted); }
+  h1 + .meta { text-transform: uppercase; letter-spacing: .06em; font-size: 11.5px; }
+  code { background: var(--tint); border: 1.5px solid var(--ink); border-radius: 6px; padding: 0 5px; font-family: var(--mono); font-size: 0.92em; }
+
+  /* Score cards: keys with a hard shadow, the number is the label. */
+  .cards { display: flex; flex-wrap: wrap; gap: 18px; margin: 26px 0 30px; clear: both; }
+  .card {
+    border: var(--line); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-sm);
+    padding: 14px 20px 16px; min-width: 150px; transition: transform .12s ease, box-shadow .12s ease;
+  }
+  .card:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
+  .card .num, .grade { font-family: var(--display); font-weight: 800; font-size: 2.6rem; letter-spacing: -0.04em; line-height: 1; color: var(--ink); }
+  .card .lbl { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+  .card.critical { background: var(--red); } .card.critical .num, .card.critical .lbl { color: var(--surface); }
+  .card.high { background: var(--red-soft); } .card.medium { background: var(--amber); } .card.low { background: var(--tint); }
+
+  /* Severity pills as small keycaps. */
+  .sev-pill {
+    display: inline-block; white-space: nowrap; font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    border: 2px solid var(--ink); border-radius: 8px; padding: 3px 9px; box-shadow: 2px 2px 0 var(--ink); color: var(--ink);
+  }
+  .sev-pill-critical { background: var(--red); color: var(--surface); }
+  .sev-pill-high { background: var(--red-soft); }
+  .sev-pill-medium { background: var(--amber); }
+  .sev-pill-low { background: var(--tint); }
+
+  /* Sections and checks: bento panels. */
+  details { margin-top: 34px; }
+  details > summary { cursor: pointer; list-style: none; border-bottom: var(--line); padding-bottom: 10px; }
+  details > summary::-webkit-details-marker { display: none; }
+  details > summary h2 { display: inline-block; }
+  details > summary::before { content: '\25b6'; display: inline-block; margin-right: 8px; font-size: 14px; color: var(--red); transition: transform .15s ease; }
+  details[open] > summary::before { transform: rotate(90deg); }
+  details.check {
+    margin: 12px 0; border: var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-xs);
+    transition: box-shadow .12s ease, transform .12s ease;
+  }
+  details.check:hover { transform: translate(-1px, -1px); box-shadow: var(--shadow-sm); }
+  details.check[open] { box-shadow: var(--shadow); }
+  details.check > summary { border-bottom: none; padding: 12px 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  details.check[open] > summary { border-bottom: var(--line); }
+  details.check > summary::before { margin-right: 0; }
+  details.check .body { padding: 12px 18px 16px; }
+  .check-title { font-family: var(--display); font-weight: 700; font-size: 1.02rem; letter-spacing: -0.01em; }
+  .check-id { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--muted); }
+  .count { margin-left: auto; font-family: var(--mono); font-size: 11px; letter-spacing: .06em; background: var(--tint); border: 2px solid var(--ink); border-radius: 99px; padding: 1px 10px; }
+  .kv { font-size: 13px; margin: 6px 0; }
+  .kv b { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink); }
+
+  /* Tables: ink header, mono labels, framed panel. */
+  .table-wrap { border: var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-sm); overflow-x: auto; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { padding: 8px 12px; text-align: left; vertical-align: top; border-top: 1.5px solid var(--tint); }
+  th { background: var(--ink); color: var(--paper); font-family: var(--mono); font-size: 10.5px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; padding: 10px 12px; border-top: none; }
+  /* Key / value tables (a th at the start of a data row): light row headers, not a black column. */
+  tr:has(> td) > th { background: var(--tint); color: var(--ink); border-top: 1.5px solid var(--surface); }
+  tr.data-row:nth-child(even) td { background: #FAF6EE; }
+  tr.data-row:hover td { background: var(--amber-soft); }
+  tr.filter-row td { background: var(--tint); padding: 5px 6px; }
+  tr.filter-row input { width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: 11px; padding: 4px 7px; border: 2px solid var(--ink); border-radius: 8px; background: var(--surface); }
+  tr.filter-row input:focus { outline: 3px solid var(--red); outline-offset: 1px; }
+  .filter-status { font-family: var(--mono); font-size: 11px; color: var(--muted); margin: 6px 0 0 2px; }
+  .compare-new { color: var(--red); font-weight: bold; }
+  .compare-resolved { color: var(--muted); font-weight: bold; }
+  .yes { color: var(--red); font-weight: 600; } .no { color: var(--muted); }
+
+  /* Callouts. */
+  blockquote { background: var(--surface); border: var(--line); border-left-width: 10px; border-radius: 14px; box-shadow: var(--shadow-xs); margin: 14px 0; padding: 12px 16px; }
+  .warn { background: var(--red-soft); border-left-color: var(--red); }
+
+  /* Charts and map. */
+  .chart-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 22px; margin: 18px 0; }
+  .pie-chart-wrap { display: flex; align-items: center; gap: 16px; }
+  .pie-chart-wrap svg { flex-shrink: 0; }
+  .pie-chart-title { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .pie-legend { font-size: 12px; min-width: 0; }
+  .pie-legend-item { display: flex; align-items: center; gap: 6px; margin: 3px 0; }
+  .pie-legend-swatch { display: inline-block; width: 10px; height: 10px; border: 1.5px solid var(--ink); border-radius: 3px; flex-shrink: 0; }
+  .map-wrap { border: var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-sm); padding: 10px; margin: 14px 0; overflow-x: auto; }
+  .attack-map .am-edge.am-hot { opacity: 1 !important; stroke-width: 2.6px; }
+
+  /* AI section. */
+  .ai-section { background: var(--surface); border: var(--line); border-radius: 18px; box-shadow: var(--shadow); padding: 6px 24px 20px; margin-top: 18px; }
+  .ai-badge { display: inline-block; font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--ink); background: var(--green); border: 2px solid var(--ink); border-radius: 8px; box-shadow: 2px 2px 0 var(--ink); padding: 2px 10px; margin: 12px 0 8px; }
+  .ai-section h3 { color: var(--ink); margin: 16px 0 6px; }
+  .ai-section ol li { margin: 6px 0; }
+  .ai-script { background: var(--ink); color: #ECE7DC; border: var(--line); border-radius: 12px; padding: 10px 12px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; overflow-x: auto; margin: 6px 0; }
+  .ai-triage td { vertical-align: top; }
+
+  @media print {
+    body { background: #fff; max-width: none; }
+    h1, .card, details.check, .table-wrap, .map-wrap, blockquote, .ai-section { box-shadow: none; }
+    .card:hover, details.check:hover { transform: none; }
+  }
+</style>
+'@
 }
 
 function ConvertTo-ReportHtml {
@@ -320,81 +452,10 @@ function ConvertTo-ReportHtml {
 
     & $w '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
     & $w "<title>IDWolf report - $(& $H $Snapshot.domain.dnsRoot)</title>"
+    & $w (Get-IDWolfThemeCss)
     & $w @'
-<style>
-  :root {
-    --ink: #15171A; --paper: #F3F4F5; --accent: #4A5058; --accent-deep: #1F2226; --accent-tint: #E1E4E7;
-    --slate: #23262A; --border: #D3D7DB; --muted: #5E656C;
-    --critical: #A23B3B; --critical-bg: #F2E1E1; --high: #B0703A; --high-bg: #F2E6DB;
-    --medium: #A88B2E; --medium-bg: #F1ECDC; --low: #7F868D; --low-bg: #E4E7EA;
-  }
-  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; margin: 40px; color: var(--ink); background: var(--paper); line-height: 1.45; }
-  @media (max-width: 700px) { body { margin: 16px; } .wolf-logo { font-size: 7px; } }
-  h1 { border-bottom: 3px solid var(--accent); padding-bottom: 10px; }
-  h1.title { display: flex; align-items: flex-end; gap: 18px; }
-  .wolf-logo { font-family: Consolas, 'Courier New', monospace; font-size: 10px; line-height: 1.05; font-weight: 700; color: var(--slate); margin: 0; flex-shrink: 0; }
-  h2 { margin: 0; color: var(--slate); }
-  .meta { color: var(--muted); font-size: 13px; }
-  .cards { display: flex; flex-wrap: wrap; gap: 12px; margin: 18px 0; clear: both; }
-  .card { border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; min-width: 120px; background: #fff; }
-  .card .num { font-size: 26px; font-weight: 700; }
-  .card .lbl { font-size: 12px; color: var(--muted); }
-  .card.critical .num { color: var(--critical); } .card.high .num { color: var(--high); }
-  .card.medium .num { color: var(--medium); } .card.low .num { color: var(--low); }
-  .grade { font-size: 26px; font-weight: 800; color: var(--accent-deep); }
-  .table-wrap { border: 1px solid var(--border); border-radius: 10px; overflow-x: auto; margin: 12px 0; }
-  table { border-collapse: collapse; width: 100%; font-size: 12px; }
-  th, td { padding: 7px 10px; text-align: left; vertical-align: top; border-top: 1px solid var(--border); }
-  th { background: var(--slate); color: var(--paper); font-weight: 600; border-top: none; }
-  tr.data-row:nth-child(even) td { background: #F7F8F9; }
-  tr.data-row:hover td { background: var(--accent-tint); }
-  .sev-pill { display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 99px; white-space: nowrap; }
-  .sev-pill-critical { background: var(--critical-bg); color: #7A2727; }
-  .sev-pill-high { background: var(--high-bg); color: #7A4A1F; }
-  .sev-pill-medium { background: var(--medium-bg); color: #6E5A1C; }
-  .sev-pill-low { background: var(--low-bg); color: #4A5056; }
-  code { background: #E8EBEE; padding: 1px 5px; border-radius: 3px; font-family: ui-monospace, Consolas, monospace; font-size: 0.92em; }
-  details { margin-top: 28px; }
-  details > summary { cursor: pointer; list-style: none; border-bottom: 2px solid var(--accent-tint); padding-bottom: 6px; }
-  details > summary::-webkit-details-marker { display: none; }
-  details > summary h2 { display: inline-block; }
-  details > summary::before { content: '\25b6'; display: inline-block; margin-right: 8px; font-size: 13px; color: var(--accent); transition: transform 0.15s ease; }
-  details[open] > summary::before { transform: rotate(90deg); }
-  details.check { margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
-  details.check > summary { border-bottom: none; padding: 10px 12px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-  details.check > summary::before { margin-right: 0; }
-  details.check .body { padding: 0 14px 12px 14px; }
-  .check-title { font-weight: 600; }
-  .check-id { color: var(--muted); font-size: 12px; }
-  .count { margin-left: auto; font-size: 12px; color: var(--muted); }
-  .kv { font-size: 13px; margin: 6px 0; }
-  .kv b { color: var(--slate); }
-  blockquote { background: var(--accent-tint); border-left: 4px solid var(--accent); margin: 12px 0; padding: 10px 14px; }
-  .warn { background: var(--critical-bg); border-left-color: var(--critical); }
-  tr.filter-row td { background: #EDEFF1; padding: 4px 6px; }
-  tr.filter-row input { width: 100%; box-sizing: border-box; font-size: 11px; padding: 3px 5px; border: 1px solid #BFC5CB; border-radius: 3px; }
-  .filter-status { font-size: 11px; color: var(--muted); margin: 4px 0 0 2px; }
-  .compare-new { color: var(--accent-deep); font-weight: bold; }
-  .compare-resolved { color: #5E656C; font-weight: bold; }
-  .yes { color: var(--critical); font-weight: 600; } .no { color: var(--muted); }
-  .chart-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin: 18px 0; }
-  .pie-chart-wrap { display: flex; align-items: center; gap: 16px; }
-  .pie-chart-wrap svg { flex-shrink: 0; }
-  .pie-chart-title { font-size: 13px; font-weight: 600; margin-bottom: 8px; color: var(--slate); }
-  .pie-legend { font-size: 12px; }
-  .pie-legend-item { display: flex; align-items: center; gap: 6px; margin: 3px 0; white-space: nowrap; }
-  .pie-legend-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
-  .ai-section { background: #EEF0F2; border: 1px solid #CDD2D7; border-left: 4px solid #23262A; border-radius: 4px; padding: 4px 20px 16px 20px; margin-top: 16px; }
-  .ai-badge { display: inline-block; font-size: 11px; font-weight: bold; color: #23262A; background: #DDE1E5; border-radius: 10px; padding: 2px 10px; margin: 12px 0 8px 0; }
-  .ai-section h3 { color: var(--slate); margin: 16px 0 6px 0; }
-  .ai-section ol li { margin: 6px 0; }
-  .map-wrap { border: 1px solid var(--border); border-radius: 10px; padding: 10px; margin: 12px 0; background: #fff; overflow-x: auto; }
-  .attack-map .am-edge.am-hot { opacity: 1 !important; stroke-width: 2.6px; }
-  .ai-script { background: #0F1113; color: #E3E6E9; border-radius: 6px; padding: 10px 12px; font-family: ui-monospace, Consolas, monospace; font-size: 12px; white-space: pre-wrap; overflow-x: auto; margin: 6px 0; }
-  .ai-triage td { vertical-align: top; }
-</style>
 <script>
-function filterMooseTable(input) {
+function filterIDWolfTable(input) {
   var table = input.closest('table');
   var filters = Array.prototype.map.call(table.querySelectorAll('tr.filter-row input'), function (i) { return i.value.toLowerCase(); });
   var rows = table.querySelectorAll('tr.data-row'); var shown = 0;
@@ -565,7 +626,7 @@ function amMap(g, on) {
     # ---------------- All findings (filterable) ----------------
     & $w '<details><summary><h2>All findings</h2></summary><div class="table-wrap"><table>'
     & $w '<tr><th>Severity</th><th>Check</th><th>Category</th><th>Object</th><th>Type</th><th>Detail</th><th>MITRE</th></tr>'
-    & $w ('<tr class="filter-row">' + ((1..7 | ForEach-Object { '<td><input type="text" placeholder="filter" oninput="filterMooseTable(this)"></td>' }) -join '') + '</tr>')
+    & $w ('<tr class="filter-row">' + ((1..7 | ForEach-Object { '<td><input type="text" placeholder="filter" oninput="filterIDWolfTable(this)"></td>' }) -join '') + '</tr>')
     foreach ($f in ($findings | Sort-Object { - $script:SeverityRank[$_.Severity] }, Type, Object)) {
         & $w "<tr class=`"data-row`"><td>$(Get-SevPill $f.Severity)</td><td>$($f.Type)</td><td>$(& $H $f.Category)</td><td title=`"$(& $H $f.ObjectDn)`">$(& $H $f.Object)</td><td>$(& $H $f.ObjectType)</td><td>$(& $H $f.Detail)</td><td>$(Get-MitreLink $f.Mitre)</td></tr>"
     }

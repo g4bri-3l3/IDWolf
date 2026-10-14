@@ -2,7 +2,7 @@
   "meta": {
     "tool": "IDWolf",
     "kind": "entra",
-    "schemaVersion": 5,
+    "schemaVersion": 9,
     "collectorVersion": "synthetic",
     "collectedAtUtc": "2026-09-30T08:00:00.0000000Z",
     "tenantId": "11111111-2222-3333-4444-555555555555",
@@ -88,6 +88,12 @@
       {
         "principalId": "00000005-0000-0000-0000-000000000000",
         "roleDefinitionId": "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3",
+        "assignmentType": "Eligible",
+        "endDateTime": null
+      },
+      {
+        "principalId": "00000703-0000-0000-0000-000000000000",
+        "roleDefinitionId": "62e90394-69f5-4237-9190-012177145e10",
         "assignmentType": "Eligible",
         "endDateTime": null
       }
@@ -229,9 +235,21 @@
       "reviewEnabled": false
     },
     {
+      "id": "00000603-0000-0000-0000-000000000000",
+      "displayName": "IT on-call self-service",
+      "accessPackage": "IT on-call",
+      "accessPackageId": "00000650-0000-0000-0000-000000000000",
+      "allowedTargetScope": "allMemberUsers",
+      "selfAddEnabled": true,
+      "approvalRequired": false,
+      "expirationType": "afterDuration",
+      "reviewEnabled": true
+    },
+    {
       "id": "00000601-0000-0000-0000-000000000000",
       "displayName": "Finance staff",
       "accessPackage": "Finance share",
+      "accessPackageId": "00000651-0000-0000-0000-000000000000",
       "allowedTargetScope": "allMemberUsers",
       "selfAddEnabled": true,
       "approvalRequired": true,
@@ -263,6 +281,7 @@
       ],
       "excludeUsers": [],
       "excludeGroups": [],
+      "includeGroups": [],
       "includeRoles": [],
       "includeApplications": [
         "All"
@@ -294,7 +313,11 @@
         "All"
       ],
       "excludeUsers": [],
-      "excludeGroups": [],
+      "excludeGroups": [
+        "00000700-0000-0000-0000-000000000000",
+        "00000701-0000-0000-0000-000000000000"
+      ],
+      "includeGroups": [],
       "includeRoles": [],
       "includeApplications": [
         "All"
@@ -327,6 +350,7 @@
       ],
       "excludeUsers": [],
       "excludeGroups": [],
+      "includeGroups": [],
       "includeRoles": [],
       "includeApplications": [
         "All"
@@ -354,6 +378,239 @@
       "includeServicePrincipals": []
     }
   ],
+  "groups": [
+    {
+      "id": "00000700-0000-0000-0000-000000000000",
+      "displayName": "Project Elk team",
+      "visibility": "Public",
+      "unified": true,
+      "dynamic": false,
+      "membershipRule": "",
+      "isAssignableToRole": false,
+      "onPremSync": false,
+      "ownerTypes": {
+        "00000012-0000-0000-0000-000000000000": "user"
+      }
+    },
+    {
+      "id": "00000701-0000-0000-0000-000000000000",
+      "displayName": "CA exclusion - emergency access",
+      "visibility": "Private",
+      "unified": false,
+      "dynamic": false,
+      "membershipRule": "",
+      "isAssignableToRole": true,
+      "onPremSync": false,
+      "ownerTypes": {
+        "00000001-0000-0000-0000-000000000000": "user"
+      }
+    },
+    {
+      "id": "00000702-0000-0000-0000-000000000000",
+      "displayName": "Tier 2 security operators",
+      "visibility": "Private",
+      "unified": false,
+      "dynamic": false,
+      "membershipRule": "",
+      "isAssignableToRole": true,
+      "onPremSync": false,
+      "ownerTypes": {
+        "00000013-0000-0000-0000-000000000000": "user",
+        "00000001-0000-0000-0000-000000000000": "user"
+      },
+      "pimEligible": []
+    },
+    {
+      "id": "00000703-0000-0000-0000-000000000000",
+      "displayName": "PIM - Global Admins",
+      "visibility": "Private",
+      "unified": false,
+      "dynamic": false,
+      "membershipRule": "",
+      "isAssignableToRole": true,
+      "onPremSync": false,
+      "ownerTypes": {
+        "00000001-0000-0000-0000-000000000000": "user"
+      },
+      "pimEligible": [
+        {
+          "principalId": "00000014-0000-0000-0000-000000000000",
+          "accessId": "owner"
+        },
+        {
+          "principalId": "00000001-0000-0000-0000-000000000000",
+          "accessId": "member"
+        }
+      ]
+    },
+    {
+      "id": "00000704-0000-0000-0000-000000000000",
+      "displayName": "Endpoint team",
+      "visibility": "Private",
+      "unified": false,
+      "dynamic": false,
+      "membershipRule": "",
+      "isAssignableToRole": false,
+      "onPremSync": false,
+      "ownerTypes": {
+        "00000012-0000-0000-0000-000000000000": "user"
+      }
+    },
+    {
+      "id": "00000705-0000-0000-0000-000000000000",
+      "displayName": "Intune role admins",
+      "visibility": "Private",
+      "unified": false,
+      "dynamic": false,
+      "membershipRule": "",
+      "isAssignableToRole": true,
+      "onPremSync": false,
+      "ownerTypes": {
+        "00000001-0000-0000-0000-000000000000": "user"
+      }
+    }
+  ],
+  "pimRules": {
+    "62e90394-69f5-4237-9190-012177145e10": {
+      "approval": true,
+      "mfa": true,
+      "justification": true,
+      "authContext": false,
+      "maxActivation": "PT8H",
+      "eligibleExpiryRequired": false,
+      "activeExpiryRequired": false
+    },
+    "e8611ab8-c189-46e8-94e1-60213ab1f814": {
+      "approval": false,
+      "mfa": false,
+      "justification": true,
+      "authContext": false,
+      "maxActivation": "PT10H",
+      "eligibleExpiryRequired": true,
+      "activeExpiryRequired": true
+    },
+    "194ae4cb-b126-40b2-bd5b-6091b380977d": {
+      "approval": false,
+      "mfa": true,
+      "justification": true,
+      "authContext": false,
+      "maxActivation": "PT4H",
+      "eligibleExpiryRequired": true,
+      "activeExpiryRequired": true
+    }
+  },
+  "roleAssignments": [
+    {
+      "principalId": "00000001-0000-0000-0000-000000000000",
+      "roleDefinitionId": "62e90394-69f5-4237-9190-012177145e10",
+      "directoryScopeId": "/"
+    },
+    {
+      "principalId": "00000005-0000-0000-0000-000000000000",
+      "roleDefinitionId": "9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3",
+      "directoryScopeId": "/administrativeUnits/00000800-0000-0000-0000-000000000000"
+    },
+    {
+      "principalId": "00000013-0000-0000-0000-000000000000",
+      "roleDefinitionId": "158c047a-c907-4556-b7ef-446551a6b5f7",
+      "directoryScopeId": "/00000300-0000-0000-0000-000000000000"
+    },
+    {
+      "principalId": "00000015-0000-0000-0000-000000000000",
+      "roleDefinitionId": "158c047a-c907-4556-b7ef-446551a6b5f7",
+      "directoryScopeId": "/00000402-0000-0000-0000-000000000000"
+    }
+  ],
+  "spSignIns": {
+    "00003001-0000-0000-0000-000000000000": "2025-08-26T08:00:00.0000000Z",
+    "00003051-0000-0000-0000-000000000000": "2026-09-29T08:00:00.0000000Z"
+  },
+  "accessPackageGrants": {
+    "00000650-0000-0000-0000-000000000000": [
+      {
+        "originSystem": "AadGroup",
+        "roleOriginId": "Member_00000702-0000-0000-0000-000000000000",
+        "scopeOriginId": "00000702-0000-0000-0000-000000000000",
+        "roleName": "Member"
+      }
+    ],
+    "00000651-0000-0000-0000-000000000000": [
+      {
+        "originSystem": "SharePointOnline",
+        "roleOriginId": "4",
+        "scopeOriginId": "https://moosebank.sharepoint.example/sites/finance",
+        "roleName": "Members"
+      }
+    ]
+  },
+  "intuneRoles": [
+    {
+      "id": "00000900-0000-0000-0000-000000000000",
+      "displayName": "Endpoint team - profiles",
+      "roleId": "00000950-0000-0000-0000-000000000000",
+      "roleName": "Policy and Profile Manager",
+      "isBuiltIn": true,
+      "actions": [
+        "Microsoft.Intune_DeviceConfigurations_Assign",
+        "Microsoft.Intune_DeviceConfigurations_Read"
+      ],
+      "members": [
+        "00000704-0000-0000-0000-000000000000"
+      ],
+      "resourceScopes": []
+    },
+    {
+      "id": "00000901-0000-0000-0000-000000000000",
+      "displayName": "Endpoint team - scripts",
+      "roleId": "00000951-0000-0000-0000-000000000000",
+      "roleName": "Workstation scripts",
+      "isBuiltIn": false,
+      "actions": [
+        "Microsoft.Intune_DeviceManagementScripts_Assign",
+        "Microsoft.Intune_DeviceManagementScripts_Read"
+      ],
+      "members": [
+        "00000704-0000-0000-0000-000000000000"
+      ],
+      "resourceScopes": []
+    },
+    {
+      "id": "00000902-0000-0000-0000-000000000000",
+      "displayName": "Intune RBAC owners",
+      "roleId": "00000952-0000-0000-0000-000000000000",
+      "roleName": "Intune Role Administrator",
+      "isBuiltIn": true,
+      "actions": [
+        "Microsoft.Intune_Roles_Assign"
+      ],
+      "members": [
+        "00000705-0000-0000-0000-000000000000"
+      ],
+      "resourceScopes": []
+    },
+    {
+      "id": "00000903-0000-0000-0000-000000000000",
+      "displayName": "Endpoint team - read",
+      "roleId": "00000953-0000-0000-0000-000000000000",
+      "roleName": "Read Only Operator",
+      "isBuiltIn": true,
+      "actions": [
+        "Microsoft.Intune_DeviceConfigurations_Read"
+      ],
+      "members": [
+        "00000704-0000-0000-0000-000000000000"
+      ],
+      "resourceScopes": []
+    }
+  ],
+  "intuneApprovalPolicies": [
+    {
+      "id": "00000950-0000-0000-0000-000000000000",
+      "policyType": "app",
+      "policyPlatform": "notApplicable",
+      "approverGroupCount": 1
+    }
+  ],
   "directoryRoles": [
     {
       "id": "00000100-0000-0000-0000-000000000000",
@@ -376,11 +633,13 @@
       "roleTemplateId": "194ae4cb-b126-40b2-bd5b-6091b380977d",
       "members": [
         "00000003-0000-0000-0000-000000000000",
-        "00000400-0000-0000-0000-000000000000"
+        "00000400-0000-0000-0000-000000000000",
+        "00000702-0000-0000-0000-000000000000"
       ],
       "memberTypes": {
         "00000003-0000-0000-0000-000000000000": "user",
-        "00000400-0000-0000-0000-000000000000": "servicePrincipal"
+        "00000400-0000-0000-0000-000000000000": "servicePrincipal",
+        "00000702-0000-0000-0000-000000000000": "group"
       }
     },
     {
@@ -771,7 +1030,9 @@
       ],
       "redirectUris": [
         "http://sync.moosebank-cloud.example/callback"
-      ]
+      ],
+      "signInAudience": "AzureADMultipleOrgs",
+      "instanceLock": false
     },
     {
       "id": "00000301-0000-0000-0000-000000000000",
@@ -787,7 +1048,23 @@
           "end": "2026-09-25T08:00:00.0000000Z"
         }
       ],
-      "redirectUris": []
+      "redirectUris": [],
+      "signInAudience": "AzureADMyOrg",
+      "instanceLock": false
+    },
+    {
+      "id": "00000303-0000-0000-0000-000000000000",
+      "displayName": "ConnectSyncProvisioning_SYNC01_8f3a2c",
+      "appId": "00003061-0000-0000-0000-000000000000",
+      "passwordCred": [],
+      "keyCred": [
+        "2027-04-18T08:00:00.0000000Z",
+        "2028-08-30T08:00:00.0000000Z"
+      ],
+      "secrets": [],
+      "redirectUris": [],
+      "signInAudience": "AzureADMyOrg",
+      "instanceLock": false
     },
     {
       "id": "00000302-0000-0000-0000-000000000000",
@@ -806,7 +1083,9 @@
       "redirectUris": [
         "https://app.moosebank-cloud.example/signin",
         "http://localhost:8080"
-      ]
+      ],
+      "signInAudience": "AzureADMyOrg",
+      "instanceLock": false
     }
   ],
   "servicePrincipals": [
@@ -821,8 +1100,13 @@
       "passwordCred": [],
       "keyCred": [],
       "owners": [
-        "00000012-0000-0000-0000-000000000000"
-      ]
+        "00000012-0000-0000-0000-000000000000",
+        "00000405-0000-0000-0000-000000000000"
+      ],
+      "ownerTypes": {
+        "00000012-0000-0000-0000-000000000000": "user",
+        "00000405-0000-0000-0000-000000000000": "servicePrincipal"
+      }
     },
     {
       "id": "00000401-0000-0000-0000-000000000000",
@@ -864,6 +1148,15 @@
       "appRoleIds": [
         "9e3f62cf-ca93-4989-b6ce-bf83c28f9fe8"
       ],
+      "passwordCred": [],
+      "keyCred": []
+    },
+    {
+      "id": "00000406-0000-0000-0000-000000000000",
+      "displayName": "Micrоsoft Teams Connector",
+      "appId": "00003071-0000-0000-0000-000000000000",
+      "appOwnerTenant": "88888888-8888-8888-8888-888888888888",
+      "appRoleIds": [],
       "passwordCred": [],
       "keyCred": []
     },

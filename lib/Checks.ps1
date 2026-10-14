@@ -144,6 +144,10 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Password stored with reversible encryption'
         Description = 'The cleartext password is recoverable by anyone able to read the NTDS database (e.g. via DCSync).'
         Remediation = 'Clear the flag and reset the password.' }
+    altsecid_weak_mapping = @{ Category = 'Account Hygiene'; Severity = 'Medium'; Mitre = 'T1649'; Needs = @('users', 'users.altSecId')
+        Title = 'Weak explicit certificate mapping on an account (ESC14)'
+        Description = 'altSecurityIdentities maps a certificate to the account by subject, issuer + subject or e-mail (RFC822) only. Whoever gets a certificate with that subject or e-mail, which is often easy to request, can authenticate as the account. Full strong certificate binding enforcement rejects these weak mappings for Kerberos; when it is relaxed by GPO, they work again. High on Tier 0 accounts.'
+        Remediation = 'Replace the mapping with a strong one (X509:<I>issuer<SR>serial, <SKI> or <SHA1-PUKEY>), or remove it, and keep StrongCertificateBindingEnforcement = 2 on the DCs.' }
     unix_password_present = @{ Category = 'Account Hygiene'; Severity = 'High'; Mitre = 'T1552'; Needs = @('users')
         Title = 'UNIX password attribute populated'
         Description = 'The account has a userPassword or unixUserPassword attribute set. These attributes are often world-readable or weakly protected and can store a recoverable or hashed credential, a classic forgotten exposure from NIS/identity-management integrations. The collector records only that a value exists, never the value.'
@@ -164,6 +168,10 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Enabled user never logged on'
         Description = 'Account created long ago and never used: often an onboarding leftover with an initial password known to several people.'
         Remediation = 'Disable or delete.' }
+    smartcard_password_not_rotated = @{ Category = 'Account Hygiene'; Severity = 'Medium'; Mitre = 'T1550.002'; Needs = @('users')
+        Title = 'Smart-card-only account whose password is never rotated'
+        Description = 'A smart-card-only account still has an NT hash, derived from a random password set when the flag was enabled. Users never change it, so whoever steals that hash once can pass-the-hash (or get the NTLM fallback through PKINIT) for years.'
+        Remediation = 'Turn on automatic rotation (domain functional level 2016: msDS-ExpirePasswordsOnSmartCardOnlyAccounts, "Enable rolling of expiring NTLM secrets") or reset the hash by toggling "Smart card is required for interactive logon" off and on.' }
     password_never_expires = @{ Category = 'Account Hygiene'; Severity = 'Low'; Mitre = 'T1078.002'; Needs = @('users')
         Title = 'Password never expires'
         Description = 'Typical of service accounts whose passwords are never changed.'
@@ -286,6 +294,18 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Trust uses RC4'
         Description = 'The trust key uses RC4 instead of AES for inter-realm tickets.'
         Remediation = 'Enable AES on both sides of the trust and reset the trust password.' }
+    schema_class_poss_superior = @{ Category = 'Domain Configuration'; Severity = 'High'; Mitre = 'T1136.002'; Needs = @('domain.possSuperiors')
+        Title = 'Schema class lets any user or computer create containers'
+        Description = 'A schema class inherits from container and lists user or computer in possSuperiors. Any account (or any computer, which a user can create through the machine account quota) can add an object of that class under itself and then create users or computers inside it without restriction. msExchStorageGroup is the known case (CVE-2021-34470) and stays exploitable after Exchange is uninstalled.'
+        Remediation = 'Remove user and computer from possSuperiors of the class (schema change, Schema Admins). For msExchStorageGroup apply the Exchange CVE-2021-34470 update or the published schema fix script.' }
+    schema_java_objects = @{ Category = 'Domain Configuration'; Severity = 'Low'; Mitre = ''; Needs = @('domain.javaSchema')
+        Title = 'Java object classes present in the schema'
+        Description = 'The schema contains the RFC 2713 Java classes (javaSerializedObject, javaObject...), usually left by an old LDAP/Unix integration. They let a client store serialized Java objects in the directory, which a vulnerable Java application can deserialize.'
+        Remediation = 'Check that no application uses these classes. Schema classes cannot be deleted, but they can be deactivated (defunct); make sure nobody can create objects of these classes (default security descriptor and ACLs).' }
+    trust_inactive = @{ Category = 'Domain Configuration'; Severity = 'Low'; Mitre = ''; Needs = @('trusts', 'trusts.whenChanged')
+        Title = 'Trust that looks unused'
+        Description = 'The trust object (and so its password, which rotates every 30 days on a live trust) has not changed for months. The other domain is probably gone or the trust forgotten, yet it still extends authentication to a domain nobody maintains.'
+        Remediation = 'Confirm with the owner of the other domain that the trust is still needed. If not, remove it (netdom trust /remove or Active Directory Domains and Trusts).' }
 
     # ---------------- DNS (AD-adjacent service) ----------------
     dns_insecure_updates = @{ Category = 'Domain Configuration'; Severity = 'High'; Mitre = 'T1557'; Needs = @('dns')
@@ -296,6 +316,10 @@ $script:CheckCatalog = [ordered]@{
         Title = 'DNS zone transfer allowed to any server'
         Description = 'The zone allows zone transfer to any server, which hands an attacker the full list of hosts and services for reconnaissance.'
         Remediation = 'Restrict zone transfers to named secondary servers, or disable them where AD replication is used.' }
+    dns_zone_create_child = @{ Category = 'Domain Configuration'; Severity = 'Medium'; Mitre = 'T1557'; Needs = @('dns', 'dnsZoneAcl')
+        Title = 'Any user can create records in a DNS zone'
+        Description = 'Broad principals (Authenticated Users by default) can create child objects in the AD-integrated zone, so any domain account can register a name that does not exist yet (WPAD, a mistyped server, a wildcard) and redirect traffic to itself (ADIDNS spoofing).'
+        Remediation = 'Remove the Create all child objects right of Authenticated Users (or Everyone, Domain Users, Domain Computers) on the zone. Let DHCP register records with a dedicated account, and pre-create the names clients need.' }
     dns_scavenging_disabled = @{ Category = 'Domain Configuration'; Severity = 'Low'; Mitre = ''; Needs = @('dns')
         Title = 'DNS aging/scavenging disabled'
         Description = 'Without aging/scavenging, stale records accumulate; an attacker can claim an abandoned name that still resolves for clients.'
@@ -318,11 +342,11 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Domain controllers'' clocks disagree'
         Description = 'The clocks of the DCs differ by more than a minute. Kerberos rejects tickets beyond 5 minutes of skew, so logons start failing in ways that are hard to diagnose.'
         Remediation = 'Make the PDC emulator of the forest root sync with a reliable NTP source and let every other DC follow the domain hierarchy (w32tm /config /syncfromflags:domhier on the others).' }
-    dc_low_disk = @{ Category = 'Operational Health'; Severity = 'Medium'; Mitre = ''; Needs = @('health', 'health.dcState')
+    dc_low_disk = @{ Category = 'Operational Health'; Severity = 'Medium'; Mitre = ''; Needs = @('health', 'health.dcState', 'health.dcStatePartial')
         Title = 'Low disk space on a domain controller'
         Description = 'The system drive of a DC is nearly full. When the disk holding NTDS.dit fills up, AD stops accepting changes and the DC can stop working.'
         Remediation = 'Free space or extend the volume; keep at least 10% (and several GB) free on the DCs.' }
-    dc_service_stopped = @{ Category = 'Operational Health'; Severity = 'High'; Mitre = ''; Needs = @('health', 'health.dcState')
+    dc_service_stopped = @{ Category = 'Operational Health'; Severity = 'High'; Mitre = ''; Needs = @('health', 'health.dcState', 'health.dcStatePartial')
         Title = 'Core service stopped on a domain controller'
         Description = 'A service the DC depends on (NTDS, ADWS, KDC, Netlogon, DNS, DFSR, W32Time...) is set to start but isn''t running.'
         Remediation = 'Find out why it stopped (event logs), start it, and check replication and logons afterwards.' }
@@ -364,6 +388,10 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Group Policy Preferences password in SYSVOL'
         Description = 'cpassword values are encrypted with a key Microsoft published (MS14-025): any domain user can read SYSVOL and decrypt them.'
         Remediation = 'Delete the preference item, remove the XML, and change the password of the referenced account everywhere it is used.' }
+    sysvol_writable = @{ Category = 'Permissions'; Severity = 'Critical'; Mitre = 'T1484.001'; Needs = @('sysvol', 'sysvol.acl')
+        Title = 'NETLOGON or SYSVOL Policies folder writable by non-Tier 0 principals'
+        Description = 'A principal outside Tier 0 can write to the NETLOGON scripts folder or the SYSVOL Policies folder. Logon scripts and GPO files there run on every computer and for every user in scope, so write access is code execution across the domain, DCs included.'
+        Remediation = 'Remove the write, modify or full control entries for that principal from the folder (and check the files below it), keeping the defaults: Administrators, SYSTEM, Server Operators, CREATOR OWNER and read-only for Authenticated Users.' }
     sysvol_script_secrets = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1552.001'; Needs = @('sysvol')
         Title = 'Possible credential in a SYSVOL logon script'
         Description = 'A script in SYSVOL (bat/cmd/ps1/vbs) contains a password-like string. SYSVOL is readable by every authenticated user, so any credential embedded in a logon or deployment script is exposed domain-wide. The collector records only the file path, never the content.'
@@ -372,6 +400,14 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Dangerous permission held by a non-privileged principal'
         Description = 'A non-privileged principal holds a control right (GenericAll, WriteDacl, WriteOwner, GenericWrite, member/SPN/key-credential write, forced password reset) over a user, computer, group or OU. This is a delegation path to whatever that object controls. Found only with a deep ACL sweep.'
         Remediation = 'Remove the ACE or scope the delegation to the minimum needed. Prioritize ACEs over Tier 0 or over objects that lead to Tier 0.' }
+    kds_root_key_readable = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1003'; Needs = @('deepAcls', 'kdsRootKeys')
+        Title = 'Non-Tier 0 principal can read a KDS root key (Golden gMSA)'
+        Description = 'A principal outside Tier 0 can read a KDS root key, or can grant itself that right. With the root key and a few public attributes it can compute the password of every gMSA and dMSA in the forest, offline and for the lifetime of the key (Golden gMSA). Rotating the gMSA passwords does not help.'
+        Remediation = 'Remove the ACE from the root key (CN=Master Root Keys,CN=Group Key Distribution Service,CN=Services in the Configuration partition); by default only Domain Admins, Enterprise Admins and SYSTEM have access. If a non-admin may already have read it, create a new root key and move the gMSAs to it.' }
+    badsuccessor_dmsa_create = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1098'; Needs = @('acl', 'ouAcls')
+        Title = 'Non-Tier 0 principal can create dMSAs (BadSuccessor)'
+        Description = 'A principal outside Tier 0 can create objects in an OU or container (CreateChild for all classes or for msDS-DelegatedManagedServiceAccount, GenericAll, WriteDacl, WriteOwner, or ownership). With a Windows Server 2025 DC in the domain it can create a delegated managed service account, mark it as the successor of any account (a Domain Admin, krbtgt) and authenticate with that account''s privileges and keys (BadSuccessor). The August 2025 update (CVE-2025-53779, build 26100.4946) requires a two-sided link, which closes the direct takeover, but the right to create dMSAs should still belong to Tier 0 only. Reported only when a Windows Server 2025 DC is present: High while one is unpatched or its patch level could not be read, Medium once all are patched.'
+        Remediation = 'Install the August 2025 cumulative update (or later) on every Windows Server 2025 DC. Remove CreateChild (all classes or dMSA), GenericAll, WriteDacl and WriteOwner from non-Tier 0 principals on OUs and containers, scope delegations to the object classes really needed (user, group, computer), and give ownership of OUs back to Domain Admins. Akamai''s Get-BadSuccessorOUPermissions.ps1 lists the same rights.' }
     laps_readers = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1098'; Needs = @('deepAcls')
         Title = 'Non-Tier 0 principal can read LAPS passwords'
         Description = 'A principal that is not Tier 0 holds rights to read the local administrator password (ms-Mcs-AdmPwd or msLAPS-Password) on one or more computers, via GenericAll, All Extended Rights, or a read delegation on the LAPS attribute. Reading a LAPS password gives local admin on that machine, a lateral-movement step. Found only with a deep ACL sweep.'
@@ -435,8 +471,28 @@ $script:CheckCatalog = [ordered]@{
         Title = 'CA certificate uses a weak key or signature'
         Description = 'The CA certificate has an RSA key shorter than 2048 bits or is signed with SHA-1. A weak CA key or signature undermines every certificate the CA issues, including those used for authentication.'
         Remediation = 'Re-key the CA with a 3072-bit (or stronger) RSA key and a SHA-256 signature, then reissue subordinate and end-entity certificates. Plan this as a CA migration.' }
+    adcs_esc6 = @{ Category = 'Certificate Services'; Severity = 'High'; Mitre = 'T1649'; Needs = @('adcs', 'adcs.caRegistry')
+        Title = 'CA accepts a requester-supplied SAN on any request (ESC6)'
+        Description = 'EDITF_ATTRIBUTESUBJECTALTNAME2 is set in the CA policy module: every request may add a subject alternative name, so any template a user can enroll in becomes an ESC1. Since the 2022 strong-mapping updates it still leads to impersonation when the SID extension is missing (ESC16) or certificate mapping is weak (ESC10).'
+        Remediation = 'certutil -config "<CA>" -setreg policy\EditFlags -EDITF_ATTRIBUTESUBJECTALTNAME2, then restart CertSvc. Check that no template needs it.' }
+    adcs_esc7 = @{ Category = 'Certificate Services'; Severity = 'High'; Mitre = 'T1649'; Needs = @('adcs', 'adcs.caRegistry')
+        Title = 'Non-Tier 0 principal can manage the CA (ESC7)'
+        Description = 'A principal outside Tier 0 holds Manage CA or Issue and Manage Certificates on the CA. Manage CA can turn on ESC6 or enable any template; Issue and Manage Certificates can approve a pending request for a domain admin certificate.'
+        Remediation = 'Remove the right from the CA security settings (certsrv.msc > Properties > Security), and keep CA administration in Tier 0.' }
+    adcs_esc8 = @{ Category = 'Certificate Services'; Severity = 'High'; Mitre = 'T1557.001'; Needs = @('adcs', 'adcs.caRegistry', 'adcs.caWebEnrollment')
+        Title = 'Web enrollment on the CA (ESC8 NTLM relay)'
+        Description = 'Certification Authority Web Enrollment or the Certificate Enrollment Web Service is installed on the CA. Over HTTP, or HTTPS without Extended Protection for Authentication, a coerced DC authentication can be relayed to it for a DC certificate and domain takeover (PetitPotam + ESC8). IDWolf cannot read the IIS settings, so HTTPS and EPA must be confirmed by hand.'
+        Remediation = 'Remove web enrollment if it is not needed. Otherwise require HTTPS, enable Extended Protection for Authentication and disable NTLM on the CertSrv / CES sites.' }
+    adcs_esc11 = @{ Category = 'Certificate Services'; Severity = 'High'; Mitre = 'T1557.001'; Needs = @('adcs', 'adcs.caRegistry')
+        Title = 'CA does not require encrypted RPC requests (ESC11)'
+        Description = 'IF_ENFORCEENCRYPTICERTREQUEST is not set in InterfaceFlags, so certificate requests over RPC (ICPR) can be sent without packet privacy and an NTLM authentication can be relayed to the CA, like ESC8 over RPC.'
+        Remediation = 'certutil -config "<CA>" -setreg CA\InterfaceFlags +IF_ENFORCEENCRYPTICERTREQUEST, then restart CertSvc (check old clients first).' }
+    adcs_esc16 = @{ Category = 'Certificate Services'; Severity = 'High'; Mitre = 'T1649'; Needs = @('adcs', 'adcs.caRegistry')
+        Title = 'CA no longer adds the SID security extension (ESC16)'
+        Description = 'The CA policy module lists 1.3.6.1.4.1.311.25.2 in DisableExtensionList, so no certificate carries the requester SID. Strong certificate mapping then falls back to the weak UPN / DNS mapping for every template, which re-opens ESC9/ESC10-style impersonation CA-wide.'
+        Remediation = 'certutil -config "<CA>" -setreg policy\DisableExtensionList -1.3.6.1.4.1.311.25.2, restart CertSvc, and keep StrongCertificateBindingEnforcement = 2 on the DCs.' }
     adcs_manual_checks = @{ Category = 'Certificate Services'; Severity = 'Low'; Mitre = 'T1649'; Needs = @('adcs')
-        Title = 'AD CS checks that require on-CA verification (ESC6/ESC7/ESC8/ESC11/ESC16)'
+        Title = 'AD CS checks not verified on the CA (ESC6/ESC7/ESC8/ESC11/ESC16)'
         Description = 'Some AD CS weaknesses are not visible in LDAP: EDITF_ATTRIBUTESUBJECTALTNAME2 on the CA (ESC6), CA role delegation (ESC7), HTTP/NTLM web enrollment relay (ESC8), RPC enrollment without IF_ENFORCEENCRYPTICERTREQUEST (ESC11, NTLM relay to ICPR), and the SID security extension disabled CA-wide (ESC16). IDWolf flags that a CA exists so these are verified manually or with a dedicated tool.'
         Remediation = 'On each CA: certutil -getreg policy\\EditFlags (ESC6 = EDITF_ATTRIBUTESUBJECTALTNAME2 set); review Manage CA / Issue and Manage Certificates delegation (ESC7); disable HTTP web enrollment or enforce EPA/HTTPS (ESC8); certutil -getreg CA\\InterfaceFlags must include IF_ENFORCEENCRYPTICERTREQUEST (ESC11); certutil -getreg policy\\DisableExtensionList must not list 1.3.6.1.4.1.311.25.2 (ESC16).' }
 }
@@ -470,6 +526,7 @@ $script:AdGuids = @{
     '4828cc14-1437-45bc-9b07-ad6f015e5f28' = 'inetOrgPerson objects'
     'ce206244-5827-4a86-ba1c-1c0c386c1b64' = 'msDS-ManagedServiceAccount objects'
     '7b8b558a-93a5-4af7-adca-e017e67f1057' = 'msDS-GroupManagedServiceAccount objects'
+    '0feb936f-47b3-49f2-9386-1dedc2c23765' = 'msDS-DelegatedManagedServiceAccount objects'
 }
 $script:DangerousWriteProps = @('bf9679c0-0de6-11d0-a285-00aa003049e2', '5b47d60f-6090-40b2-9f37-2a4de88f3063', 'f3a64788-5306-11d1-a9c5-0000f80367c1', '3f78c3e5-f79a-46bd-a0b8-9d18116ddc79', 'f30e3bbe-9ff0-11d1-b603-0000f80367c1',
     '00fbf30c-91fe-11d1-aebc-0000f80367c1', 'bf9679a8-0de6-11d0-a285-00aa003049e2', 'bf967a05-0de6-11d0-a285-00aa003049e2', 'bf967a68-0de6-11d0-a285-00aa003049e2',
@@ -571,6 +628,8 @@ function Get-NotEvaluatedChecks {
     # Sections this run didn't gather at all (skipped, or no -Deep).
     $absentReasons = @{}
     if (-not $Snapshot.meta.options.deep) { $absentReasons['deepAcls'] = "requires -Deep collection (privileged, full ACL sweep)" }
+    elseif (-not $Snapshot.PSObject.Properties['kdsRootKeyAcls']) { $absentReasons['kdsRootKeys'] = 'snapshot from an older collector (no KDS root key permissions): re-collect with -Deep' }
+    if (-not $Snapshot.meta.options.skipAcl -and -not $Snapshot.PSObject.Properties['ouAcls']) { $absentReasons['ouAcls'] = 'snapshot from an older collector (no OU and container permissions): re-collect' }
     if ($null -eq $Snapshot.preWin2000) { $absentReasons['preWin2000'] = 'Pre-Windows 2000 group could not be read' }
     # No AD CS at all is not a gap; skipping it or failing to read it is.
     if ($Snapshot.meta.options.skipAdcs) { $absentReasons['adcs'] = 'AD CS collection skipped (-SkipAdcs)' }
@@ -578,6 +637,17 @@ function Get-NotEvaluatedChecks {
         $absentReasons['adcs'] = 'AD CS could not be read'
     }
     elseif ($Snapshot.adcs.collected -and -not $Snapshot.adcs.PSObject.Properties['pkiAcls']) { $absentReasons['adcs.pkiAcls'] = 'snapshot from an older collector (no ACLs of the PKI objects): re-collect' }
+    if ($Snapshot.adcs -and $Snapshot.adcs.collected) {
+        $cas = @($Snapshot.adcs.enrollmentServices | Where-Object { $_ })
+        $caNoReg = @($cas | Where-Object { -not $_.PSObject.Properties['caRegistry'] -or -not $_.caRegistry -or $_.caRegistry.error })
+        if ($caNoReg.Count -gt 0) {
+            $absentReasons['adcs.caRegistry'] = "CA settings not read on $(@($caNoReg | ForEach-Object { if ($_.PSObject.Properties['caRegistry'] -and $_.caRegistry -and $_.caRegistry.error) { "$($_.name) ($($_.caRegistry.error))" } else { "$($_.name) (older collector)" } }) -join ', ') (needs admin rights on the CA host)"
+        }
+        $caNoWeb = @($cas | Where-Object { $_.PSObject.Properties['caRegistry'] -and $_.caRegistry -and -not $_.caRegistry.error -and $null -eq $_.caRegistry.webEnrollment })
+        if ($caNoWeb.Count -gt 0) {
+            $absentReasons['adcs.caWebEnrollment'] = "installed CA roles could not be identified on $(@($caNoWeb | ForEach-Object { $_.name }) -join ', ') (non-English server or no role information): check web enrollment by hand"
+        }
+    }
     # Only an RODC has a password replication policy; without one there is nothing to read.
     if (@($Snapshot.domainControllers | Where-Object { $_ -and $_.isReadOnly -and -not $_.PSObject.Properties['rodcPolicy'] }).Count -gt 0) {
         $absentReasons['rodcPolicy'] = 'snapshot from an older collector (no RODC password replication policy): re-collect'
@@ -585,16 +655,61 @@ function Get-NotEvaluatedChecks {
     if ($Snapshot.meta.options.skipGpo) { $absentReasons['gpo'] = 'GPO collection skipped (-SkipGpo)' }
     elseif (-not $Snapshot.gpo -or -not $Snapshot.gpo.collected) { $absentReasons['gpo'] = 'GPO security templates could not be read from SYSVOL' }
     elseif (-not $Snapshot.gpo.PSObject.Properties['execution']) { $absentReasons['gpo.execution'] = 'snapshot from an older collector (no GPO scripts, tasks or local groups): re-collect' }
+    if (@($Snapshot.users | Where-Object { $_ -and -not $_.PSObject.Properties['altSecIdTypes'] }).Count -gt 0) {
+        $absentReasons['users.altSecId'] = 'snapshot from an older collector (no certificate mappings): re-collect'
+    }
+    if ($Snapshot.sysvol -and $Snapshot.sysvol.scanned -and -not $Snapshot.sysvol.PSObject.Properties['folderAcls']) {
+        $absentReasons['sysvol.acl'] = 'snapshot from an older collector (no NETLOGON / Policies folder permissions): re-collect'
+    }
+    if ($Snapshot.sysvol -and $Snapshot.sysvol.scanned -and -not $Snapshot.sysvol.PSObject.Properties['autologonFiles']) {
+        $absentReasons['sysvol.autologon'] = 'snapshot from an older collector (no Group Policy Preferences autologon scan): re-collect'
+    }
+    if ($Snapshot.gpo -and $Snapshot.gpo.collected -and @($Snapshot.gpo.gpos | Where-Object { $_ -and -not $_.PSObject.Properties['serviceStart'] }).Count -gt 0) {
+        $absentReasons['gpo.services'] = 'snapshot from an older collector (no GPO service startup settings): re-collect'
+    }
     if ($Snapshot.meta.options.skipDns) { $absentReasons['dns'] = 'DNS collection skipped (-SkipDns)' }
     elseif (-not $Snapshot.dns -or -not $Snapshot.dns.collected) { $absentReasons['dns'] = 'DNS not collected (DnsServer module or RPC unavailable)' }
     elseif ("$($Snapshot.dns.source)" -eq 'ldap') { $absentReasons['dnsTransfer'] = 'DNS zones read over LDAP (no DNS RPC rights): the zone transfer setting is only in the DNS server registry; collect as DnsAdmins/admin to evaluate it' }
+    if ($Snapshot.dns.collected -and @($Snapshot.dns.zones | Where-Object { $_ -and $_.isAdIntegrated -and -not $_.PSObject.Properties['createChildSids'] }).Count -gt 0) {
+        $absentReasons['dnsZoneAcl'] = 'snapshot from an older collector (no DNS zone permissions): re-collect'
+    }
     if ($Snapshot.meta.options.skipHealth) { $absentReasons['health'] = 'operational health collection skipped (-SkipHealth)' }
     elseif (-not $Snapshot.health -or -not $Snapshot.health.collected) { $absentReasons['health'] = 'operational health not collected (replication/DHCP/backup metadata unavailable)' }
     else {
         foreach ($s in 'fsmo', 'dcReachability', 'dcTime', 'dcState') {
             if (-not $Snapshot.health.PSObject.Properties[$s]) { $absentReasons["health.$s"] = 'snapshot from an older collector: re-collect' }
         }
+        if (@($Snapshot.health.dcState | Where-Object { $_ -and -not $_.error -and -not $_.PSObject.Properties['webClientStartMode'] }).Count -gt 0) {
+            $absentReasons['health.webClient'] = 'snapshot from an older collector (no WebClient service state on the DCs): re-collect'
+        }
+        if (@($Snapshot.health.dcState | Where-Object { $_ -and -not $_.error -and -not $_.PSObject.Properties['coercionServices'] }).Count -gt 0) {
+            $absentReasons['health.coercion'] = 'snapshot from an older collector (no coercion services or RPC filters on the DCs): re-collect'
+        }
+        if (@($Snapshot.health.dcState | Where-Object { $_ -and -not $_.error -and -not $_.PSObject.Properties['netbiosAdapters'] }).Count -gt 0) {
+            $absentReasons['health.netbios'] = 'snapshot from an older collector (no NetBIOS adapter settings on the DCs): re-collect'
+        }
+        if (@($Snapshot.health.dcState | Where-Object { $_ -and -not $_.error -and -not $_.PSObject.Properties['osBuild'] }).Count -gt 0) {
+            $absentReasons['health.osBuild'] = 'snapshot from an older collector (no DC build and update revision): re-collect'
+        }
+        else {
+            $noBuild = @($Snapshot.health.dcState | Where-Object { $_ -and -not $_.error } | Where-Object { $null -eq (Get-NoPacStatus $_) })
+            if ($noBuild.Count -gt 0) {
+                $absentReasons['health.osBuildUnknown'] = "patch level could not be verified on $(@($noBuild | ForEach-Object { "$($_.dc) (build $($_.osBuild)$(if ($null -ne $_.osUbr) { ".$($_.osUbr)" } else { ', no update revision' }))" }) -join ', '): check by hand that the November 2021 updates (or later) are installed"
+            }
+        }
+        # Some DCs read, some refused (unreachable DCs have their own finding): the live checks
+        # only cover part of the DCs, which must not look like a clean result for the others.
+        $dcRead = @($Snapshot.health.dcState | Where-Object { $_ -and -not $_.error })
+        $dcDenied = @($Snapshot.health.dcState | Where-Object { $_ -and $_.error -and "$($_.error)" -ne 'not reachable' })
+        if ($dcRead.Count -gt 0 -and $dcDenied.Count -gt 0) {
+            $absentReasons['health.dcStatePartial'] = "only partly evaluated: could not read $(@($dcDenied | ForEach-Object { "$($_.dc) ($($_.error))" }) -join ', ') (needs admin rights on each DC)"
+        }
     }
+    if (@($Snapshot.trusts | Where-Object { $_ -and -not $_.PSObject.Properties['whenChanged'] }).Count -gt 0) {
+        $absentReasons['trusts.whenChanged'] = 'snapshot from an older collector (no trust object change date): re-collect'
+    }
+    if (-not $Snapshot.domain.PSObject.Properties['possSuperiorClasses']) { $absentReasons['domain.possSuperiors'] = 'snapshot from an older collector (no schema possSuperiors probe): re-collect' }
+    if (-not $Snapshot.domain.PSObject.Properties['javaSchemaClasses']) { $absentReasons['domain.javaSchema'] = 'snapshot from an older collector (no Java schema probe): re-collect' }
     if ($null -eq $Snapshot.domain.subnetCount) { $absentReasons['sites'] = 'Sites/subnets could not be read from the Configuration partition' }
     if (-not $Snapshot.domain.sysvolReplication) { $absentReasons['sysvolReplication'] = 'SYSVOL replication engine could not be determined' }
     if (-not $Snapshot.passwordQuality) { $absentReasons['passwordQuality'] = 'no password-quality report supplied (run Export-PasswordQuality.ps1, pass -PasswordQualityFile)' }
@@ -913,6 +1028,16 @@ function Invoke-ADHygieneChecks {
     }
 
     # RID 500
+    $scRotation = if (-not $Snapshot.domain.PSObject.Properties['smartcardPwdRotation'] -or $null -eq $Snapshot.domain.smartcardPwdRotation) { 'unknown' }
+    elseif ($Snapshot.domain.smartcardPwdRotation) { 'on' } else { 'off' }
+    foreach ($u in @($enabledUsers | Where-Object { Test-Uac $_ 'SMARTCARD_REQUIRED' })) {
+        $pa = Get-AgeDays $u.pwdLastSet
+        if ($null -ne $pa -and $pa -gt $Config.PasswordMaxAgeDays) {
+            Add-Finding -Type smartcard_password_not_rotated -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName `
+                -Detail "Smart card required; password (NT hash) last set $(Format-Age $pa) ago (threshold $($Config.PasswordMaxAgeDays) days). Domain automatic rotation: $scRotation."
+        }
+    }
+
     $rid500 = $Index.BySid["$dom-500"]
     if ($rid500 -and $rid500.enabled) {
         $issues = @()
@@ -927,10 +1052,24 @@ function Invoke-ADHygieneChecks {
     }
 
     # ======================= Account hygiene =======================
+    # Strong certificate binding relaxed by GPO (0 or 1): weak explicit mappings are honoured again.
+    $scbLoose = $null
+    if ($Snapshot.gpo -and $Snapshot.gpo.collected -and (Get-Command Get-EffectiveGpoOrder -ErrorAction SilentlyContinue)) {
+        $scb = Get-RegInt (Get-EffectiveRegValue (Get-EffectiveGpoOrder $Snapshot.gpo) 'MACHINE\System\CurrentControlSet\Services\Kdc\StrongCertificateBindingEnforcement')
+        if ($null -ne $scb -and $scb -lt 2) { $scbLoose = "$scb" }
+    }
     foreach ($u in $Index.Users) {
         if ($u.descriptionSuspicious) {
             Add-Finding -Type password_in_description -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName `
                 -Detail "Description (masked): '$($u.description)'. Enabled: $($u.enabled)."
+        }
+        if ($u.PSObject.Properties['altSecIdTypes']) {
+            $weak = @(@($u.altSecIdTypes) | Where-Object { @('IssuerSubject', 'SubjectOnly', 'RFC822') -contains "$_" } | Select-Object -Unique)
+            if ($weak.Count) {
+                $sev = if ($scbLoose) { if (Test-IsPrivileged $PrivMap $u) { 'Critical' } else { 'High' } } elseif (Test-IsPrivileged $PrivMap $u) { 'High' } else { 'Medium' }
+                Add-Finding -Type altsecid_weak_mapping -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName -Severity $sev `
+                    -Detail "Weak altSecurityIdentities mapping(s): $($weak -join ', ') (values not collected).$(if (Test-IsPrivileged $PrivMap $u) { ' Tier 0 account.' })$(if ($scbLoose) { " StrongCertificateBindingEnforcement = $scbLoose by GPO, so the mapping is honoured." })"
+            }
         }
         if ($u.hasUnixPassword) {
             Add-Finding -Type unix_password_present -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName `
@@ -1040,6 +1179,20 @@ function Invoke-ADHygieneChecks {
         }
     }
 
+    if ($Snapshot.domain.PSObject.Properties['possSuperiorClasses'] -and $null -ne $Snapshot.domain.possSuperiorClasses -and -not $Index.CollectionErrorSections.ContainsKey('domain.possSuperiors')) {
+        foreach ($cls in @($Snapshot.domain.possSuperiorClasses | Where-Object { $_ -and $_.inheritsContainer } | Sort-Object { "$($_.name)" })) {
+            $cve = if ("$($cls.name)" -eq 'msExchStorageGroup') { ' Known as CVE-2021-34470.' } else { '' }
+            Add-Finding -Type schema_class_poss_superior -Object "$($cls.name)" -ObjectType 'schemaclass' `
+                -Detail "possSuperiors includes $(@($cls.possSuperiors) -join ' and '); inherits from $(@($cls.subClassChain) -join ' > ').$cve"
+        }
+    }
+    if ($Snapshot.domain.PSObject.Properties['javaSchemaClasses'] -and $null -ne $Snapshot.domain.javaSchemaClasses -and -not $Index.CollectionErrorSections.ContainsKey('domain.javaSchema')) {
+        $jc = @($Snapshot.domain.javaSchemaClasses | Where-Object { $_ } | Sort-Object)
+        if ($jc.Count -gt 0) {
+            Add-Finding -Type schema_java_objects -Object $Snapshot.domain.dnsRoot -ObjectType 'domain' -ObjectDn $Snapshot.domain.distinguishedName `
+                -Detail "Java classes in the schema: $($jc -join ', ')."
+        }
+    }
     if ($null -ne $Snapshot.domain.machineAccountQuota -and [int]$Snapshot.domain.machineAccountQuota -gt 0) {
         Add-Finding -Type machine_account_quota -Object $Snapshot.domain.dnsRoot -ObjectType 'domain' -ObjectDn $Snapshot.domain.distinguishedName `
             -Detail "ms-DS-MachineAccountQuota = $($Snapshot.domain.machineAccountQuota)."
@@ -1235,7 +1388,13 @@ function Invoke-ADHygieneChecks {
             Add-Finding -Type trust_no_selective_auth -Object $t.name -ObjectType 'trust' -Detail "$($t.direction) $(if ($t.forestTransitive) { 'forest' } else { 'external' }) trust, forest-wide authentication."
         }
         if ($t.usesRC4Encryption -or -not $t.usesAESKeys) {
-            Add-Finding -Type trust_rc4 -Object $t.name -ObjectType 'trust' -Detail "UsesRC4Encryption: $($t.usesRC4Encryption); UsesAESKeys: $($t.usesAESKeys)."
+            $keyAge = if ($t.PSObject.Properties['whenChanged']) { Get-AgeDays $t.whenChanged } else { $null }
+            Add-Finding -Type trust_rc4 -Object $t.name -ObjectType 'trust' -Detail "UsesRC4Encryption: $($t.usesRC4Encryption); UsesAESKeys: $($t.usesAESKeys).$(if ($null -ne $keyAge) { " Trust object (and key) last changed $(Format-Age $keyAge) ago." })"
+        }
+        $tAge = if ($t.PSObject.Properties['whenChanged']) { Get-AgeDays $t.whenChanged } else { $null }
+        if ($null -ne $tAge -and $tAge -gt $script:TRUST_INACTIVE_DAYS) {
+            Add-Finding -Type trust_inactive -Object $t.name -ObjectType 'trust' `
+                -Detail "$($t.direction) trust object last changed $(Format-Age $tAge) ago (threshold $($script:TRUST_INACTIVE_DAYS) days): the trust password should have rotated."
         }
     }
 
@@ -1327,6 +1486,19 @@ function Invoke-ADHygieneChecks {
             $gpo = if ($f -match '\{[0-9A-Fa-f\-]{36}\}') { $Matches[0] } else { '' }
             Add-Finding -Type gpp_cpassword -Object $(if ($gpo) { "GPO $gpo" } else { $f }) -ObjectType 'gpo' -Detail "cpassword found in $f"
         }
+        $t0 = Get-Tier0SidSet $Index $PrivMap
+        foreach ($fa in @($Snapshot.sysvol.folderAcls | Where-Object { $_ })) {
+            $w = [ordered]@{}
+            foreach ($a in @($fa.aces | Where-Object { $_ -and "$($_.accessType)" -eq 'Allow' -and "$($_.rights)" -match 'FullControl|Modify|Write|CreateFiles|AppendData|ChangePermissions|TakeOwnership' })) {
+                if ($t0.ContainsKey("$($a.sid)")) { continue }
+                $n = if ($a.name) { "$($a.name)" } else { "$($a.sid)" }
+                $w[$n] = "$($a.rights)"
+            }
+            if ($w.Count) {
+                Add-Finding -Type sysvol_writable -Object "$($fa.folder)" -ObjectType 'file' `
+                    -Detail "Write access for: $(@($w.Keys | ForEach-Object { "$_ ($($w[$_]))" }) -join '; '). Folder: $($fa.path)"
+            }
+        }
         foreach ($f in @($Snapshot.sysvol.scriptSecretFiles | Where-Object { $_ })) {
             Add-Finding -Type sysvol_script_secrets -Object (($f -split '[\\/]')[-1]) -ObjectType 'file' -Detail "Password-like string in SYSVOL script: $f"
         }
@@ -1366,6 +1538,7 @@ function Invoke-ADHygieneChecks {
     $subChecks = [ordered]@{
         PreWin2000    = { Invoke-PreWin2000Check -Snapshot $Snapshot }
         DeepAcl       = { Invoke-DeepAclChecks -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap }
+        BadSuccessor  = { Invoke-BadSuccessorCheck -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap }
         AdCs          = { Invoke-AdcsChecks -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap }
         Dns           = { Invoke-DnsChecks -Snapshot $Snapshot }
         GroupNesting  = { Invoke-GroupNestingCheck -Index $Index }
@@ -1501,6 +1674,19 @@ function Invoke-LapsReaderCheck {
     }
 }
 
+# First fixed update revision per build for noPac (November 2021 cumulative updates).
+$script:NoPacFixedUbr = @{ 14393 = 4770; 17763 = 2300; 19041 = 1348; 19042 = 1348; 19043 = 1348; 20348 = 350 }
+# $true patched, $false vulnerable, $null when the build alone can't tell (2012 R2 and older
+# have no update revision; the update revision could not be read).
+function Get-NoPacStatus {
+    param($DcState)
+    $b = 0
+    if (-not [int]::TryParse("$($DcState.osBuild)", [ref]$b) -or $b -le 0) { return $null }
+    if ($b -gt 20348) { return $true }
+    if (-not $script:NoPacFixedUbr.ContainsKey($b) -or $null -eq $DcState.osUbr) { return $null }
+    return ([int]$DcState.osUbr -ge $script:NoPacFixedUbr[$b])
+}
+
 function Invoke-HealthChecks {
     param($Snapshot, $Index)
     $h = $Snapshot.health
@@ -1565,6 +1751,57 @@ function Invoke-HealthChecks {
                 -Detail "Clocks differ by $spread s between $($sorted[0].dc) and $($sorted[-1].dc) (Kerberos fails beyond 300 s)."
         }
     }
+    # Coercion: interfaces behind running services, minus those an RPC filter mentions.
+    $relay = @()
+    if ($Snapshot.gpo -and $Snapshot.gpo.collected) {
+        $gOrder = Get-EffectiveGpoOrder $Snapshot.gpo
+        $li = Get-RegInt (Get-EffectiveRegValue $gOrder 'MACHINE\System\CurrentControlSet\Services\NTDS\Parameters\LDAPServerIntegrity')
+        $lcb = Get-RegInt (Get-EffectiveRegValue $gOrder 'MACHINE\System\CurrentControlSet\Services\NTDS\Parameters\LdapEnforceChannelBinding')
+        if ($null -eq $li -or $li -lt 2) { $relay += 'LDAP signing not required' }
+        if ($null -eq $lcb -or $lcb -lt 2) { $relay += 'LDAPS channel binding not enforced' }
+    }
+    foreach ($ca in @($Snapshot.adcs.enrollmentServices | Where-Object { $_ -and $_.PSObject.Properties['caRegistry'] -and $_.caRegistry -and -not $_.caRegistry.error })) {
+        if ($ca.caRegistry.webEnrollment -or $ca.caRegistry.enrollmentWebService) { $relay += "AD CS web enrollment on $($ca.name) (ESC8)" }
+        if ($null -ne $ca.caRegistry.interfaceFlags -and ([int64]$ca.caRegistry.interfaceFlags -band 0x200) -eq 0) { $relay += "AD CS RPC enrollment on $($ca.name) (ESC11)" }
+    }
+    foreach ($s in @($h.dcState | Where-Object { $_ -and -not $_.error -and $_.PSObject.Properties['coercionServices'] -and $_.coercionServices })) {
+        $svc = $s.coercionServices
+        $open = @()
+        # MS-EFSR is also served by LSASS over \pipe\lsarpc, so the EFS service state doesn't close it.
+        $open += "MS-EFSR (EFS service $(Get-Member2 $svc 'EFS'))"
+        if ("$(Get-Member2 $svc 'Dfs')" -match '/Running$') { $open += 'MS-DFSNM (DFS Namespace running)' }
+        if ("$(Get-Member2 $svc 'EventLog')" -match '/Running$') { $open += 'MS-EVEN (EventLog running)' }
+        # Assigned in a branch, not from an if-expression: an empty array would come out as $null.
+        $filtered = $null
+        if ($s.PSObject.Properties['rpcFilterInterfaces'] -and $null -ne $s.rpcFilterInterfaces) { $filtered = @($s.rpcFilterInterfaces | ForEach-Object { "$_" }) }
+        if ($null -ne $filtered) { $open = @($open | Where-Object { $filtered -notcontains (($_ -split ' ')[0]) }) }
+        if (-not $open.Count) { continue }
+        $fText = if ($null -eq $filtered) { 'RPC filters could not be read (verify any filter deployed by hand)' } elseif ($filtered.Count) { "RPC filters found for $($filtered -join ', ')" } else { 'no RPC filter for these interfaces' }
+        $rText = if ($relay.Count) { " Relay targets open: $(($relay | Select-Object -Unique) -join '; ')." } else { '' }
+        Add-Finding -Type coercion_unfiltered_dc -Object "$($s.dc)" -ObjectType 'dc' -Severity $(if ($relay.Count) { 'High' } else { 'Medium' }) `
+            -Detail "Open: $($open -join ', '); $fText.$rText"
+    }
+    # noPac: build + update revision older than the fix.
+    $maq = $Snapshot.domain.machineAccountQuota
+    foreach ($s in @($h.dcState | Where-Object { $_ -and -not $_.error -and $_.PSObject.Properties['osBuild'] })) {
+        if ((Get-NoPacStatus $s) -ne $false) { continue }
+        $open = $null -ne $maq -and [int]$maq -gt 0
+        Add-Finding -Type nopac_unpatched_dc -Object "$($s.dc)" -ObjectType 'dc' -Severity $(if ($open) { 'Critical' } else { 'High' }) `
+            -Detail "Build $($s.osBuild).$($s.osUbr), fixed from $($s.osBuild).$($script:NoPacFixedUbr[[int]$s.osBuild]). Machine account quota: $(if ($null -eq $maq) { 'unknown' } else { $maq })$(if ($open) { ', so any user can exploit it' })."
+    }
+    # NetBIOS over TCP/IP on DC adapters: 2 is the only "off"; 0 (from DHCP) means on with a static IP.
+    foreach ($s in @($h.dcState | Where-Object { $_ -and -not $_.error -and $_.PSObject.Properties['netbiosAdapters'] -and $null -ne $_.netbiosAdapters })) {
+        $on = @(@($s.netbiosAdapters) | Where-Object { $_ -and $null -ne $_.netbiosOption -and [int]$_.netbiosOption -ne 2 } |
+                ForEach-Object { "$($_.adapter) ($(if ([int]$_.netbiosOption -eq 1) { 'enabled' } else { 'default: from DHCP' }))" })
+        if ($on.Count) { Add-Finding -Type nbtns_enabled_dc -Object "$($s.dc)" -ObjectType 'dc' -Detail "NetBIOS over TCP/IP on: $($on -join '; ')." }
+    }
+    # WebClient on DCs, live state (Running is worse than an idle Manual service).
+    foreach ($s in @($h.dcState | Where-Object { $_ -and -not $_.error -and $_.PSObject.Properties['webClientStartMode'] -and $_.webClientStartMode })) {
+        $wm = "$($s.webClientStartMode)"
+        if ($wm -eq 'absent' -or $wm -eq 'Disabled') { continue }
+        $sev = if ("$($s.webClientState)" -eq 'Running') { 'High' } else { 'Medium' }
+        Add-Finding -Type webclient_on_dc -Object "$($s.dc)" -ObjectType 'dc' -Severity $sev -Detail "WebClient service: start mode $wm, state $($s.webClientState)."
+    }
     foreach ($s in @($h.dcState | Where-Object { $_ -and -not $_.error })) {
         if ($null -ne $s.freeGB -and $s.sizeGB) {
             $free = [double]$s.freeGB; $pct = [Math]::Round(100 * $free / [double]$s.sizeGB, 1)
@@ -1580,7 +1817,16 @@ function Invoke-DnsChecks {
     param($Snapshot)
     $dns = $Snapshot.dns
     if (-not $dns -or -not $dns.collected) { return }
+    $dom = "$($Snapshot.domain.sid)"
+    $broad = @(@('S-1-1-0', 'Everyone'), @('S-1-5-7', 'Anonymous Logon'), @('S-1-5-11', 'Authenticated Users'), @("$dom-513", 'Domain Users'), @("$dom-515", 'Domain Computers'))
     foreach ($z in @($dns.zones | Where-Object { $_ })) {
+        if ($z.isAdIntegrated -and $z.PSObject.Properties['createChildSids'] -and $null -ne $z.createChildSids) {
+            $cc = @($z.createChildSids | Where-Object { $_ } | ForEach-Object { "$_" })
+            $who = @($broad | Where-Object { $cc -contains $_[0] } | ForEach-Object { $_[1] })
+            if ($who.Count -gt 0) {
+                Add-Finding -Type dns_zone_create_child -Object $z.name -ObjectType 'dnszone' -Detail "Create child objects (new DNS records) granted to: $($who -join ', ')."
+            }
+        }
         $du = "$($z.dynamicUpdate)"
         if ($du -match '(?i)nonsecure') {
             Add-Finding -Type dns_insecure_updates -Object $z.name -ObjectType 'dnszone' -Detail "DynamicUpdate = $du."
@@ -1619,12 +1865,35 @@ function Invoke-PreWin2000Check {
 function Invoke-DeepAclChecks {
     param($Snapshot, $Index, $PrivMap)
     $deep = @($Snapshot.deepAcls | Where-Object { $_ })
-    if ($deep.Count -eq 0) { return }
     $default = @(Get-DefaultAclPrincipals $Index)
     # Tier 0 holding rights is expected.
     $privSids = @{}
     foreach ($rec in $PrivMap.Principals.Values) { if ($rec.Principal -and $rec.Principal.sid) { $privSids[$rec.Principal.sid] = $true } }
     foreach ($entry in $PrivMap.Groups.Values) { if ($entry.Group.sid) { $privSids[$entry.Group.sid] = $true } }
+
+    # Golden gMSA: reading the key (or being able to grant it) is enough, inherited or not.
+    $kdsReaders = [ordered]@{}
+    foreach ($acl in @($Snapshot.kdsRootKeyAcls | Where-Object { $_ })) {
+        foreach ($ace in @($acl.aces | Where-Object { $_ -and "$($_.accessType)" -eq 'Allow' })) {
+            if ($default -contains $ace.sid -or $privSids.ContainsKey($ace.sid)) { continue }
+            $r = "$($ace.rights)"
+            $full = $r -match 'GenericAll|GenericRead|WriteDacl|WriteOwner'
+            $read = $r -match 'ReadProperty' -and "$($ace.objectType)" -eq '00000000-0000-0000-0000-000000000000'
+            if (-not ($full -or $read)) { continue }
+            if (-not $kdsReaders.Contains($ace.sid)) { $kdsReaders[$ace.sid] = [PSCustomObject]@{ Name = $(if ($ace.name) { $ace.name } else { $ace.sid }); Keys = New-Object System.Collections.Generic.List[string]; Rights = New-Object System.Collections.Generic.List[string] } }
+            $kn = "$($acl.target)" -replace '^kds:', ''
+            if (-not $kdsReaders[$ace.sid].Keys.Contains($kn)) { $kdsReaders[$ace.sid].Keys.Add($kn) }
+            foreach ($one in ($r -split ',\s*')) { if ($one -match 'GenericAll|GenericRead|WriteDacl|WriteOwner|ReadProperty' -and -not $kdsReaders[$ace.sid].Rights.Contains($one)) { $kdsReaders[$ace.sid].Rights.Add($one) } }
+        }
+    }
+    foreach ($sid in $kdsReaders.Keys) {
+        $kr = $kdsReaders[$sid]
+        $sev = if ($kr.Name -match '(?i)authenticated users|everyone|domain users|domain computers') { 'Critical' } else { 'High' }
+        Add-Finding -Type kds_root_key_readable -Object $kr.Name -ObjectType 'acl' -Severity $sev `
+            -Detail "$($kr.Rights -join ', ') on KDS root key(s): $(($kr.Keys | Sort-Object) -join ', ')."
+    }
+
+    if ($deep.Count -eq 0) { return }
     # Everyone-style principals: any control right they hold is worth a look.
     $dom = $Index.DomainSid
 
@@ -1653,6 +1922,77 @@ function Invoke-DeepAclChecks {
             Add-Finding -Type dangerous_ace_anywhere -Object $name -ObjectType 'acl' -ObjectDn $targetDn -Severity $sev `
                 -Detail "$(($per[$sid].Items | Select-Object -Unique) -join ', ') over $($acl.objectClass) '$victimName'."
         }
+    }
+}
+
+# --------------------------------------------------------------------------
+# BadSuccessor: who can create a dMSA in an OU or container. Only a Windows
+# Server 2025 DC honours the dMSA successor link, so without one it is silent.
+# --------------------------------------------------------------------------
+$script:DmsaClassGuid = '0feb936f-47b3-49f2-9386-1dedc2c23765'
+# First fixed update revision of build 26100 (August 2025 cumulative update, CVE-2025-53779).
+$script:BadSuccessorFixedUbr = 4946
+# organizationalUnit, container: an inherit-only ACE scoped to these still reaches child containers.
+$script:ContainerClassGuids = @('bf967aa5-0de6-11d0-a285-00aa003049e2', 'bf967a8b-0de6-11d0-a285-00aa003049e2')
+
+function Invoke-BadSuccessorCheck {
+    param($Snapshot, $Index, $PrivMap)
+    if (-not $Snapshot.PSObject.Properties['ouAcls']) { return }
+    $state = @{}
+    foreach ($s in @($Snapshot.health.dcState | Where-Object { $_ -and -not $_.error })) { $state["$($s.dc)".ToLower()] = $s }
+    $dc2025 = New-Object System.Collections.Generic.List[object]
+    foreach ($dc in @($Snapshot.domainControllers | Where-Object { $_ })) {
+        $s = $state["$($dc.hostName)".ToLower()]
+        $b = 0
+        if ($s) { [void][int]::TryParse("$($s.osBuild)", [ref]$b) }
+        if ("$($dc.operatingSystem)" -notmatch '2025' -and $b -lt 26100) { continue }
+        # $true patched, $false vulnerable, $null when the live build could not be read.
+        $patched = $null
+        if ($b -gt 26100) { $patched = $true }
+        elseif ($b -eq 26100 -and $null -ne $s.osUbr) { $patched = ([int]$s.osUbr -ge $script:BadSuccessorFixedUbr) }
+        $text = if ($patched -eq $true) { 'patched' } elseif ($patched -eq $false) { "build $b.$($s.osUbr), not patched" } else { 'patch level not read' }
+        $dc2025.Add([PSCustomObject]@{ Name = "$($dc.name)"; Patched = $patched; Text = $text })
+    }
+    if ($dc2025.Count -eq 0) { return }
+    $allPatched = @($dc2025 | Where-Object { $_.Patched -ne $true }).Count -eq 0
+    $dcText = "Windows Server 2025 DC(s): $(@($dc2025 | ForEach-Object { "$($_.Name) ($($_.Text))" }) -join ', ')."
+
+    $tier0 = Get-Tier0SidSet $Index $PrivMap
+    $per = [ordered]@{}
+    $targets = @($Snapshot.acls | Where-Object { $_ -and $_.target -eq 'DomainRoot' }) + @($Snapshot.ouAcls | Where-Object { $_ })
+    foreach ($acl in $targets) {
+        $hits = New-Object System.Collections.Generic.List[object]
+        if ($acl.ownerSid -and -not $tier0.ContainsKey("$($acl.ownerSid)")) {
+            $hits.Add([PSCustomObject]@{ Sid = "$($acl.ownerSid)"; Name = "$($acl.ownerName)"; Right = 'owner' })
+        }
+        foreach ($ace in @($acl.aces | Where-Object { $_ })) {
+            if ("$($ace.accessType)" -ne 'Allow' -or $ace.isInherited) { continue }
+            if ($tier0.ContainsKey("$($ace.sid)")) { continue }
+            $iot = "$($ace.inheritedObjectType)".ToLower()
+            if (-not (Test-AceAppliesToSelf $ace) -and $iot -and $iot -ne $script:EmptyGuid -and $script:ContainerClassGuids -notcontains $iot) { continue }
+            $r = "$($ace.rights)"
+            $ot = "$($ace.objectType)".ToLower()
+            $labels = @()
+            foreach ($x in 'GenericAll', 'WriteDacl', 'WriteOwner') { if ($r -match "\b$x\b") { $labels += $x } }
+            if ($r -match '\bCreateChild\b' -and ($ot -eq '' -or $ot -eq $script:EmptyGuid)) { $labels += 'CreateChild(all)' }
+            elseif ($r -match '\bCreateChild\b' -and $ot -eq $script:DmsaClassGuid) { $labels += 'CreateChild(dMSA)' }
+            foreach ($l in $labels) { $hits.Add([PSCustomObject]@{ Sid = "$($ace.sid)"; Name = "$($ace.name)"; Right = $l }) }
+        }
+        foreach ($h in $hits) {
+            if (-not $per.Contains($h.Sid)) { $per[$h.Sid] = [PSCustomObject]@{ Name = $(if ($h.Name) { $h.Name } else { $h.Sid }); Where = [ordered]@{} } }
+            $dn = "$($acl.distinguishedName)"
+            if (-not $per[$h.Sid].Where.Contains($dn)) { $per[$h.Sid].Where[$dn] = New-Object System.Collections.Generic.List[string] }
+            if (-not $per[$h.Sid].Where[$dn].Contains($h.Right)) { $per[$h.Sid].Where[$dn].Add($h.Right) }
+        }
+    }
+    foreach ($sid in $per.Keys) {
+        $p = $per[$sid]
+        $broad = $p.Name -match '(?i)authenticated users|everyone|domain users|domain computers'
+        $sev = if ($allPatched) { 'Medium' } elseif ($broad) { 'Critical' } else { 'High' }
+        $parts = @($p.Where.Keys | ForEach-Object { "$($p.Where[$_] -join ', ') on $_" })
+        $more = if ($parts.Count -gt 8) { "; and $($parts.Count - 8) more container(s)" } else { '' }
+        Add-Finding -Type badsuccessor_dmsa_create -Object $p.Name -ObjectType 'acl' -Severity $sev `
+            -Detail "$(@($parts | Select-Object -First 8) -join '; ')$more. $dcText"
     }
 }
 
@@ -1723,10 +2063,41 @@ function Invoke-AdcsChecks {
     foreach ($l in @($adcs.oidGroupLinks | Where-Object { $_ -and $_.oid })) { $oidToGroup["$($l.oid)"] = $l }
     $tier0 = Get-Tier0SidSet $Index $PrivMap
 
-    # One "check this on the CA" note per CA.
+    # On-CA settings when the collector could read them; a "verify on the CA" note for the rest.
+    $unread = @()
+    foreach ($ca in @($adcs.enrollmentServices | Where-Object { $_ })) {
+        $reg = if ($ca.PSObject.Properties['caRegistry']) { $ca.caRegistry } else { $null }
+        if (-not $reg -or $reg.error) { $unread += "$($ca.name)"; continue }
+        if ($null -ne $reg.editFlags -and ([int64]$reg.editFlags -band 0x40000) -ne 0) {
+            Add-Finding -Type adcs_esc6 -Object "$($ca.name)" -ObjectType 'ca' -Detail "EditFlags = 0x$('{0:X}' -f [int64]$reg.editFlags) includes EDITF_ATTRIBUTESUBJECTALTNAME2 (0x40000)."
+        }
+        if ($null -ne $reg.securityAces) {
+            $mgr = [ordered]@{}
+            foreach ($a in @($reg.securityAces | Where-Object { $_ -and $_.sid -and -not $tier0.ContainsKey("$($_.sid)") })) {
+                $rights = @(); if (([int64]$a.mask -band 1) -ne 0) { $rights += 'Manage CA' }; if (([int64]$a.mask -band 2) -ne 0) { $rights += 'Issue and Manage Certificates' }
+                if ($rights.Count) { $mgr["$(if ($a.name) { $a.name } else { $a.sid })"] = $rights -join ' + ' }
+            }
+            if ($mgr.Count) {
+                $broad = @($mgr.Keys | Where-Object { $_ -match '(?i)authenticated users|everyone|domain users|domain computers' }).Count -gt 0
+                Add-Finding -Type adcs_esc7 -Object "$($ca.name)" -ObjectType 'ca' -Severity $(if ($broad) { 'Critical' } else { 'High' }) `
+                    -Detail "Non-Tier 0 CA officers or managers: $(@($mgr.Keys | ForEach-Object { "$_ ($($mgr[$_]))" }) -join '; ')."
+            }
+        }
+        if ($reg.webEnrollment -or $reg.enrollmentWebService) {
+            $what = @(); if ($reg.webEnrollment) { $what += 'Certification Authority Web Enrollment' }; if ($reg.enrollmentWebService) { $what += 'Certificate Enrollment Web Service' }
+            Add-Finding -Type adcs_esc8 -Object "$($ca.name)" -ObjectType 'ca' -Detail "Installed on $($ca.dnsHostName): $($what -join ', '). Confirm HTTPS with Extended Protection for Authentication on the site."
+        }
+        if ($null -ne $reg.interfaceFlags -and ([int64]$reg.interfaceFlags -band 0x200) -eq 0) {
+            Add-Finding -Type adcs_esc11 -Object "$($ca.name)" -ObjectType 'ca' -Detail "InterfaceFlags = 0x$('{0:X}' -f [int64]$reg.interfaceFlags) without IF_ENFORCEENCRYPTICERTREQUEST (0x200)."
+        }
+        if (@($reg.disableExtensionList) -contains '1.3.6.1.4.1.311.25.2') {
+            Add-Finding -Type adcs_esc16 -Object "$($ca.name)" -ObjectType 'ca' -Detail 'DisableExtensionList contains 1.3.6.1.4.1.311.25.2 (szOID_NTDS_CA_SECURITY_EXT).'
+        }
+    }
+    if ($unread.Count -gt 0) {
+        Add-Finding -Type adcs_manual_checks -Object ($unread -join ', ') -ObjectType 'ca' -Detail "The CA settings of $($unread.Count) CA(s) could not be read (needs admin rights on the CA host). ESC6/ESC7/ESC8/ESC11/ESC16 are not in LDAP; verify them on the CA."
+    }
     if (@($adcs.enrollmentServices).Count -gt 0) {
-        $caList = @($adcs.enrollmentServices | ForEach-Object { $_.name }) -join ', '
-        Add-Finding -Type adcs_manual_checks -Object $caList -ObjectType 'ca' -Detail "AD CS is deployed ($(@($adcs.enrollmentServices).Count) CA(s)). ESC6/ESC7/ESC8/ESC11/ESC16 cannot be determined from LDAP; verify on the CA."
         foreach ($ca in $adcs.enrollmentServices) {
             $exp = ConvertTo-UtcDate $ca.caCertExpiry
             if ($exp) {

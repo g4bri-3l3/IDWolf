@@ -17,4 +17,10 @@ report.csv
 report*.gif
 lab*.json
 *.zip
+output/
+
 !examples/**
+
+# Local working notes: not published.
+CLAUDE.md
+ROADMAP.md

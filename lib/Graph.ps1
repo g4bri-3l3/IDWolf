@@ -30,7 +30,7 @@ $script:EscalationKinds = [ordered]@{
     dangerous_privilege_right                  = 'Sensitive right on DCs'
 }
 
-$script:GraphSevColor = @{ Critical = '#A23B3B'; High = '#B0703A'; Medium = '#A88B2E'; Low = '#7F868D' }
+$script:GraphSevColor = @{ Critical = '#E2372A'; High = '#EF8A6F'; Medium = '#F2B632'; Low = '#B9B1A1' }
 
 function Get-GraphSevRank { param([string]$S) if ($script:SeverityRank.ContainsKey($S)) { return $script:SeverityRank[$S] } return 0 }
 
@@ -200,7 +200,7 @@ function ConvertTo-AttackMapHtml {
 
         $svg = New-Object System.Text.StringBuilder
         [void]$svg.AppendLine("<svg viewBox='0 0 $svgW $svgH' width='100%' preserveAspectRatio='xMinYMin meet' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' class='attack-map'>")
-        [void]$svg.AppendLine("<defs><marker id='amArrow' markerWidth='9' markerHeight='9' refX='8' refY='3' orient='auto'><path d='M0,0 L8,3 L0,6 Z' fill='#8C939A'/></marker></defs>")
+        [void]$svg.AppendLine("<defs><marker id='amArrow' markerWidth='9' markerHeight='9' refX='8' refY='3' orient='auto'><path d='M0,0 L8,3 L0,6 Z' fill='#5F5A51'/></marker></defs>")
         # Edges first (under nodes).
         $nodeById = @{}; foreach ($n in $shown) { $nodeById[$n.Id] = $n }
         foreach ($e in $edgesList) {
@@ -218,9 +218,9 @@ function ConvertTo-AttackMapHtml {
             [void]$svg.AppendLine("<path class='am-edge am-from-$($e.From)'$dataTo d='M$x1,$y1 C$mx,$y1 $mx,$y2 $x2,$y2' fill='none' stroke='$col' stroke-width='1.6' opacity='0.45'$dash marker-end='url(#amArrow)'><title>$(& $H $nodeById[$e.From].Label) -> $dest via $(& $H $e.Kind) [$($e.Sev)]$unv</title></path>")
         }
         # Tier 0 anchor.
-        [void]$svg.AppendLine("<rect x='$t0x' y='$([int]($t0y-$t0h/2))' width='$t0w' height='$t0h' rx='8' fill='#23262A' stroke='#4A5058' stroke-width='2'/>")
-        [void]$svg.AppendLine("<text x='$([int]($t0x+$t0w/2))' y='$([int]($t0y-2))' text-anchor='middle' fill='#E1E4E7' font-size='13' font-weight='700'>Tier 0</text>")
-        [void]$svg.AppendLine("<text x='$([int]($t0x+$t0w/2))' y='$([int]($t0y+13))' text-anchor='middle' fill='#AEB4BA' font-size='10'>domain compromise</text>")
+        [void]$svg.AppendLine("<rect x='$t0x' y='$([int]($t0y-$t0h/2))' width='$t0w' height='$t0h' rx='8' fill='#161513' stroke='#161513' stroke-width='2'/>")
+        [void]$svg.AppendLine("<text x='$([int]($t0x+$t0w/2))' y='$([int]($t0y-2))' text-anchor='middle' fill='#F3EFE6' font-size='13' font-weight='700'>Tier 0</text>")
+        [void]$svg.AppendLine("<text x='$([int]($t0x+$t0w/2))' y='$([int]($t0y+13))' text-anchor='middle' fill='#B9B1A1' font-size='10'>domain compromise</text>")
         # Source nodes.
         foreach ($n in $shown) {
             $p = $pos[$n.Id]
@@ -230,7 +230,7 @@ function ConvertTo-AttackMapHtml {
             [void]$svg.AppendLine("<g class='am-node' data-nid='$($n.Id)' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>")
             [void]$svg.AppendLine("<rect x='$($p.X)' y='$($p.Y)' width='$boxW' height='$boxH' rx='5' fill='#fff' stroke='$col' stroke-width='1.6'/>")
             [void]$svg.AppendLine("<rect x='$($p.X)' y='$($p.Y)' width='4' height='$boxH' rx='2' fill='$col'/>")
-            [void]$svg.AppendLine("<text x='$($p.X + 10)' y='$($p.Y + 16)' font-size='11' fill='#15171A'>$label</text>")
+            [void]$svg.AppendLine("<text x='$($p.X + 10)' y='$($p.Y + 16)' font-size='11' fill='#161513'>$label</text>")
             [void]$svg.AppendLine("<title>$(& $H $n.Label) [$($n.Type)] - $tech</title>")
             [void]$svg.AppendLine("</g>")
         }
@@ -258,16 +258,16 @@ function ConvertTo-AttackMapHtml {
             $tx = [int]($cx + $r * [Math]::Cos($ang) * 1.6)
             $ty = [int]($cy + $r * [Math]::Sin($ang))
             $tr = $trusts[$i]
-            $col = if ($tr.Risk) { '#A23B3B' } else { '#6E767E' }
+            $col = if ($tr.Risk) { '#E2372A' } else { '#8A857A' }
             $dash = if ($tr.Forest) { "stroke-dasharray='5,3'" } else { '' }
             [void]$tsvg.AppendLine("<line x1='$cx' y1='$cy' x2='$tx' y2='$ty' stroke='$col' stroke-width='1.6' opacity='0.6' $dash/>")
             $boxw = 150; $bx = [int]($tx - $boxw / 2); $by = [int]($ty - 14)
             [void]$tsvg.AppendLine("<rect x='$bx' y='$by' width='$boxw' height='28' rx='5' fill='#fff' stroke='$col' stroke-width='1.6'/>")
-            [void]$tsvg.AppendLine("<text x='$tx' y='$([int]($ty+1))' text-anchor='middle' font-size='10.5' fill='#15171A'>$(& $H (ConvertTo-GraphLabel $tr.Name 20))</text>")
-            [void]$tsvg.AppendLine("<text x='$tx' y='$([int]($ty+13))' text-anchor='middle' font-size='9' fill='#5E656C'>$(& $H $tr.Direction) $(if ($tr.Forest){'forest'}else{'external'})</text>")
+            [void]$tsvg.AppendLine("<text x='$tx' y='$([int]($ty+1))' text-anchor='middle' font-size='10.5' fill='#161513'>$(& $H (ConvertTo-GraphLabel $tr.Name 20))</text>")
+            [void]$tsvg.AppendLine("<text x='$tx' y='$([int]($ty+13))' text-anchor='middle' font-size='9' fill='#5F5A51'>$(& $H $tr.Direction) $(if ($tr.Forest){'forest'}else{'external'})</text>")
         }
-        [void]$tsvg.AppendLine("<rect x='$([int]($cx-85))' y='$([int]($cy-18))' width='170' height='36' rx='8' fill='#23262A' stroke='#4A5058' stroke-width='2'/>")
-        [void]$tsvg.AppendLine("<text x='$cx' y='$([int]($cy+5))' text-anchor='middle' fill='#E1E4E7' font-size='12' font-weight='700'>$(& $H (ConvertTo-GraphLabel $Snapshot.domain.dnsRoot 24))</text>")
+        [void]$tsvg.AppendLine("<rect x='$([int]($cx-85))' y='$([int]($cy-18))' width='170' height='36' rx='8' fill='#161513' stroke='#161513' stroke-width='2'/>")
+        [void]$tsvg.AppendLine("<text x='$cx' y='$([int]($cy+5))' text-anchor='middle' fill='#F3EFE6' font-size='12' font-weight='700'>$(& $H (ConvertTo-GraphLabel $Snapshot.domain.dnsRoot 24))</text>")
         [void]$tsvg.AppendLine('</svg>')
         & $w "<div class='map-wrap'>$($tsvg.ToString())</div>"
         & $w "<p class='meta'>Red = a trust with a weak setting (RC4, no SID filtering, or TGT delegation). Dashed = forest trust. See the Domain Configuration findings for detail.</p>"

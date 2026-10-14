@@ -17,7 +17,7 @@
 .PARAMETER Server
     DC or domain to query. Default: whatever the AD module picks.
 .PARAMETER OutFile
-    Snapshot path. Default: adsnapshot_<domain>_<timestamp>.json
+    Snapshot path. Default: output\adsnapshot_<domain>_<timestamp>.json
 .PARAMETER Deep
     Also read the ACL of every user, computer, group and OU. Slow; needs broad read rights.
 .PARAMETER Credential
@@ -63,7 +63,7 @@ Param(
 # account with broad read rights. Without it those checks show up as
 # "not evaluated".
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.0"
+$script:CollectorVersion = "1.2"
 $script:Errors = New-Object System.Collections.Generic.List[object]
 
 function Add-CollectionError {
@@ -785,6 +785,26 @@ if (-not $SkipAcl) {
         $rec = Read-ObjectSecurity -Dn $aclTargets[$key] -Target $key
         if ($rec) { $acls += $rec }
     }
+}
+
+# OUs and top-level containers (not -Deep): who can create objects in them. A non-Tier 0
+# principal that can create a dMSA can take over any account through it (BadSuccessor).
+# Only explicit Allow ACEs that grant create or control rights are kept: inherited ones
+# come from a parent that is read too (the domain head is in the Tier 0 set above).
+$ouAcls = @()
+if (-not $SkipAcl) {
+    try {
+        $ouObjs = @(Get-ADObject -LDAPFilter '(objectClass=organizationalUnit)' @common | Where-Object { $_ })
+        $ouObjs += @(Get-ADObject -SearchBase $domainDN -SearchScope OneLevel -LDAPFilter '(objectClass=container)' @common | Where-Object { $_ })
+        foreach ($o in $ouObjs) {
+            $rec = Read-ObjectSecurity -Dn $o.DistinguishedName -Target "ou:$($o.DistinguishedName)" -ObjectClass "$($o.ObjectClass)" -ErrorSection 'ouAcls'
+            if (-not $rec) { continue }
+            $rec.aces = @($rec.aces | Where-Object { -not $_.isInherited -and $_.accessType -eq 'Allow' -and $_.rights -match 'CreateChild|GenericAll|WriteDacl|WriteOwner' })
+            $ouAcls += $rec
+        }
+        Write-Host "  $($ouAcls.Count) OU and container security descriptors read"
+    }
+    catch { Add-CollectionError 'ouAcls' $_.Exception.Message }
 }
 
 # --------------------------------------------------------------------------
@@ -1701,6 +1721,7 @@ $snapshot = [ordered]@{
     groups            = $groups
     foreignPrincipals = $fsps
     acls              = $acls
+    ouAcls            = $ouAcls
     deepAcls          = $deepAcls
     kdsRootKeyAcls    = $kdsRootKeyAcls
     preWin2000        = $preWin2000
@@ -1712,7 +1733,9 @@ $snapshot = [ordered]@{
 }
 
 if (-not $OutFile) {
-    $OutFile = "adsnapshot_{0}_{1}.json" -f $domain.DNSRoot, (Get-Date -Format 'yyyyMMdd_HHmmss')
+    # Unnamed outputs go to .\output, not next to everything else.
+    $od = Join-Path (Get-Location).Path 'output'; if (-not (Test-Path -LiteralPath $od)) { New-Item -ItemType Directory -Path $od | Out-Null }
+    $OutFile = Join-Path $od ("adsnapshot_{0}_{1}.json" -f $domain.DNSRoot, (Get-Date -Format 'yyyyMMdd_HHmmss'))
 }
 $json = $snapshot | ConvertTo-Json -Depth 10
 # Belt and braces for the PS 5.1 {} issue (see ConvertTo-StringArray).

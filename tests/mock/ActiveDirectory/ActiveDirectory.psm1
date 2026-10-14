@@ -28,9 +28,14 @@ function Get-ADObject {
     if ($LDAPFilter -like '*objectClass=dnsNode*') {
         return [PSCustomObject]@{ Name = 'wpad'; dnsRecord = @(, [byte[]](@(4, 0, 1, 0) + (@(0) * 20))) }
     }
+    # Schema: msExchStorageGroup left behind by Exchange (CVE-2021-34470).
+    if ($LDAPFilter -like '*possSuperiors=computer*') { return [PSCustomObject]@{ lDAPDisplayName = 'msExchStorageGroup'; possSuperiors = @('computer', 'msExchInformationStore'); subClassOf = 'container' } }
     if ($LDAPFilter -like '*msLAPS-PasswordExpirationTime*') { return [PSCustomObject]@{ Name = 'ms-LAPS-PasswordExpirationTime' } }
     if ($LDAPFilter -like '*ms-Mcs-AdmPwdExpirationTime*') { return $null }
     if ($LDAPFilter -like '*foreignSecurityPrincipal*') { return @() }
+    # One OU and one top-level container for the OU ACL read (BadSuccessor).
+    if ($LDAPFilter -eq '(objectClass=organizationalUnit)') { return [PSCustomObject]@{ DistinguishedName = "OU=Staff,$script:DN"; ObjectClass = 'organizationalUnit' } }
+    if ($LDAPFilter -eq '(objectClass=container)' -and $SearchScope -eq 'OneLevel') { return [PSCustomObject]@{ DistinguishedName = "CN=Users,$script:DN"; ObjectClass = 'container' } }
     if ($Identity -eq $script:DN -and $Properties -contains 'ms-DS-MachineAccountQuota') { return [PSCustomObject]@{ 'ms-DS-MachineAccountQuota' = 10 } }
     if ($Identity -like 'CN=Directory Service*') { return [PSCustomObject]@{ dSHeuristics = $null } }
     # RODC password replication policy; msDS-RevealedList in its DN-String form.
@@ -50,7 +55,7 @@ function Get-ADObject {
     if ($LDAPFilter -like '*pKICertificateTemplate*' -or $LDAPFilter -like '*msPKI-Enterprise-Oid*') { return @() }
     if ($Properties -contains 'nTSecurityDescriptor') {
         if ($Identity -like 'OU=Domain Controllers*') { throw 'Access is denied (mock)' }
-        $sd = [PSCustomObject]@{ Owner = "$script:Dom-512"; Pki = ("$Identity" -like '*Public Key Services*') }
+        $sd = [PSCustomObject]@{ Owner = "$script:Dom-512"; Pki = ("$Identity" -like '*Public Key Services*'); Dns = ("$Identity" -like '*CN=MicrosoftDNS*'); Ou = ("$Identity" -like 'OU=Staff,*') }
         $sd | Add-Member -MemberType ScriptMethod -Name GetOwner -Value { param($t) Sid $this.Owner }
         $sd | Add-Member -MemberType ScriptMethod -Name GetAccessRules -Value {
             param($a, $b, $t)
@@ -58,6 +63,11 @@ function Get-ADObject {
                 [PSCustomObject]@{ IdentityReference = (Sid "$script:Dom-512"); ActiveDirectoryRights = 'GenericAll'; AccessControlType = 'Allow'; ObjectType = [guid]::Empty; InheritedObjectType = [guid]::Empty; InheritanceType = 'All'; IsInherited = $false }
                 [PSCustomObject]@{ IdentityReference = (Sid "$script:Dom-1300"); ActiveDirectoryRights = 'ExtendedRight'; AccessControlType = 'Allow'; ObjectType = [guid]'1131f6ad-9c07-11d1-f79f-00c04fc2dcd2'; InheritedObjectType = [guid]::Empty; InheritanceType = 'None'; IsInherited = $false }
                 # mario can rewrite every PKI object: ESC5.
+                # Default ADIDNS ACL: Authenticated Users may create records in the zone.
+                if ($this.Dns) { [PSCustomObject]@{ IdentityReference = (Sid 'S-1-5-11'); ActiveDirectoryRights = 'CreateChild'; AccessControlType = 'Allow'; ObjectType = [guid]::Empty; InheritedObjectType = [guid]::Empty; InheritanceType = 'None'; IsInherited = $false } }
+                # mario may create dMSAs in OU=Staff; the collector must drop the inherited ACE.
+                if ($this.Ou) { [PSCustomObject]@{ IdentityReference = (Sid "$script:Dom-1301"); ActiveDirectoryRights = 'CreateChild'; AccessControlType = 'Allow'; ObjectType = [guid]'0feb936f-47b3-49f2-9386-1dedc2c23765'; InheritedObjectType = [guid]::Empty; InheritanceType = 'None'; IsInherited = $false } }
+                if ($this.Ou) { [PSCustomObject]@{ IdentityReference = (Sid "$script:Dom-1300"); ActiveDirectoryRights = 'GenericAll'; AccessControlType = 'Allow'; ObjectType = [guid]::Empty; InheritedObjectType = [guid]::Empty; InheritanceType = 'All'; IsInherited = $true } }
                 if ($this.Pki) { [PSCustomObject]@{ IdentityReference = (Sid "$script:Dom-1301"); ActiveDirectoryRights = 'GenericWrite'; AccessControlType = 'Allow'; ObjectType = [guid]::Empty; InheritedObjectType = [guid]::Empty; InheritanceType = 'None'; IsInherited = $false } }
             )
         }

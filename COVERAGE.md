@@ -2,7 +2,7 @@
 
 How IDWolf's checks line up against the references people actually use to
 judge an AD or Entra audit. One place, kept in sync with the code: every check
-named here exists in the catalog (166 AD, 86 Entra).
+named here exists in the catalog (167 AD, 88 Entra).
 
 **Legend**
 - **Yes**: detected directly.
@@ -97,7 +97,8 @@ by score. Rule list: pingcastle.com, engine 3.3.
 | AD CS ESC1-5, 9, 10, 13, 15 | Yes `adcs_esc*` (ESC10 GPO) |
 | AD CS ESC6, 7, 8, 11, 16 | Live `adcs_esc6`, `adcs_esc7`, `adcs_esc8`, `adcs_esc11`, `adcs_esc16` (read on the CA host); `adcs_manual_checks` for a CA that could not be read |
 | Shadow Credentials | Yes `shadow_credentials_present` |
-| ReadGMSAPassword, LAPS password readers, SyncLAPSPassword, Golden gMSA | Yes `gmsa_password_readable`, `sync_laps_rights`; Deep `laps_readers`, `kds_root_key_readable` |
+| ReadGMSAPassword, LAPS password readers, SyncLAPSPassword, Golden gMSA / dMSA | Yes `gmsa_password_readable`, `sync_laps_rights`; Deep `laps_readers`, `kds_root_key_readable` |
+| BadSuccessor (dMSA successor link, CVE-2025-53779) | Yes `badsuccessor_dmsa_create`, only with a Windows Server 2025 DC; its Live update revision sets the severity |
 | RODC credential theft (RODC golden ticket, Kerberos key list) | Yes `rodc_tier0_revealed`, `rodc_prp_too_broad`, `rodc_tier0_unprotected`, `rodc_krbtgt_password_old` |
 | PrintNightmare | GPO `point_and_print_unsafe` (the Point and Print downgrade), `spooler_on_dc`; patch level Out |
 | GPO takeover | Yes `gpo_dangerous_acl` |
@@ -109,43 +110,19 @@ by score. Rule list: pingcastle.com, engine 3.3.
 | noPac (CVE-2021-42278/42287) | Live `nopac_unpatched_dc` (build and update revision), with `machine_account_quota` setting the severity |
 | Certifried (CVE-2022-26923) | Partial `machine_account_quota`; patch level Out |
 | Timeroasting | Partial `precreated_computer_account` (pre-created computers with a predictable password); the attack itself Out |
+| AD CS ESC5 (access to PKI objects), ESC14 (weak explicit certificate mappings) | Yes `adcs_esc5`, `altsecid_weak_mapping`; write access to `altSecurityIdentities` is a dangerous ACE |
+| Exchange privileges (PrivExchange, Exchange Windows Permissions) | Yes `dangerous_ace_tier0` (WriteDacl on the domain head or on Tier 0 groups, as for any non-Tier 0 principal) |
+| SID history abuse, cross-forest trust tickets | Yes `sid_history`, `trust_sid_filtering_disabled`, `trust_tgt_delegation`, `trust_no_selective_auth`, `trust_rc4` |
+| Golden / Silver Ticket | Yes `krbtgt_password_old`, `dc_password_old`; the forging itself Out |
+| Local admin password reuse | Partial `laps_not_deployed`, `laps_missing` (the condition, not the reuse) |
+| Writable shares | Yes `sysvol_writable` (NETLOGON and SYSVOL Policies); Partial `gpo_runs_code_from_share`; other shares Out (they need a connection to every machine) |
+| MSSQL, DCOM, RDP and WinRM rights, sessions on each host | Out (a live connection to every host); accounts with MSSQLSvc SPNs are covered by the Kerberoasting checks |
+| LSASS / SAM / DPAPI dumping, Skeleton Key, custom SSP, local privilege escalation | Out (attacks, or a DC's memory and local registry); mitigations `lsass_not_protected`, `wdigest_cleartext`, `cached_credentials` |
 | Pass-the-hash / ticket | Out |
 
-### safebuffer/vulnerable-AD lab
+### DC health
 
-Checked against what `vulnad.ps1` actually does. Every function is covered:
-
-| vulnad.ps1 | IDWolf |
-|---|---|
-| BadAcls | Yes / Deep `dangerous_ace_tier0`, `dangerous_ace_anywhere` |
-| Kerberoasting (sMSA with SPN) | Yes `kerberoastable_user`, `spn_account_rc4` |
-| ASREPRoasting | Yes `asrep_roastable` |
-| DnsAdmins | Yes `dnsadmins_populated` |
-| PwdInObjectDescription | Yes `password_in_description` |
-| DefaultPassword, PasswordSpraying | PQ `pwq_default_password`, `pwq_duplicate_passwords`, `pwq_breached_password` |
-| DCSync | Yes `dcsync_rights` |
-| DisableSMBSigning | Out: the script edits the local registry, not a GPO (IDWolf still flags signing as not required by GPO) |
-| Weak default password policy | Yes `password_policy_*` |
-
-### HardenAD
-
-HardenAD applies hardening; IDWolf checks whether it is missing.
-
-| HardenAD GPO | IDWolf |
-|---|---|
-| Kerberos AES, NTLMv1/LM off, LM hash, WDigest | GPO `kerberos_rc4_allowed`, `ntlm_weak_lmcompat`, `lm_hash_stored`, `wdigest_cleartext` |
-| LDAP signing / CBT, SMB signing, SMBv1, UNC hardened paths | GPO (see CIS above) |
-| Secure Netlogon, LLMNR off, Print Spooler off, cached logons | GPO `netlogon_vulnerable_channel`, `llmnr_enabled`, `spooler_on_dc`, `cached_credentials` |
-| LAPS | Yes `laps_not_deployed`, `laps_missing`, `laps_stale` |
-| Security / PowerShell logs | GPO `audit_*`, `powershell_logging_not_enabled` |
-| Delegation model, Protected Users, silos, FAST | Yes / Deep `dangerous_ace_*`, `protected_users_empty`, `auth_policy_silo_unused`, `kerberos_armoring_not_enforced` |
-| Tier OU model, PAWs | It's a design, not a setting: IDWolf audits its effects (Tier 0 ACLs, membership, delegation) |
-| BitLocker, AppLocker, firewall, TLS, UAC on member servers | Out (endpoint build state) |
-
-### DC health scripts (LazyAdmin ADHealthCheck, jcsantam/ADHealthCheck)
-
-LazyAdmin's script checks ten things per DC. IDWolf took the ones that fit a
-read-only snapshot taken from a workstation:
+The DC health checks that fit a read-only snapshot taken from a workstation:
 
 | Health check | IDWolf |
 |---|---|
@@ -158,143 +135,6 @@ read-only snapshot taken from a workstation:
 | Last backup | Yes `ad_backup_overdue` |
 | `dcdiag` | Not used: its output is translated (Italian, German...) and too fragile to parse reliably |
 | Uptime, NTDS.dit size, DNS client settings of the DC | Not used: little security value, or needs remote registry |
-
-jcsantam/ADHealthCheck is mostly a plan so far (2 of 635 checks written); its
-categories (replication, time, backup, FSMO) are covered above.
-### Other community audit tools
-
-phillips321/adaudit, Leo4j/Invoke-ADEnum, azauditor/ADAudit,
-slientnight/ad-group-audit and adrian207/AD-Audit add nothing IDWolf misses
-except empty-group listing (skipped on purpose: noisy, low value). AD backup
-and replication health are now covered (`ad_backup_overdue`,
-`replication_failures`, `replication_stale`).
-
-### Adalanche (lkarlslund/Adalanche)
-
-Adalanche builds a full attack graph (like BloodHound), from AD and from a
-collector run on each Windows machine. IDWolf is a checklist from one AD
-snapshot, so the comparison is by edge type: does IDWolf flag the same
-weakness?
-
-| Adalanche edge | IDWolf |
-|---|---|
-| GenericAll, WriteDACL, TakeOwnership, Owns, WriteAll, WritePropertyAll | Yes `dangerous_ace_tier0`, `dangerous_ace_anywhere` (-Deep), `nonstandard_owner_tier0` |
-| ResetPassword, AddMember, AddSelfMember | Yes (same ACE checks: User-Force-Change-Password, member, Self(member)) |
-| WriteSPN, WriteValidatedSPN, HasSPN, DontReqPreauth | Yes (ACE checks on servicePrincipalName), `kerberoastable_user`, `privileged_kerberoastable`, `asrep_roastable` |
-| WriteKeyCredentialLink | Yes (ACE checks), `shadow_credentials_present` |
-| WriteAllowedToAct | Yes (ACE checks), `rbcd_configured` |
-| WriteAltSecIdent, WriteScriptPath, WriteProfilePath, WriteUserAccountControl | Yes, added from Adalanche's list: write access to these attributes counts as a dangerous ACE |
-| WriteAllowedToDelegTo | No: setting it also needs SeEnableDelegationPrivilege on the DCs, which `dangerous_privilege_right` covers |
-| ReadGMSAPassword, HasMSA | Yes `gmsa_password_readable` |
-| ReadLAPSPassword, ReadEncryptedLAPSPassword | Yes `laps_readers` |
-| DSReplGetChngs / GetChngsAll | Yes `dcsync_rights` |
-| SIDHistoryEquality | Yes `sid_history` |
-| OverwritesACL (AdminSDHolder) | Yes (ACE checks on AdminSDHolder) |
-| AffectedByGPO, PartOfGPO | Yes `gpo_dangerous_acl` (GPOs linked to Tier 0) |
-| MachineScript, SchedTaskOnUNCPath | Yes, added: `gpo_runs_code_from_share` (scripts and GPP scheduled tasks run from a share outside SYSVOL) |
-| AdminRights (via GPO local groups) | Partial, added: `gpo_broad_local_group` (broad groups made local admin or RDP user). Who is admin where, machine by machine, needs Adalanche's per-host collector |
-| RDPRights, DCOMRights, local services, shares, file ACLs | Out: they come from a collector on every machine; IDWolf reads AD only |
-| CertificateEnroll, CertificateAutoEnroll | Yes (AD CS ESC checks on enrollment rights) |
-| Attack-path queries (AQL), probabilities, tiering | Out: IDWolf shows paths to Tier 0 in its map, and leaves graph queries to BloodHound (export) |
-
-### ADScan (ADScanPro/adscan)
-
-ADScan is an offensive tool: it enumerates, sprays, relays, dumps and exploits,
-and lists 104 techniques (its `COVERAGE.md`, October 2026). IDWolf never
-attacks anything, so the comparison asks one question per technique: does
-IDWolf flag the weakness that makes it possible?
-
-| ADScan technique | IDWolf |
-|---|---|
-| GenericAll, GenericWrite, WriteDACL, WriteOwner, Object Ownership, Force Change Password, Add Member, Add Self, All Extended Rights, Write SPN, Write Logon Script, Shadow Credentials | Yes / Deep `dangerous_ace_tier0`, `dangerous_ace_anywhere`, `nonstandard_owner_tier0`, `shadow_credentials_present` |
-| Write Account Restrictions | Yes / Deep, added: write access to the User-Account-Restrictions property set (it holds the RBCD attribute) counts as a dangerous ACE |
-| Read LAPS Password, Read gMSA Password | Deep `laps_readers`, `kds_root_key_readable`; Yes `gmsa_password_readable` |
-| Sync LAPS Password, DS-Replication-Get-Changes-In-Filtered-Set | Yes, added: `sync_laps_rights` |
-| DCSync, DS-Replication-Get-Changes(-All) | Yes `dcsync_rights` |
-| RODC Password Replication Policy Control, RODC Credential Caching, RODC krbtgt, RODC Golden Ticket, Kerberos Key List | Yes, added: `rodc_prp_too_broad`, `rodc_tier0_revealed` (Critical when the RODC is administered by a non-Tier 0 principal); with `rodc_tier0_unprotected`, `rodc_krbtgt_password_old`, and ACE checks on the RODC computer object |
-| AD CS ESC1-4, 9, 10, 13, 15 | Yes `adcs_esc*` |
-| AD CS ESC5 (PKI object access control) | Yes, added: `adcs_esc5` (PKI containers, NTAuth store, CA objects, CA servers' computer accounts) |
-| AD CS ESC6, 7, 8, 11, 16, and coerce + relay to AD CS | Live `adcs_esc6`, `adcs_esc7`, `adcs_esc8`, `adcs_esc11`, `adcs_esc16`; the relay itself Out (attack) |
-| AD CS ESC14 | Yes `altsecid_weak_mapping` (weak explicit mappings, by type); write access to `altSecurityIdentities` is a dangerous ACE |
-| AD CS ESC17 | Not compared yet |
-| Kerberoasting, AS-REP Roasting | Yes `kerberoastable_user`, `privileged_kerberoastable`, `asrep_roastable` |
-| Constrained Delegation, RBCD, Coercion to TGT (unconstrained) | Yes `constrained_delegation*`, `rbcd_configured`, `unconstrained_delegation` |
-| SPN-Jacking | Yes, added: `delegation_orphan_spn` (delegation to an SPN nobody holds); WriteSPN through the ACE checks |
-| Cross-Forest TGT Delegation | Yes `trust_tgt_delegation` |
-| Backup Operators, Print Operators, DnsAdmins, Privileged Group Control | Yes `operator_groups_populated`, `dnsadmins_populated`, `dangerous_ace_tier0` |
-| Anonymous LDAP Bind, Guest Session | Yes `anonymous_ldap_enabled`, `pre_win2000_anonymous`, `guest_enabled`; GPO `anonymous_sam_enum` |
-| Credentials in User Description, GPP Password, Password in File (SYSVOL) | Yes `password_in_description`, `gpp_cpassword`, `sysvol_script_secrets` |
-| Blank Password, Username as Password, Domain Password Reuse | PQ `pwq_empty_password`, `pwq_default_password`, `pwq_duplicate_passwords` |
-| Pre-Windows 2000 Computer Account, Timeroasting | Partial `precreated_computer_account` (PASSWD_NOTREQD only) |
-| Local Admin Password Reuse | Partial: `laps_not_deployed`, `laps_missing` (the condition, not the reuse) |
-| NetNTLMv1 Enabled and its relays | GPO `ntlm_weak_lmcompat` |
-| LLMNR/NBT-NS Poisoning | GPO `llmnr_enabled`, `mdns_enabled`; Live `nbtns_enabled_dc` (NBT-NS is a per-adapter setting: DCs only, member hosts Out) |
-| PetitPotam, PrinterBug, DFSCoerce | Live `coercion_unfiltered_dc`; preconditions (`spooler_on_dc`, `webclient_not_disabled`, Live `webclient_on_dc`, `smb_signing_*`, `ldap_signing_not_required`, `ldap_channel_binding_off`, `unconstrained_delegation`) |
-| PrintNightmare | GPO, added: `point_and_print_unsafe`; patch level Out |
-| Zerologon, noPac | GPO `netlogon_vulnerable_channel`; Live `nopac_unpatched_dc`; Partial `machine_account_quota`; Zerologon patch level Out |
-| MS14-068, MS17-010 | Out (patch level); `smb1_server_enabled` for the SMBv1 precondition |
-| Writable SMB Path | Partial `gpo_runs_code_from_share`; Yes `sysvol_writable` for NETLOGON and SYSVOL Policies |
-| Readable / writable / full-control shares, password in share | Yes `sysvol_writable` for NETLOGON and SYSVOL Policies; other shares Out (they would need a connection to every machine) |
-| MSSQL (access, sysadmin, linked servers, xp_cmdshell, impersonation, TRUSTWORTHY, NetNTLMv2 theft, OPENROWSET), DCOM, RDP, PowerShell Remoting, Local Admin Rights, Privileged Session Abuse, Scheduled Task Execution | Out: rights and sessions on each host need a live connection to it |
-| LSASS, LSA Secrets, DPAPI, SAM dumping, Password Spraying, Local-to-Domain Credential Reuse | Out: these are attacks, not configuration |
-### ADcheck (CobblePot59/ADcheck)
-
-ADcheck is an audit script (about 88 checks in four groups) that also runs
-against live hosts. The comparison asks whether IDWolf flags the same weakness
-from a snapshot. Items marked Planned are in `ROADMAP.md`.
-
-| ADcheck group | IDWolf |
-|---|---|
-| Delegable admins, admins outside Protected Users, DES, AS-REP, Kerberoasting, reversible passwords, password not required, password never expires, inactive accounts, Schema Admins, Pre-Windows 2000 group | Yes `privileged_account_delegable`, `protected_users_empty`, `des_enabled`, `asrep_roastable`, `kerberoastable_user`, `reversible_encryption_account`, `password_not_required`, `password_never_expires`, `inactive_user`, `schema_enterprise_admins_populated`, `pre_win2000_anonymous` |
-| Blank and identical passwords | PQ `pwq_empty_password`, `pwq_duplicate_passwords` |
-| `userPassword`, `unixUserPassword` | Yes `unix_password_present` |
-| Credentials in descriptions, GPP passwords | Yes `password_in_description`, `gpp_cpassword` |
-| Admins of the past, native Administrator use | Yes `orphaned_admincount`, `builtin_administrator_hygiene` |
-| Timeroasting | Partial `precreated_computer_account` |
-| `altSecurityIdentities` | Yes `altsecid_weak_mapping`; write access is a dangerous ACE |
-| `unicodePwd`, `msDS-HostServiceAccount` | Not planned: `unicodePwd` is write-only over LDAP (never returned to a reader), and `msDS-HostServiceAccount` is a link, not a secret |
-| Locked accounts | Not planned for now: a point-in-time state |
-| Audit policy, LM hash, NTLM level, cached logons, LSASS PPL, WDigest, PowerShell logging, UNC hardening, LLMNR, mDNS, NetBIOS | Live `nbtns_enabled_dc`; GPO `mdns_enabled`, `audit_policy_insufficient`, `lm_hash_stored`, `ntlm_weak_lmcompat`, `cached_credentials`, `lsass_not_protected`, `wdigest_cleartext`, `powershell_logging_not_enabled`, `unc_hardening_disabled`, `llmnr_enabled` |
-| MSI AlwaysInstallElevated, GPP autologon, IPv6, WSUS over HTTP, Credential Guard, RDP NLA and Restricted Admin, AppLocker / WDAC, Windows Script Host, force logoff | GPO `always_install_elevated`, `gpo_autologon_password`, `ipv6_dhcpv6_takeover`, `wsus_http`, `credential_guard_not_configured`, `rdp_nla_disabled`, `rdp_restricted_admin`, `app_control_missing`, `wsh_enabled`, `force_logoff_disabled` |
-| WPAD policy, PowerShell v2 / Constrained Language | GPO `wpad_not_disabled`; PowerShell v2 is a Windows feature, Out (live host state) |
-| BitLocker, firewall, UAC, AMSI provider, trusted root store, computer update state | Out (host build state) |
-| Password policy, PSOs, Recycle Bin, LAPS, functional level, Kerberos encryption types, krbtgt age, MachineAccountQuota | Yes `password_policy_*`, `fgpp_weak`, `recycle_bin_disabled`, `laps_not_deployed`, `functional_level_outdated`, `kerberos_rc4_allowed`, `krbtgt_password_old`, `machine_account_quota` |
-| SMB / LDAP signing, channel binding, anonymous bind, null sessions, Spooler, WebClient | GPO `smb_signing_not_required`, `ldap_signing_not_required`, `ldap_channel_binding_off`, `anonymous_sam_enum`, `spooler_on_dc`, `webclient_not_disabled`; Live `webclient_on_dc`; Yes `anonymous_ldap_enabled` |
-| DFSR / FRS on SYSVOL, trusts, backup, DC list | Yes `sysvol_frs`, `trust_*`, `ad_backup_overdue` |
-| Control delegations, GPO file rights, constrained delegation, auth silos, privilege rights, RBCD | Yes / Deep `dangerous_ace_tier0`, `dangerous_ace_anywhere`, `gpo_dangerous_acl`, `constrained_delegation*`, `auth_policy_silo_unused`, `dangerous_privilege_right`, `rbcd_configured` |
-| Users who can create DNS records | Yes `dns_zone_create_child` |
-| Registry access rights, WinRM authorization, named pipes, shares writable by Everyone | Anonymous pipes and shares set by GPO: `anonymous_sam_enum`; NETLOGON and SYSVOL Policies `sysvol_writable`; other shares, registry and WinRM rights Out (live host state on every machine) |
-
-### Active Directory Exploitation Cheat Sheet (S1ckB0y1337)
-
-An attacker's cheat sheet, so most of it is tooling. The table lists each
-technique family and the weakness IDWolf flags that makes it possible.
-
-| Cheat sheet section | IDWolf |
-|---|---|
-| Domain enumeration (PowerView, AD Module, BloodHound, Adalanche, ADRecon) | Not a check. `Export-BloodHound.ps1` exports a snapshot; Adalanche edges are compared above |
-| Local privilege escalation (potatoes, token privileges, SMBGhost, HiveNightmare) | Out (host state and patch level); the AD side is `dangerous_privilege_right` |
-| Lateral movement: PowerShell Remoting, Mimikatz, LSASS dumping, PPL bypass | Out (attacks); mitigations `lsass_not_protected`, `wdigest_cleartext`, `cached_credentials` |
-| Lateral movement: RDP Restricted Admin | GPO `rdp_restricted_admin` |
-| Lateral movement: URL / SCF files on writable shares | `sysvol_writable` for NETLOGON and SYSVOL Policies; other shares Out |
-| Kerberoasting, ASREPRoasting, Force Set SPN | Yes `kerberoastable_user`, `privileged_kerberoastable`, `asrep_roastable`, ACE checks on servicePrincipalName and userAccountControl |
-| Password spraying | Yes `password_policy_no_lockout`; PQ `pwq_*` |
-| Delegation: unconstrained, constrained, RBCD, tgtdeleg | Yes `unconstrained_delegation`, `constrained_delegation*`, `rbcd_configured`, `privileged_account_delegable` |
-| DnsAdmins, ADIDNS abuse | Yes `dnsadmins_populated`, `dns_insecure_updates`, `dns_dangerous_record` |
-| Backup Operators (SeBackupPrivilege) | Yes `operator_groups_populated`, `dangerous_privilege_right` |
-| Exchange: PrivExchange, Exchange Windows Permissions | Yes `dangerous_ace_tier0` (WriteDacl of the Exchange groups on the domain head or on Tier 0 groups, as for any non-Tier 0 principal); CVE-2020-0688 Out |
-| Printer bug, coercion | Live `coercion_unfiltered_dc`; preconditions (`spooler_on_dc`, `smb_signing_*`, `unconstrained_delegation`) |
-| mitm6 | GPO `ipv6_dhcpv6_takeover` (Medium when a relay target is open); Yes `machine_account_quota`, `dns_dangerous_record` (WPAD) |
-| ACL abuse | Yes / Deep `dangerous_ace_tier0`, `dangerous_ace_anywhere`, `nonstandard_owner_tier0` |
-| SID history abuse (child to parent) | Yes `sid_history`, `trust_sid_filtering_disabled` |
-| SharePoint CVEs, Zerologon, PrintNightmare, noPac | GPO `netlogon_vulnerable_channel`, `point_and_print_unsafe`; Live `nopac_unpatched_dc`; Partial `machine_account_quota`; other patch levels Out |
-| AD CS template abuse (ESC1) | Yes `adcs_esc1` and the other `adcs_*` checks |
-| Persistence: Golden / Silver Ticket | Yes `krbtgt_password_old`, `dc_password_old`; the forging itself Out |
-| Persistence: DCSync | Yes `dcsync_rights` |
-| Persistence: Skeleton Key, DSRM, custom SSP | Out (state of a DC's memory or local registry) |
-| Cross forest: trust tickets, breaking trusts | Yes `trust_tgt_delegation`, `trust_sid_filtering_disabled`, `trust_no_selective_auth`, `trust_rc4`; unconstrained delegation on DCs `unconstrained_delegation` |
-| Cross forest: MSSQL links, xp_cmdshell | Out (SQL configuration); accounts with MSSQLSvc SPNs are covered by `kerberoastable_user`, `spn_account_rc4` and the privileged Kerberoasting checks |
-| LAPS (the sheet itself has none) | Yes `laps_not_deployed`, `laps_missing`, `laps_stale`, `laps_readers` |
 
 ## Microsoft Entra ID
 
@@ -402,13 +242,16 @@ Netwrix announced, not rule by rule.
 | Hybrid: sync and federation | Yes `entra_sync_stale`, `entra_password_hash_sync_off`, `entra_federated_domain`, `entra_admin_synced_from_onprem` |
 | Cross-tenant trust | Yes `entra_cross_tenant_mfa_trust`, `entra_b2b_direct_connect_open` |
 | Workload identities | Yes `entra_no_workload_identity_ca` |
+| Intune RBAC: roles that push scripts, apps or configuration to devices, or change Intune roles | Yes `entra_intune_role_weak_group` (given through a group that is not role-assignable or is dynamic). Not yet verified on a real tenant: the action names are matched from documentation |
+| Intune Multi Admin Approval for device wipes and scripts | Yes `entra_intune_no_multi_admin_approval`. Not yet verified on a real tenant: the policy types are matched from documentation |
+| Indirect paths to admin roles: owners, exclusions, scoped admins, look-alikes | Yes `entra_privileged_group_owner`, `entra_privileged_app_sp_owner`, `entra_privileged_app_inactive`, `entra_app_instance_lock_off`, `entra_connect_app_extra_credentials`, `entra_sp_lookalike_name`, `entra_ca_excluded_group_weak`, `entra_scoped_admin_outside_ca`, `entra_app_scoped_admin_privileged`, `entra_pim_role_settings_weak`, `entra_access_package_grants_admin` |
 | Guest access restriction (public rule) | Yes `entra_guest_access_not_restricted` |
 | Entra Connect version (public rule) | Not available through Graph; `entra_sync_stale` covers a stopped sync instead |
 | AI agent identities | Planned (the Graph API for Entra agent identities is still in preview) |
-### Microsoft guidance and adrian207/Entra-Hardening
 
-Sources: Microsoft Learn "Best practices to secure with Microsoft Entra ID" and
-the ten modules of adrian207/Entra-Hardening (which cites no framework itself).
+### Microsoft guidance
+
+Source: Microsoft Learn "Best practices to secure with Microsoft Entra ID".
 
 | Practice | IDWolf |
 |---|---|
@@ -430,33 +273,39 @@ the ten modules of adrian207/Entra-Hardening (which cites no framework itself).
 | Workload identity Conditional Access | Yes `entra_no_workload_identity_ca` (apps registered in this tenant only: Conditional Access can't target others) |
 | Sign-in / audit log retention, SIEM streaming, alerts | Out (operations, and Azure diagnostic settings need Azure RBAC rather than Graph) |
 
-### EntraFalcon (CompassSecurity/EntraFalcon)
+## Recent attacks, 2023-2026
 
-EntraFalcon enumerates a tenant and scores every object (users, groups, apps,
-managed identities, agent identities, access packages, PIM, Conditional Access).
-IDWolf only took the ideas; the scoring model (impact x likelihood per object) is
-not reproduced, since IDWolf reports findings per check.
+The attack vectors behind the most cited incidents and research of the last
+three years, and what IDWolf checks for each. IDWolf audits configuration, so it
+looks for the condition an attack needs, not for the attack itself. Reviewed in
+October 2026.
 
-| EntraFalcon check | IDWolf |
-|---|---|
-| Group: public M365 group, dynamic group with a dangerous rule, used in CAP, owners | Yes `entra_ca_excluded_group_weak` (groups excluded from an enabled policy) |
-| Group: Entra roles (active and eligible), guest / service principal / non-admin owners | Yes `entra_privileged_group_owner` |
-| Group: nested in privileged group, PIM for Groups (eligible members and owners) | Yes `entra_privileged_group_owner` counts PIM for Groups eligible owners; nesting is not needed, since a role-assignable group cannot contain groups |
-| Enterprise app: Entra role, API permission (application / delegated), foreign | Yes `entra_sp_in_admin_role`, `entra_app_high_privilege`, `entra_risky_delegated_grant`, `entra_no_workload_identity_ca` |
-| Enterprise app: credentials on a Microsoft app, owners of a privileged app | Yes `entra_first_party_sp_credentials`, `entra_privileged_app_owner` |
-| Enterprise app: suspicious name (look-alike characters) | Yes `entra_sp_lookalike_name` |
-| Enterprise app: ownership of other apps / service principals, inactive, App instance lock | Yes `entra_privileged_app_sp_owner`, `entra_privileged_app_inactive`, `entra_app_instance_lock_off` |
-| App registration: Entra Connect app with credentials / multiple certificates | Yes `entra_connect_app_extra_credentials` |
-| App registration: credentials, redirect URIs, sign-in audience, scoped app admins | Yes `entra_app_secret_long_lived`, `entra_app_credential_expiring`, `entra_app_insecure_redirect`; scoped app admins `entra_app_scoped_admin_privileged` |
-| Managed identity: Entra role, API permission | Yes `entra_sp_in_admin_role`, `entra_app_high_privilege` (a managed identity is a service principal) |
-| User: roles, synced from on-prem, no MFA factor, inactive | Yes `entra_admin_synced_from_onprem`, `entra_admins_without_mfa`, `entra_admin_inactive`, `entra_admin_no_phishing_resistant_method` |
-| Access package: broad self-request without approval, no expiry | Yes `entra_access_package_external_no_approval`, `entra_access_package_no_expiry`, `entra_access_package_grants_admin` |
-| Conditional Access: legacy auth, device code, security info registration, risk, MFA, authentication strength | Yes `entra_legacy_auth_allowed`, `entra_device_code_flow_allowed`, `entra_security_info_registration`, `entra_risk_policies_missing`, `entra_no_ca_mfa_admins`, `entra_no_phishing_resistant_admins` |
-| Conditional Access: roles with scoped (administrative unit) assignments | Yes `entra_scoped_admin_outside_ca` |
-| PIM settings: approval | Yes `entra_pim_activation_no_approval` |
-| PIM settings: activation MFA / authentication context, duration, assignment expiration, notifications | Yes `entra_pim_role_settings_weak` (notifications are not checked) |
-| Azure roles, Intune RBAC, catalog RBAC | Not planned (Azure Resource Manager and Intune, outside the Graph directory snapshot) |
-| Agent identities and blueprints | Planned when the Graph API is generally available (see `ROADMAP.md`) |
+| Attack | When | IDWolf |
+|---|---|---|
+| **BadSuccessor**: a delegated managed service account (dMSA) made the successor of any account, Windows Server 2025 (Akamai; CVE-2025-53779) | 2025 | Yes `badsuccessor_dmsa_create` (who can create dMSAs in an OU or container), with Live build and update revision of the 2025 DCs setting the severity |
+| **Golden dMSA / Golden gMSA**: every managed service account password computed from the KDS root key (Semperis) | 2025 | Deep `kds_root_key_readable` |
+| Coercion + NTLM relay to LDAP or AD CS, still the most common path to domain admin (CVE-2025-24054 exploited days after the patch) | 2025-26 | Live `coercion_unfiltered_dc`, `webclient_on_dc`; Yes `adcs_esc8`, `adcs_esc11`, `ldap_signing_not_required`, `ldap_channel_binding_off`; GPO `ntlm_weak_lmcompat`, `webclient_not_disabled` |
+| NTLM reflection over SMB (CVE-2025-33073) | 2025 | Partial GPO `smb_signing_not_required`, `smb_client_signing_not_required` (SMB signing is the mitigation); patch level Out |
+| AD CS ESC15 (EKUwu, CVE-2024-49019) and ESC16 | 2024-25 | Yes `adcs_esc15`; Live `adcs_esc16` |
+| Kerberoasting in ransomware intrusions (Interlock, 2026) | 2026 | Yes `kerberoastable_user`, `privileged_kerberoastable`, `spn_account_rc4` |
+| Shadow Credentials | ongoing | Yes `shadow_credentials_present`; Deep `dangerous_ace_anywhere` (write access to `msDS-KeyCredentialLink`) |
+| Entra Connect server and sync account as a way into the cloud (Mollema, Black Hat 2025) | 2025 | Partial `entra_connect_app_extra_credentials`, `dcsync_rights` (the sync account is flagged as a Tier 0 credential), `entra_admin_synced_from_onprem` |
+| SyncJacking: hard match takes over a synced cloud account (Semperis) | 2025-26 | Partial `entra_admin_synced_from_onprem` (synced admins are what makes it worth doing); Microsoft blocks the re-match in the service since mid-2026 |
+| Password spraying, over 99% of observed cloud initial access (Microsoft Digital Defense Report 2026) | 2025-26 | Yes `entra_smart_lockout_weak`, `entra_banned_passwords_off`, `entra_legacy_auth_allowed`, `entra_admins_without_mfa`, `entra_users_not_mfa_capable`; on premises `password_policy_no_lockout`, PQ `pwq_*` |
+| Device code phishing (Storm-2372 and later kits) | 2025-26 | Yes `entra_device_code_flow_allowed` |
+| Adversary-in-the-middle phishing and token theft | ongoing | Yes `entra_no_phishing_resistant_admins`, `entra_admin_no_phishing_resistant_method`, `entra_token_protection_off`, `entra_admin_sign_in_frequency` |
+| OAuth consent phishing and over-privileged apps (Midnight Blizzard, 2024) | 2024-26 | Yes `entra_users_can_consent`, `entra_user_consent_allowed`, `entra_risky_delegated_grant`, `entra_app_high_privilege`, `entra_first_party_sp_credentials` |
+| Escalation through service principal ownership (Entra Agent ID flaw, Silverfort) | 2026 | Yes `entra_privileged_app_sp_owner`, `entra_privileged_app_owner`, `entra_sp_in_admin_role` |
+| Mass device wipe from a compromised Intune admin (Stryker, reported) | 2026 | Yes `entra_intune_no_multi_admin_approval`, `entra_intune_role_weak_group`. Neither has been verified on a real tenant yet |
+
+Not covered yet:
+
+| Attack | When | Why |
+|---|---|---|
+| SCCM / MECM misconfigurations (network access account, PXE, site takeover by relay) | 2023-26 | Planned for what AD shows (the System Management container and who can write to it); the rest needs the site server |
+| AD CS ESC17: WSUS over HTTPS with a certificate from a weak template (TROOPERS26) | 2026 | Partial `wsus_http` covers WSUS over plain HTTP only |
+| Apps still on Azure AD Graph (behind the Actor token flaw, CVE-2025-55241) | 2025 | Planned; the flaw itself was fixed by Microsoft |
+| Storm-0558 key theft, CVE-2026-69836, OAuth client ID spoofing, help desk social engineering | 2023-26 | Out: flaws on Microsoft's side, detection rather than configuration, or a process problem |
 
 ## Regulations
 

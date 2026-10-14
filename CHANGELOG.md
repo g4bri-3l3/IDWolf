@@ -1,8 +1,66 @@
 # Changelog
 
-## 1.0 - Initial release
+## 1.2 - 2026-10-14
 
-## Unreleased
+Checks: 167 AD (from 166) and 88 Entra (from 86). The Entra snapshot schema goes from 7 to 9;
+snapshots from 1.1 still load, and the new checks are listed as "not evaluated" until you
+re-collect.
+
+- New AD check `badsuccessor_dmsa_create` (High, T1098): a non-Tier 0 principal can create
+  delegated managed service accounts in an OU or container (CreateChild for all classes or for
+  dMSAs, GenericAll, WriteDacl, WriteOwner, or ownership), the BadSuccessor technique. It is
+  reported only when the domain has a Windows Server 2025 DC: High while one of them is older than
+  build 26100.4946 (the August 2025 update, CVE-2025-53779) or its build could not be read,
+  Critical for Authenticated Users / Everyone / Domain Users / Domain Computers, Medium once
+  every 2025 DC is patched.
+- AD collector: new `ouAcls` section, the security descriptors of every OU and of the
+  containers just below the domain head, read without `-Deep` by a standard user. Only explicit
+  Allow ACEs that grant create or control rights are kept, to keep the snapshot small.
+- New Entra check `entra_intune_role_weak_group` (High, T1072): an Intune role that can push
+  scripts, apps or configuration to devices, or change Intune roles, is given through a group
+  that is not role-assignable or has a dynamic membership. **Not yet verified on a real tenant**:
+  the powerful roles are matched by built-in name (Intune Role Administrator, Policy and Profile
+  Manager, Application Manager, School Administrator) and, for custom roles, by action names
+  taken from the documentation (`Microsoft.Intune_<DeviceConfigurations|MobileApps|
+  DeviceManagementScripts|Remediations|Roles>_<Create|Update|Assign>`). Please report a false
+  positive or a role it misses.
+- New Entra check `entra_intune_no_multi_admin_approval` (High, T1485): no Intune Multi Admin
+  Approval policy covers device wipes or scripts, so one compromised Intune admin can wipe or
+  run code on every managed device (the attack reported at Stryker in March 2026). **Not yet
+  verified on a real tenant**: the policy types are matched from the documentation.
+- Entra collector: new `intuneRoles` section (`deviceManagement/roleDefinitions` and their
+  assignments, GET only) and the `DeviceManagementRBAC.Read.All` read scope (schema 8), and new
+  `intuneApprovalPolicies` section (`deviceManagement/operationApprovalPolicies`, beta, GET only,
+  same scope; schema 9). Of the approval policies only the type, platform and number of approver
+  groups are kept, not the name. A tenant without an Intune licence records a collection error
+  and both checks show as "not evaluated". The groups the Intune roles are given to are read like
+  the other gating groups (visibility, dynamic rule, role-assignable flag, owners).
+- Default outputs go to an `output` folder under the current directory: snapshots, reports,
+  password-quality reports, BloodHound zips and packages, when you don't give a path. The menu
+  and the analyzer wizard also offer the snapshots they find in `output`. Explicit paths work as
+  before.
+- `examples\`: synthetic snapshots and deterministic reports rebuilt (the demo with `-Deep` and
+  password quality: 206 findings, since the demo has no Windows Server 2025 DC and the regression
+  adds one for BadSuccessor; the Entra tenant: 89). The AI files and the lab report still come
+  from 1.0: refreshing them needs the Gemini key and the lab domain.
+- README: the report GIF moved to the top, the comparison table has an ADScan column and a
+  "Report" row, and a new "Recent attacks" table lists the vectors behind the main incidents and
+  research of 2023-2026 with the checks for each.
+- README: "Limitations" renamed "Known Limitations". The AD CS item now says ESC6/7/8/11/16
+  are read on the CA host when the collector has admin rights there (manual check only for a
+  CA that could not be read), and the CIS item explains why Manual and Out items aren't covered.
+- COVERAGE: tool-by-tool comparisons with other repositories removed. Their useful rows moved
+  into the attack-technique table, a generic DC health table and the Entra "Beyond CIS" table.
+  New "Recent attacks, 2023-2026" section, with what isn't covered yet (SCCM, ESC17, apps on
+  Azure AD Graph).
+- Tests: 528 assertions. Reference results: demo 193, partial 183, `-Deep` 198, the Entra tenant 89.
+
+## 1.1 - 2026-10-12
+
+Checks: 166 AD (from 136) and 86 Entra (from 75). Snapshots from 1.0 still load: the checks that need
+the new collector fields are listed as "not evaluated" until you re-collect. The Entra snapshot
+schema goes from 5 to 7.
+
 - New check `trust_inactive` (PingCastle `T-Inactive`): an external or forest trust whose
   object has not changed for 180 days (a live trust rotates its password every 30). The
   collector now records `whenChanged` on each trust; older snapshots list the check as
@@ -135,7 +193,8 @@
   `spSignIns`), the sign-in audience and instance lock of each app, the resources each access
   package grants (`accessPackageGrants`) and PIM for Groups eligibility of role-holding groups.
   New read-only scope: PrivilegedEligibilitySchedule.Read.AzureADGroup (needs consent once;
-  without it the group owner check is listed as partly evaluated). The Entra tenant gives 85.- The default Gemini model is now `gemini-3.8-flash` (generally available; still overridable
+  without it the group owner check is listed as partly evaluated). The Entra tenant gives 85.
+- The default Gemini model is now `gemini-3.8-flash` (generally available; still overridable
   with `-Model` and in the launcher).
 - Encrypted packages: the launcher asks for a password when it packages a collection (12
   characters or more, typed twice; Enter keeps a plain zip) and writes an `.idwolf` file: the
@@ -152,3 +211,11 @@
 - New Entra check `entra_app_scoped_admin_privileged`: Application or Cloud Application
   Administrator scoped to a single app that holds an admin role or a tenant-takeover
   permission. Demo gives 193 findings, partial 183, `-Deep` 198; the Entra tenant gives 86.
+- New report look ("keycap" theme), the default for the AD and the Entra report: paper
+  background, ink borders and hard shadows, severity counters and pills as coloured keys
+  (red, coral, amber, beige), monospace labels, warm palette in the charts and the
+  attack-path map. Both reports now share one stylesheet (`Get-IDWolfThemeCss` in
+  `Reporting.ps1`). Still self-contained: system font stacks, no web fonts or CDN. Long
+  chart legends wrap instead of running under the next chart.
+
+## 1.0 - Initial release

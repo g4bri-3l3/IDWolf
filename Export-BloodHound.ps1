@@ -15,7 +15,7 @@
 .PARAMETER Snapshot
     Path to an IDWolf snapshot JSON (from Collect-ADSnapshot.ps1).
 .PARAMETER OutZip
-    Output .zip path. Default: bloodhound_<domain>_<ts>.zip
+    Output .zip path. Default: output\bloodhound_<domain>_<ts>.zip
 #>
 [CmdletBinding()]
 Param(
@@ -217,7 +217,11 @@ foreach ($fn in $files.Keys) {
     $p = Join-Path $work $fn
     [System.IO.File]::WriteAllText($p, ($files[$fn] | ConvertTo-Json -Depth 12), (New-Object System.Text.UTF8Encoding($false)))
 }
-if (-not $OutZip) { $OutZip = "bloodhound_{0}_{1}.zip" -f $domainDns, (Get-Date -Format 'yyyyMMdd_HHmmss') }
+if (-not $OutZip) {
+    # Unnamed outputs go to .\output, not next to everything else.
+    $od = Join-Path (Get-Location).Path 'output'; if (-not (Test-Path -LiteralPath $od)) { New-Item -ItemType Directory -Path $od | Out-Null }
+    $OutZip = Join-Path $od ("bloodhound_{0}_{1}.zip" -f $domainDns, (Get-Date -Format 'yyyyMMdd_HHmmss'))
+}
 $fullZip = if ([System.IO.Path]::IsPathRooted($OutZip)) { $OutZip } else { [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $OutZip)) }
 if (Test-Path -LiteralPath $fullZip) { Remove-Item -LiteralPath $fullZip -Force }
 Add-Type -AssemblyName System.IO.Compression.FileSystem

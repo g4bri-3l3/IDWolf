@@ -39,7 +39,7 @@ function Next-Sid { $script:nextRid++; return "$dom-$($script:nextRid)" }
 function New-U {
     param([string]$Sam, [string]$Ou = $usersOu, [string]$Sid = '', [int64]$Uac = 0x200, $PwdAge = 60, $Logon = 2, $Created = 700,
         [string[]]$Spn = @(), $AdminCount = $null, [int]$Pg = 513, [string]$Desc = '', [bool]$DescSusp = $false,
-        [string[]]$SidHistory = @(), $Enc = $null, [string[]]$Deleg = @(), [string[]]$Rbcd = @(), [string]$Kind = 'user', [int]$KeyCred = 0, [bool]$UnixPwd = $false)
+        [string[]]$SidHistory = @(), $Enc = $null, [string[]]$Deleg = @(), [string[]]$Rbcd = @(), [string]$Kind = 'user', [int]$KeyCred = 0, [bool]$UnixPwd = $false, [string[]]$AltSec = @())
     if (-not $Sid) { $Sid = Next-Sid }
     [ordered]@{
         kind = $Kind; samAccountName = $Sam; distinguishedName = "CN=$Sam,$Ou"; sid = $Sid
@@ -48,7 +48,7 @@ function New-U {
         servicePrincipalNames = @($Spn); adminCount = $AdminCount; primaryGroupId = $Pg
         description = $Desc; descriptionSuspicious = $DescSusp; sidHistory = @($SidHistory)
         supportedEncryptionTypes = $Enc; allowedToDelegateTo = @($Deleg); rbcdPrincipals = @($Rbcd)
-        keyCredentialCount = $KeyCred; hasUnixPassword = $UnixPwd
+        keyCredentialCount = $KeyCred; hasUnixPassword = $UnixPwd; altSecIdTypes = @($AltSec)
     }
 }
 
@@ -129,6 +129,9 @@ $u.gmsa['gmsaReadPrincipals'] = @("CN=Helpdesk,CN=Users,$dn")
 foreach ($i in 1..30) { $u["std$i"] = New-U ("user{0:D3}" -f $i) -PwdAge (($i * 7) % 90 + 5) -Logon (($i * 3) % 20 + 1) }
 $u.hd1 = New-U 'hd.operator1' -PwdAge 30 -Logon 1
 $u.hd2 = New-U 'hd.operator2' -PwdAge 30 -Logon 1
+# Smart card required (0x40000), hash never rolled: smartcard_password_not_rotated.
+# Also a subject-only certificate mapping next to a strong one: altsecid_weak_mapping.
+$u.scard = New-U 'sc.bianchi' -Uac (0x200 -bor 0x40000) -PwdAge 900 -Logon 1 -AltSec @('IssuerSerial', 'SubjectOnly')
 
 # -------------------------------------------------------------- computers
 $c = [ordered]@{}
@@ -280,7 +283,15 @@ $pkiAcls = @(
 $adcs = [ordered]@{
     collected = $true
     enrollmentServices = @(
-        [ordered]@{ name = 'MOOSEBANK-CA'; distinguishedName = "CN=MOOSEBANK-CA,CN=Enrollment Services,$pkiBase"; dnsHostName = 'ca01.moosebank.local'; flags = 0; publishedTemplates = @('MooseUser', 'MooseESC1', 'MooseESC2', 'MooseESC3', 'MooseWeb', 'MooseESC4', 'MooseESC9', 'MooseESC15', 'MooseESC13'); caCertExpiry = $ref.AddDays(120).ToString('o'); caKeySize = 1024; caSigAlg = 'sha256RSA' }
+        [ordered]@{ name = 'MOOSEBANK-CA'; distinguishedName = "CN=MOOSEBANK-CA,CN=Enrollment Services,$pkiBase"; dnsHostName = 'ca01.moosebank.local'; flags = 0; publishedTemplates = @('MooseUser', 'MooseESC1', 'MooseESC2', 'MooseESC3', 'MooseWeb', 'MooseESC4', 'MooseESC9', 'MooseESC15', 'MooseESC13'); caCertExpiry = $ref.AddDays(120).ToString('o'); caKeySize = 1024; caSigAlg = 'sha256RSA'
+            # Read on the CA host: EDITF_ATTRIBUTESUBJECTALTNAME2 (ESC6), Helpdesk is a CA officer (ESC7),
+            # web enrollment installed (ESC8), InterfaceFlags without 0x200 (ESC11). SID extension kept (no ESC16).
+            caRegistry = [ordered]@{ editFlags = 0x15014E; interfaceFlags = 0x41; disableExtensionList = @(); webEnrollment = $true; enrollmentWebService = $false; error = ''
+                securityAces = @(
+                    [ordered]@{ sid = "$dom-512"; name = 'MOOSEBANK\Domain Admins'; mask = 3 }
+                    [ordered]@{ sid = 'S-1-5-32-544'; name = 'BUILTIN\Administrators'; mask = 3 }
+                    [ordered]@{ sid = 'S-1-5-11'; name = 'NT AUTHORITY\Authenticated Users'; mask = 0x200 }
+                    [ordered]@{ sid = "$dom-1103"; name = 'MOOSEBANK\Helpdesk'; mask = 2 }) } }
     )
     templates = @(
         # ESC1: enrollee supplies subject + client auth + no approval + no RA sig, Domain Users can enroll
@@ -317,7 +328,14 @@ $preWin2000 = [ordered]@{ name = 'Pre-Windows 2000 Compatible Access'; distingui
 $lapsGuid = 'ea2b1b3a-0000-4b1a-9c0d-000000000001'
 # ------------------------------------------------------- deep ACL sweep (-Deep)
 $deepAcls = @()
+$kdsRootKeyAcls = @()
 if ($Deep) {
+    # Helpdesk can read the forest KDS root key: Golden gMSA. Domain Admins on it is the default.
+    $kdsRootKeyAcls = @(
+        [ordered]@{ target = 'kds:3f1c8e2a-5d4b-4c1e-9a7f-2b6d0e8c4a11'; distinguishedName = "CN=3f1c8e2a-5d4b-4c1e-9a7f-2b6d0e8c4a11,CN=Master Root Keys,CN=Group Key Distribution Service,CN=Services,CN=Configuration,$dn"
+            objectClass = 'msKds-ProvRootKey'; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'
+            aces = @((Ace "$dom-512" 'MOOSEBANK\Domain Admins' 'GenericAll' -Inh 'None'), (Ace "$dom-1103" 'MOOSEBANK\Helpdesk' 'GenericRead' -Inh 'None')) }
+    )
     $deepAcls = @(
         # Helpdesk (non-privileged) has GenericAll over a Domain Admin: a real escalation path a deep sweep finds.
         [ordered]@{ target = "obj:$($u.bianchi.distinguishedName)"; distinguishedName = $u.bianchi.distinguishedName; objectClass = 'user'; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'
@@ -338,6 +356,25 @@ if ($Deep) {
             aces = @(Default-Aces) + @((Ace "$dom-1106" 'MOOSEBANK\IT-Ops' 'WriteProperty' -ObjectType '4c164200-20c0-11d0-a768-00aa003049e2' -Inh 'None')) }
     )
 }
+
+# ------------------------------------------------ OU and container ACLs (BadSuccessor)
+# As the collector keeps them: explicit Allow ACEs with create or control rights only.
+# No Windows Server 2025 DC in the demo, so none of this is reported; the regression adds one.
+$dmsaGuid = '0feb936f-47b3-49f2-9386-1dedc2c23765'
+$ouAcls = @(
+    # Helpdesk may create dMSAs in the workstations OU: the BadSuccessor delegation.
+    # Account Operators (Tier 0) and a user-only CreateChild for IT-Ops are fine.
+    [ordered]@{ target = "ou:$wksOu"; distinguishedName = $wksOu; objectClass = 'organizationalUnit'; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'
+        aces = @((Ace "$dom-1103" 'MOOSEBANK\Helpdesk' 'CreateChild' -ObjectType $dmsaGuid -Inh 'None'),
+            (Ace 'S-1-5-32-548' 'BUILTIN\Account Operators' 'CreateChild, DeleteChild' -ObjectType 'bf967aba-0de6-11d0-a285-00aa003049e2' -Inh 'None'),
+            (Ace "$dom-1106" 'MOOSEBANK\IT-Ops' 'CreateChild, DeleteChild' -ObjectType 'bf967aba-0de6-11d0-a285-00aa003049e2' -Inh 'None')) }
+    # GenericAll that only reaches user objects below the OU: not a container right.
+    [ordered]@{ target = "ou:$srvOu"; distinguishedName = $srvOu; objectClass = 'organizationalUnit'; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'
+        aces = @((Ace "$dom-1106" 'MOOSEBANK\IT-Ops' 'GenericAll' -InhObj 'bf967aba-0de6-11d0-a285-00aa003049e2' -Inh 'Descendents')) }
+    # IT-Ops owns the service accounts OU: as owner it can grant itself CreateChild.
+    [ordered]@{ target = "ou:$svcOu"; distinguishedName = $svcOu; objectClass = 'organizationalUnit'; ownerSid = "$dom-1106"; ownerName = 'MOOSEBANK\IT-Ops'; aces = @() }
+    [ordered]@{ target = "ou:CN=Users,$dn"; distinguishedName = "CN=Users,$dn"; objectClass = 'container'; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; aces = @() }
+)
 
 # ------------------------------------------------------------------- GPO
 # DC policy at Microsoft defaults (SMB signing on, LDAP signing and channel
@@ -361,9 +398,13 @@ $gpo = [ordered]@{
                 'MACHINE\System\CurrentControlSet\Services\Kdc\StrongCertificateBindingEnforcement' = '4,1'
                 'MACHINE\System\CurrentControlSet\Services\LanmanServer\Parameters\SMB1' = '4,1'
                 'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\RequireStrongKey' = '4,0'
+                # Null sessions opened: anonymous_sam_enum lists them (the default pipes are not reported).
+                'MACHINE\System\CurrentControlSet\Control\Lsa\EveryoneIncludesAnonymous' = '4,1'
+                'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\NullSessionShares' = '7,COMCFG,DFS$'
+                'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\NullSessionPipes' = '7,netlogon,samr,lsarpc,BROWSER'
             }
             privilegeRights = [ordered]@{ 'SeBackupPrivilege' = @('S-1-5-32-544', 'S-1-5-32-551') }
-            systemAccess = [ordered]@{}
+            systemAccess = [ordered]@{}; serviceStart = [ordered]@{}; userPolicyRead = $true
             # Partial audit policy: audit_policy_insufficient, not audit_advanced_policy_missing.
             auditPolicy = [ordered]@{
                 '0cce923f-69ae-11d9-bed3-505054503030' = 3   # Credential Validation OK
@@ -371,9 +412,11 @@ $gpo = [ordered]@{
                 '0cce9235-69ae-11d9-bed3-505054503030' = 1   # User Account Mgmt: only Success (need both -> gap)
             } }
         [ordered]@{ guid = $gpoBad; displayName = 'MooseBank DC Extra'
-            registryValues = [ordered]@{}
+            # RDP without NLA and with Restricted Admin: rdp_nla_disabled, rdp_restricted_admin.
+            registryValues = [ordered]@{ 'MACHINE\Software\Policies\Microsoft\Windows NT\Terminal Services\UserAuthentication' = '4,0'
+                'MACHINE\System\CurrentControlSet\Control\Lsa\DisableRestrictedAdmin' = '4,0' }
             privilegeRights = [ordered]@{ 'SeDebugPrivilege' = @("$dom-1103") }  # Helpdesk (non Tier 0) can debug on DCs
-            systemAccess = [ordered]@{}
+            systemAccess = [ordered]@{}; serviceStart = [ordered]@{}; userPolicyRead = $true
             # Non-Tier 0 principal (Helpdesk) can edit this DC-OU-linked GPO.
             ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'
             aces = @((Ace "$dom-1103" 'MOOSEBANK\Helpdesk' 'GenericWrite' -Inh 'None')) }
@@ -381,8 +424,16 @@ $gpo = [ordered]@{
             # Point and Print opened to non-admins, silently (point_and_print_unsafe, Critical).
             registryValues = [ordered]@{ 'MACHINE\System\CurrentControlSet\Control\Lsa\NoLMHash' = '4,1'
                 'MACHINE\Software\Policies\Microsoft\Windows NT\Printers\PointAndPrint\RestrictDriverInstallationToAdministrators' = '4,0'
-                'MACHINE\Software\Policies\Microsoft\Windows NT\Printers\PointAndPrint\NoWarningNoElevationOnInstall' = '4,1' }
-            privilegeRights = [ordered]@{}; systemAccess = [ordered]@{} }
+                'MACHINE\Software\Policies\Microsoft\Windows NT\Printers\PointAndPrint\NoWarningNoElevationOnInstall' = '4,1'
+                # Both sides of AlwaysInstallElevated (Critical), WSUS over HTTP, an autologon password (masked by the collector).
+                'MACHINE\Software\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated' = '4,1'
+                'USER\Software\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated' = '4,1'
+                'MACHINE\Software\Policies\Microsoft\Windows\WindowsUpdate\WUServer' = '1,http://wsus01.moosebank.local:8530'
+                'MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\AutoAdminLogon' = '1,1'
+                'MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\DefaultPassword' = '1,<masked>' }
+            privilegeRights = [ordered]@{}; systemAccess = [ordered]@{}; userPolicyRead = $true
+            # WebClient left on Manual: webclient_not_disabled.
+            serviceStart = [ordered]@{ 'webclient' = 3 } }
     )
     # What the GPOs run and which local groups they fill.
     execution = @(
@@ -425,7 +476,7 @@ $snapshot = [ordered]@{
     domain = [ordered]@{
         dnsRoot = 'moosebank.local'; netbios = 'MOOSEBANK'; distinguishedName = $dn; sid = $dom
         domainMode = 'Windows2012R2Domain'; forestName = 'moosebank.local'; forestRootDomain = 'moosebank.local'; forestRootSid = $dom; forestMode = 'Windows2012R2Forest'
-        machineAccountQuota = 10; dsHeuristics = '0000002'; recycleBinEnabled = $false; lapsLegacySchema = $false; lapsV2Schema = $true; lapsAttrGuids = @($lapsGuid); authPolicySiloCount = 0; subnetCount = 0; sysvolReplication = 'FRS'
+        machineAccountQuota = 10; dsHeuristics = '0000002'; smartcardPwdRotation = $false; recycleBinEnabled = $false; lapsLegacySchema = $false; lapsV2Schema = $true; javaSchemaClasses = @('javaSerializedObject', 'javaContainer'); possSuperiorClasses = @([ordered]@{ name = 'msExchStorageGroup'; possSuperiors = @('computer'); subClassChain = @('container'); inheritsContainer = $true }, [ordered]@{ name = 'mooseDevice'; possSuperiors = @('user'); subClassChain = @('device'); inheritsContainer = $false }); lapsAttrGuids = @($lapsGuid); authPolicySiloCount = 0; subnetCount = 0; sysvolReplication = 'FRS'
         passwordPolicy = [ordered]@{ minPasswordLength = 8; complexityEnabled = $true; reversibleEncryptionEnabled = $false; lockoutThreshold = 0
             lockoutDurationMinutes = 30; maxPasswordAgeDays = 90; minPasswordAgeDays = 1; passwordHistoryCount = 24 }
         fineGrainedPolicies = if ($Scenario -eq 'partial') { $null } else { @(
@@ -446,11 +497,11 @@ $snapshot = [ordered]@{
     )
     trusts = @(
         [ordered]@{ name = 'partner.example'; target = 'partner.example'; direction = 'Inbound'; trustType = 'Uplevel'; trustAttributes = 0x80; forestTransitive = $false; intraForest = $false
-            sidFilteringQuarantined = $false; sidFilteringForestAware = $false; selectiveAuthentication = $false; tgtDelegation = $false; usesRC4Encryption = $true; usesAESKeys = $false }
+            sidFilteringQuarantined = $false; sidFilteringForestAware = $false; selectiveAuthentication = $false; tgtDelegation = $false; usesRC4Encryption = $true; usesAESKeys = $false; whenChanged = (Iso 400) }
         [ordered]@{ name = 'legacy-forest.local'; target = 'legacy-forest.local'; direction = 'BiDirectional'; trustType = 'Uplevel'; trustAttributes = (0x8 -bor 0x40 -bor 0x800); forestTransitive = $true; intraForest = $false
-            sidFilteringQuarantined = $false; sidFilteringForestAware = $false; selectiveAuthentication = $false; tgtDelegation = $true; usesRC4Encryption = $false; usesAESKeys = $true }
+            sidFilteringQuarantined = $false; sidFilteringForestAware = $false; selectiveAuthentication = $false; tgtDelegation = $true; usesRC4Encryption = $false; usesAESKeys = $true; whenChanged = (Iso 12) }
         [ordered]@{ name = 'child.moosebank.local'; target = 'child.moosebank.local'; direction = 'BiDirectional'; trustType = 'Uplevel'; trustAttributes = 0x20; forestTransitive = $false; intraForest = $true
-            sidFilteringQuarantined = $false; sidFilteringForestAware = $false; selectiveAuthentication = $false; tgtDelegation = $false; usesRC4Encryption = $false; usesAESKeys = $true }
+            sidFilteringQuarantined = $false; sidFilteringForestAware = $false; selectiveAuthentication = $false; tgtDelegation = $false; usesRC4Encryption = $false; usesAESKeys = $true; whenChanged = (Iso 12) }
     )
     users = $users
     serviceAccounts = $msas
@@ -458,16 +509,33 @@ $snapshot = [ordered]@{
     groups = @($g.Values)
     foreignPrincipals = @([ordered]@{ distinguishedName = $fspDn; sid = 'S-1-5-21-999999999-999999999-999999999-1105'; name = 'PARTNER\ext.admin' })
     acls = $acls
+    ouAcls = $ouAcls
     deepAcls = $deepAcls
+    kdsRootKeyAcls = $kdsRootKeyAcls
     preWin2000 = $preWin2000
     adcs = $adcs
     gpo = $gpo
-    sysvol = if ($Scenario -eq 'partial') { [ordered]@{ scanned = $false; cpasswordFiles = @(); scriptSecretFiles = @() } } else {
+    sysvol = if ($Scenario -eq 'partial') { [ordered]@{ scanned = $false; cpasswordFiles = @(); scriptSecretFiles = @(); autologonFiles = @(); folderAcls = @() } } else {
         [ordered]@{ scanned = $true; cpasswordFiles = @('\\moosebank.local\SYSVOL\moosebank.local\Policies\{31B2F340-016D-11D2-945F-00C04FB984F9}\Machine\Preferences\Groups\Groups.xml')
-            scriptSecretFiles = @('\\moosebank.local\SYSVOL\moosebank.local\scripts\mapdrives.bat') } }
+            scriptSecretFiles = @('\\moosebank.local\SYSVOL\moosebank.local\scripts\mapdrives.bat')
+            # GPP registry item with the kiosk autologon password: gpo_autologon_password.
+            # NETLOGON modifiable by Domain Users (sysvol_writable); Policies at the defaults.
+            folderAcls = @(
+                [ordered]@{ folder = 'NETLOGON (scripts)'; path = '\\moosebank.local\SYSVOL\moosebank.local\scripts'; aces = @(
+                        [ordered]@{ sid = 'S-1-5-32-544'; name = 'BUILTIN\Administrators'; rights = 'FullControl'; accessType = 'Allow'; isInherited = $true }
+                        [ordered]@{ sid = 'S-1-5-18'; name = 'NT AUTHORITY\SYSTEM'; rights = 'FullControl'; accessType = 'Allow'; isInherited = $true }
+                        [ordered]@{ sid = 'S-1-5-32-549'; name = 'BUILTIN\Server Operators'; rights = 'Modify, Synchronize'; accessType = 'Allow'; isInherited = $true }
+                        [ordered]@{ sid = 'S-1-5-11'; name = 'NT AUTHORITY\Authenticated Users'; rights = 'ReadAndExecute, Synchronize'; accessType = 'Allow'; isInherited = $true }
+                        [ordered]@{ sid = "$dom-513"; name = 'MOOSEBANK\Domain Users'; rights = 'Modify, Synchronize'; accessType = 'Allow'; isInherited = $false }) }
+                [ordered]@{ folder = 'Policies'; path = '\\moosebank.local\SYSVOL\moosebank.local\Policies'; aces = @(
+                        [ordered]@{ sid = 'S-1-5-32-544'; name = 'BUILTIN\Administrators'; rights = 'FullControl'; accessType = 'Allow'; isInherited = $true }
+                        [ordered]@{ sid = 'S-1-3-0'; name = 'CREATOR OWNER'; rights = 'FullControl'; accessType = 'Allow'; isInherited = $true }
+                        [ordered]@{ sid = "$dom-520"; name = 'MOOSEBANK\Group Policy Creator Owners'; rights = 'Modify, Synchronize'; accessType = 'Allow'; isInherited = $false }
+                        [ordered]@{ sid = 'S-1-5-11'; name = 'NT AUTHORITY\Authenticated Users'; rights = 'ReadAndExecute, Synchronize'; accessType = 'Allow'; isInherited = $true }) })
+            autologonFiles = @('\\moosebank.local\SYSVOL\moosebank.local\Policies\{22222222-2222-2222-2222-222222222222}\Machine\Preferences\Registry\Registry.xml') } }
     dns = [ordered]@{
         collected = $true
-        zones = @([ordered]@{ name = 'moosebank.local'; dynamicUpdate = 'NonsecureAndSecure'; secureSecondaries = 'TransferToAnyServer'; isAdIntegrated = $true; agingEnabled = $false })
+        zones = @([ordered]@{ name = 'moosebank.local'; dynamicUpdate = 'NonsecureAndSecure'; secureSecondaries = 'TransferToAnyServer'; isAdIntegrated = $true; agingEnabled = $false; createChildSids = @('S-1-5-11', "$dom-512") })
         dangerousRecords = @([ordered]@{ zone = 'moosebank.local'; name = 'wpad'; type = 'A' })
     }
     health = [ordered]@{
@@ -497,8 +565,18 @@ $snapshot = [ordered]@{
         dcTime = @([ordered]@{ dc = 'dc01.moosebank.local'; offsetSeconds = 0.012 }, [ordered]@{ dc = 'dc02.moosebank.local'; offsetSeconds = 95.4 }, [ordered]@{ dc = 'rodc01.moosebank.local'; offsetSeconds = $null })
         # DC02: 3.5 GB free and DFSR stopped -> dc_low_disk, dc_service_stopped. DC01 healthy.
         dcState = @(
-            [ordered]@{ dc = 'dc01.moosebank.local'; systemDrive = 'C:'; freeGB = 41.2; sizeGB = 99.4; stoppedServices = @(); error = '' }
-            [ordered]@{ dc = 'dc02.moosebank.local'; systemDrive = 'C:'; freeGB = 3.5; sizeGB = 59.4; stoppedServices = @('DFSR'); error = '' }
+            [ordered]@{ dc = 'dc01.moosebank.local'; systemDrive = 'C:'; freeGB = 41.2; sizeGB = 99.4; stoppedServices = @(); webClientStartMode = 'absent'; webClientState = 'absent'
+                netbiosAdapters = @([ordered]@{ adapter = 'vmxnet3 Ethernet Adapter'; netbiosOption = 2 }); osBuild = '20348'; osUbr = 2849
+                # RPC filters deployed for every coercion interface: no coercion finding on DC01.
+                coercionServices = [ordered]@{ EFS = 'Manual/Stopped'; Dfs = 'Auto/Running'; EventLog = 'Auto/Running' }; rpcFilterInterfaces = @('MS-DFSNM', 'MS-EFSR', 'MS-EVEN'); error = '' }
+            # DC02 also runs WebClient (Desktop Experience installed) -> webclient_on_dc.
+            [ordered]@{ dc = 'dc02.moosebank.local'; systemDrive = 'C:'; freeGB = 3.5; sizeGB = 59.4; stoppedServices = @('DFSR'); webClientStartMode = 'Manual'; webClientState = 'Running'
+                # NetBIOS left at the default on a static address -> nbtns_enabled_dc.
+                netbiosAdapters = @([ordered]@{ adapter = 'vmxnet3 Ethernet Adapter'; netbiosOption = 0 }, [ordered]@{ adapter = 'Backup NIC'; netbiosOption = 2 })
+                # Server 2019 still on an October 2021 build -> nopac_unpatched_dc (Critical: MAQ = 10).
+                osBuild = '17763'; osUbr = 2237
+                # No RPC filter: coercion_unfiltered_dc, High (LDAP signing not required, ESC8 on the CA).
+                coercionServices = [ordered]@{ EFS = 'Manual/Stopped'; Dfs = 'Auto/Running'; EventLog = 'Auto/Running' }; rpcFilterInterfaces = @(); error = '' }
             [ordered]@{ dc = 'rodc01.moosebank.local'; systemDrive = $null; freeGB = $null; sizeGB = $null; stoppedServices = @(); error = 'not reachable' })
     }
 }

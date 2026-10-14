@@ -280,6 +280,50 @@ $script:EntraCheckCatalog = [ordered]@{
         Title = 'Third-party app with risky delegated permissions'
         Description = 'An app from another tenant has been granted delegated permissions to read or write mail, files or the directory on behalf of users. That is what an illicit-consent (OAuth) phishing campaign leaves behind, and it survives a password reset.'
         Remediation = 'Check who the app belongs to and why it needs this. If nobody can vouch for it, revoke the grant and disable the service principal, then look at the sign-in and audit logs for the app.' }
+    entra_pim_role_settings_weak = @{ Category = 'Entra Identity'; Severity = 'Medium'; Mitre = 'T1078.004'; Needs = @('pimPolicies', 'schema7')
+        Title = 'Weak PIM settings on privileged roles'
+        Description = 'PIM settings of privileged roles let an admin activate without MFA or an authentication context, keep the role active for more than 8 hours, or receive eligible or active assignments that never expire. Each of these turns just-in-time access back into standing access for whoever holds the account.'
+        Remediation = 'For every privileged role in PIM: require MFA (or an authentication context bound to phishing-resistant MFA) and a justification on activation, keep the activation at 8 hours or less, and require an end date on eligible and active assignments (except the emergency access accounts).' }
+    entra_scoped_admin_outside_ca = @{ Category = 'Entra Access Policy'; Severity = 'Medium'; Mitre = 'T1078.004'; Needs = @('roleAssignments', 'conditionalAccess', 'caDetails', 'schema7')
+        Title = 'Admins with a scoped role are outside the admin Conditional Access policies'
+        Description = 'Some privileged roles are assigned with a scope (an administrative unit or a single object). Conditional Access policies that target directory roles only apply to tenant-wide assignments, and no enabled policy requires MFA from all users, so these admins sign in without the admin protections.'
+        Remediation = 'Target admins with a group (or all users) rather than only roles, or add the scoped admins to the admin policies explicitly.' }
+    entra_privileged_app_sp_owner = @{ Category = 'Entra Applications'; Severity = 'High'; Mitre = 'T1098.001'; Needs = @('servicePrincipals', 'appOwners', 'schema7')
+        Title = 'Service principal owns a privileged application'
+        Description = 'A service principal or managed identity owns an app that holds an admin role or a tenant-takeover permission. Whoever controls the owner (its credentials, the code or the Azure resource behind a managed identity) can add a credential to the privileged app and act as it.'
+        Remediation = 'Remove service principals from the owners of privileged apps; give ownership to a small set of admins of the same tier, or none.' }
+    entra_privileged_app_inactive = @{ Category = 'Entra Applications'; Severity = 'Medium'; Mitre = 'T1078.004'; Needs = @('servicePrincipals', 'spSignIns', 'schema7')
+        Title = 'Privileged application not used for months'
+        Description = 'A service principal with an admin role or a tenant-takeover permission has not signed in for more than 180 days. Its permissions and credentials are attack surface nobody uses or watches.'
+        Remediation = 'Confirm with the owner that the app is still needed; if not, remove its permissions and credentials, then delete it.' }
+    entra_app_instance_lock_off = @{ Category = 'Entra Applications'; Severity = 'Low'; Mitre = 'T1098.001'; Needs = @('applications', 'schema7')
+        Title = 'Multi-tenant app without App instance property lock'
+        Description = 'A multi-tenant app registration with credentials does not lock the sensitive properties of its service principals. In a tenant where the app is installed, someone with rights on the service principal can add a credential to it and use the permissions granted there.'
+        Remediation = 'Enable App instance property lock for all properties (servicePrincipalLockConfiguration) on multi-tenant apps.' }
+    entra_access_package_grants_admin = @{ Category = 'Entra Identity'; Severity = 'High'; Mitre = 'T1098.003'; Needs = @('accessPackages', 'accessPackageGrants', 'groups', 'schema7')
+        Title = 'Access package grants admin access through self-request without approval'
+        Description = 'An access package that a broad population can request for itself, without approval, grants a privileged Entra role or membership of a group that holds one. Any account in that population gets admin rights by asking.'
+        Remediation = 'Require approval (by admins of the same tier) on that policy, restrict who can request it, or remove the privileged resource from the package.' }
+    entra_app_scoped_admin_privileged = @{ Category = 'Entra Applications'; Severity = 'High'; Mitre = 'T1098.001'; Needs = @('roleAssignments', 'servicePrincipals', 'schema7')
+        Title = 'App administrator scoped to a privileged application'
+        Description = 'Application Administrator or Cloud Application Administrator is assigned with the scope of a single app, and that app holds an admin role or a tenant-takeover permission. The scoped admin can add a credential to the app and act with its permissions: a delegated "just this app" role that is in fact tenant takeover.'
+        Remediation = 'Remove the scoped assignment, or move the privileged permission out of that app; treat whoever manages a privileged app as an admin of the same tier.' }
+    entra_ca_excluded_group_weak = @{ Category = 'Entra Access Policy'; Severity = 'High'; Mitre = 'T1556.009'; Needs = @('conditionalAccess', 'groups', 'schema6')
+        Title = 'Conditional Access exclusion group anyone can get into'
+        Description = 'A group excluded from an enabled Conditional Access policy is a public Microsoft 365 group (anyone can join), a dynamic group whose rule uses attributes a user or guest can influence, or a group owned by non-admins (who can add anyone). Getting into that group switches the policy off for that account, MFA included.'
+        Remediation = 'Exclude only dedicated, role-assignable or admin-owned security groups (for example the emergency access accounts), make the group private and assigned, remove non-admin owners, and review the exclusion with an access review.' }
+    entra_privileged_group_owner = @{ Category = 'Entra Identity'; Severity = 'High'; Mitre = 'T1098.003'; Needs = @('directoryRoles', 'groups', 'schema6', 'pimForGroups')
+        Title = 'Group holding an admin role owned by a non-admin'
+        Description = 'A group that holds a privileged Entra role (active or eligible) has an owner who is not an admin, or a guest or service principal as owner. The owner can add any account, including their own, to the group and so take the role.'
+        Remediation = 'Remove those owners: groups that hold roles should be owned by admins of the same tier only (or by nobody, managed through PIM for Groups), and the group must be role-assignable.' }
+    entra_connect_app_extra_credentials = @{ Category = 'Entra Applications'; Severity = 'High'; Mitre = 'T1098.001'; Needs = @('applications')
+        Title = 'Entra Connect application with extra credentials'
+        Description = 'The ConnectSyncProvisioning application that Entra Connect Sync uses to write to the tenant has more than one certificate, or a client secret. Entra Connect manages a single certificate itself; an extra credential lets someone else act as the sync engine (Directory Synchronization Accounts rights), a known persistence path.'
+        Remediation = 'Keep only the certificate Entra Connect rotates itself, remove other certificates and every secret, and find out who added them.' }
+    entra_sp_lookalike_name = @{ Category = 'Entra Applications'; Severity = 'Medium'; Mitre = 'T1036'; Needs = @('servicePrincipals')
+        Title = 'Service principal name with look-alike characters'
+        Description = 'A service principal name mixes Latin letters with look-alike letters from another script (Cyrillic, Greek, full-width) or hides invisible characters. That is how consent-phishing apps pose as Microsoft or a trusted vendor in consent prompts and in the admin portal.'
+        Remediation = 'Check who published the app and what it was granted; if it is not a known app, revoke its grants and delete the service principal.' }
     entra_privileged_app_owner = @{ Category = 'Entra Applications'; Severity = 'High'; Mitre = 'T1098.001'; Needs = @('servicePrincipals', 'appOwners', 'schema4')
         Title = 'Regular user owns an app with tenant-takeover permissions'
         Description = 'A user who is not an admin owns an app (or its service principal) holding permissions such as RoleManagement.ReadWrite.Directory. An owner can add a secret and act as the app, so that user is effectively a Global Admin.'
@@ -333,6 +377,16 @@ $script:EntraCheckCatalog = [ordered]@{
         Title = 'Access package assignments never expire and are never reviewed'
         Description = 'Access granted through this package lasts forever and no access review checks it. People keep it after they change role or the project ends.'
         Remediation = 'Set an expiry on the assignment policy (for example 180 or 365 days) or turn on periodic access reviews for it.' }
+    # ---- Schema 8 ----
+    entra_intune_role_weak_group = @{ Category = 'Entra Identity'; Severity = 'High'; Mitre = 'T1072'; Needs = @('intuneRoles', 'groups', 'schema8')
+        Title = 'Intune role that can run code on devices given through an unprotected group'
+        Description = 'An Intune role that can push scripts, apps or configuration to managed devices, or change Intune roles, is assigned to a group that is not role-assignable or has a dynamic membership. Groups Administrators, User Administrators, Intune Administrators and the group''s owners can add members to such a group, and a member can run code as SYSTEM on every device in scope, admin workstations included.'
+        Remediation = 'Give powerful Intune roles only to role-assignable groups managed by admins of the same tier (or through PIM for Groups), keep their membership assigned rather than dynamic, and narrow the scope tags and scope groups of the assignment.' }
+    # ---- Schema 9 ----
+    entra_intune_no_multi_admin_approval = @{ Category = 'Entra Identity'; Severity = 'High'; Mitre = 'T1485'; Needs = @('intuneRoles', 'intuneApprovalPolicies', 'schema9')
+        Title = 'Intune device wipes or scripts need no second admin (Multi Admin Approval)'
+        Description = 'No Intune Multi Admin Approval policy covers device wipes or scripts. One compromised Intune or Global Administrator can then factory-reset every managed device, or run code as SYSTEM on all of them, in a single action: in March 2026 the attack on Stryker was reported to have wiped tens of thousands of devices this way. The policy types are matched by name from the documentation and have not yet been verified on a real tenant.'
+        Remediation = 'In Intune admin center > Tenant administration > Multi Admin Approval, create access policies for device wipe (and retire/delete), scripts, apps and Intune roles, with an approver group of admins other than the requester. Protect the Multi Admin Approval settings themselves with an access policy as well.' }
     entra_no_workload_identity_ca = @{ Category = 'Entra Access Policy'; Severity = 'Medium'; Mitre = 'T1078.004'; Needs = @('conditionalAccess', 'servicePrincipals', 'directoryRoles', 'schema5')
         Title = 'Privileged apps without workload identity Conditional Access'
         Description = 'Apps registered in this tenant hold admin roles or tenant-wide permissions, and no Conditional Access policy covers service principals. A stolen secret or certificate for those apps works from anywhere on the internet.'
@@ -368,8 +422,13 @@ function Get-EntraNotEvaluated {
     if ($sv -lt 3) { foreach ($s in 'caDetails3', 'mfaCapable', 'caTokenProtection') { $absent[$s] = $reCollect } }
     if ($sv -lt 4) { $absent['schema4'] = $reCollect }
     if ($sv -lt 5) { $absent['schema5'] = $reCollect }
+    if ($sv -lt 6) { $absent['schema6'] = "$reCollect (no groups behind Conditional Access exclusions and admin roles)" }
+    if ($sv -lt 7) { $absent['schema7'] = "$reCollect (no PIM rules, scoped role assignments, app owners by type, app sign-ins or access package resources)" }
+    if ($sv -lt 7) { $absent['pimForGroups'] = "$reCollect (no PIM for Groups eligibility)" }
+    if ($sv -lt 8) { $absent['schema8'] = "$reCollect (no Intune roles)" }
+    if ($sv -lt 9) { $absent['schema9'] = "$reCollect (no Intune Multi Admin Approval policies)" }
     foreach ($s in 'authenticationMethods', 'passwordSettings', 'pim', 'pimPolicies', 'authenticatorSettings', 'groupCreation', 'deviceRegistration',
-        'appManagementPolicy', 'domains', 'idleTimeout', 'branding', 'onPremSync', 'accessReviews', 'namedLocations', 'licenses', 'perUserMfa', 'oauthGrants', 'crossTenant', 'accessPackages') {
+        'appManagementPolicy', 'domains', 'idleTimeout', 'branding', 'onPremSync', 'accessReviews', 'namedLocations', 'licenses', 'perUserMfa', 'oauthGrants', 'crossTenant', 'accessPackages', 'intuneRoles', 'intuneApprovalPolicies') {
         if (-not $Snapshot.PSObject.Properties[$s]) { $absent[$s] = "'$s' not in this snapshot ($reCollect)" }
     }
     foreach ($type in $script:EntraCheckCatalog.Keys) {
@@ -852,6 +911,276 @@ function Invoke-EntraChecks {
         }
     }
 
+    # ---- Groups behind CA exclusions and admin roles (schema 6) ----
+    if ($sv -ge 6 -and (& $have 'groups')) {
+        $groupsById = @{}; foreach ($g in @($Snapshot.groups | Where-Object { $_ })) { $groupsById["$($g.id)"] = $g }
+        # Admins: privileged role members, plus eligible principals of privileged roles.
+        $adminIds = @{}; foreach ($k in $privMembers.Keys) { $adminIds["$k"] = $true }
+        foreach ($a in @($Snapshot.pim.eligible | Where-Object { $_ })) { if ($script:EntraPrivRoleTemplates.ContainsKey("$($a.roleDefinitionId)")) { $adminIds["$($a.principalId)"] = $true } }
+        $ownerIssues = {
+            param($g)
+            $out = @()
+            # PIM for Groups: someone eligible to become owner is an owner in waiting.
+            if ($g.PSObject.Properties['pimEligible'] -and $g.pimEligible) {
+                foreach ($pe in @($g.pimEligible | Where-Object { $_ -and "$($_.accessId)" -eq 'owner' })) {
+                    $peu = $usersById["$($pe.principalId)"]
+                    if ($peu -and $peu.userType -eq 'Guest') { $out += "eligible owner guest $($peu.upn)" }
+                    elseif (-not $adminIds.ContainsKey("$($pe.principalId)")) { $out += "eligible owner non-admin $(if ($peu) { $peu.upn } else { $pe.principalId })" }
+                }
+            }
+            foreach ($op in @($g.ownerTypes.PSObject.Properties)) {
+                $oid = "$($op.Name)"; $ot = "$($op.Value)"
+                if ($ot -eq 'servicePrincipal') { $out += "service principal $(if ($spById[$oid]) { $spById[$oid].displayName } else { $oid })"; continue }
+                $ou = $usersById[$oid]
+                if ($ou -and $ou.userType -eq 'Guest') { $out += "guest $($ou.upn)"; continue }
+                if (-not $adminIds.ContainsKey($oid)) { $out += "non-admin $(if ($ou) { $ou.upn } else { $oid })" }
+            }
+            $out
+        }
+        # Attributes a user or a guest can influence (self-service, invitation, profile).
+        $softAttr = '(?i)user\.(displayName|mail|otherMails|userPrincipalName|mailNickname|proxyAddresses|givenName|surname)\b'
+        $exclByGroup = [ordered]@{}
+        foreach ($p in @($Snapshot.conditionalAccess | Where-Object { $_ -and "$($_.state)" -eq 'enabled' })) {
+            foreach ($gid in @($p.excludeGroups | Where-Object { $_ })) {
+                if (-not $exclByGroup.Contains("$gid")) { $exclByGroup["$gid"] = New-Object System.Collections.Generic.List[string] }
+                $exclByGroup["$gid"].Add("$($p.displayName)")
+            }
+        }
+        foreach ($gid in $exclByGroup.Keys) {
+            $g = $groupsById[$gid]
+            if (-not $g) { continue }
+            $why = @()
+            if ($g.unified -and "$($g.visibility)" -eq 'Public') { $why += 'public Microsoft 365 group (anyone can join)' }
+            if ($g.dynamic -and "$($g.membershipRule)" -match $softAttr) { $why += "dynamic rule on an attribute users or guests can influence ($($Matches[1]))" }
+            $oi = @(& $ownerIssues $g)
+            if ($oi.Count) { $why += "owners: $($oi -join ', ')" }
+            if ($why.Count) {
+                Add-EntraFinding -Type entra_ca_excluded_group_weak -Object $g.displayName -ObjectType 'group' -ObjectDn $gid `
+                    -Detail "Excluded from: $(@($exclByGroup[$gid]) -join ', '). $($why -join '; ')."
+            }
+        }
+        # Groups holding a privileged role, active (role member) or eligible (PIM).
+        $roleOfGroup = [ordered]@{}
+        foreach ($r in @($Snapshot.directoryRoles | Where-Object { $_ -and $_.memberTypes })) {
+            $rn = if ($script:EntraPrivRoleTemplates.ContainsKey("$($r.roleTemplateId)")) { $script:EntraPrivRoleTemplates["$($r.roleTemplateId)"] } else { $null }
+            if (-not $rn) { continue }
+            foreach ($m in @($r.memberTypes.PSObject.Properties | Where-Object { "$($_.Value)" -eq 'group' })) {
+                if (-not $roleOfGroup.Contains("$($m.Name)")) { $roleOfGroup["$($m.Name)"] = New-Object System.Collections.Generic.List[string] }
+                if (-not $roleOfGroup["$($m.Name)"].Contains($rn)) { $roleOfGroup["$($m.Name)"].Add($rn) }
+            }
+        }
+        foreach ($a in @($Snapshot.pim.active) + @($Snapshot.pim.eligible) | Where-Object { $_ -and $groupsById.ContainsKey("$($_.principalId)") }) {
+            $rn = $script:EntraPrivRoleTemplates["$($a.roleDefinitionId)"]
+            if (-not $rn) { continue }
+            $label = if ("$($a.assignmentType)" -eq 'Eligible') { "$rn (eligible)" } else { $rn }
+            if (-not $roleOfGroup.Contains("$($a.principalId)")) { $roleOfGroup["$($a.principalId)"] = New-Object System.Collections.Generic.List[string] }
+            if (-not $roleOfGroup["$($a.principalId)"].Contains($label) -and -not $roleOfGroup["$($a.principalId)"].Contains($rn)) { $roleOfGroup["$($a.principalId)"].Add($label) }
+        }
+        foreach ($gid in $roleOfGroup.Keys) {
+            $g = $groupsById[$gid]
+            if (-not $g) { continue }
+            $oi = @(& $ownerIssues $g)
+            if ($oi.Count) {
+                Add-EntraFinding -Type entra_privileged_group_owner -Object $g.displayName -ObjectType 'group' -ObjectDn $gid `
+                    -Detail "Holds: $(@($roleOfGroup[$gid]) -join ', '). Owners who can add themselves: $($oi -join ', ').$(if (-not $g.isAssignableToRole) { ' The group is not role-assignable.' })"
+            }
+        }
+    }
+
+    # ---- Schema 7 ----
+    if ($sv -ge 7) {
+        # Privileged service principals: admin role or tenant-takeover permission.
+        $spRoles = @{}
+        foreach ($r in @($Snapshot.directoryRoles | Where-Object { $_ -and $_.memberTypes })) {
+            $rn = $script:EntraPrivRoleTemplates["$($r.roleTemplateId)"]
+            if (-not $rn) { continue }
+            foreach ($m in @($r.memberTypes.PSObject.Properties | Where-Object { "$($_.Value)" -eq 'servicePrincipal' })) { $spRoles["$($m.Name)"] = @(@($spRoles["$($m.Name)"]) + $rn | Where-Object { $_ }) }
+        }
+        $privWhy = {
+            param($sp)
+            $w = @()
+            if ($spRoles.ContainsKey("$($sp.id)")) { $w += "role $(@($spRoles["$($sp.id)"]) -join ', ')" }
+            $risk = @($sp.appRoleIds | Where-Object { $script:EntraHighRiskAppRoles.ContainsKey("$_") } | ForEach-Object { $script:EntraHighRiskAppRoles["$_"] })
+            if ($risk.Count) { $w += "permission $($risk -join ', ')" }
+            $w -join '; '
+        }
+
+        if ((& $have 'pimPolicies') -and $Snapshot.PSObject.Properties['pimRules'] -and $Snapshot.pimRules) {
+            $top = @('62e90394-69f5-4237-9190-012177145e10', 'e8611ab8-c189-46e8-94e1-60213ab1f814', '7be44c8a-adaf-4e2a-84d6-ab2649e08a13')
+            $issues = [ordered]@{ 'activation without MFA or authentication context' = @(); 'activation longer than 8 hours' = @(); 'active assignments can be permanent' = @(); 'eligible assignments can be permanent' = @() }
+            $severe = $false
+            foreach ($rp in @($Snapshot.pimRules.PSObject.Properties)) {
+                $rn = if ($script:EntraPrivRoleTemplates.ContainsKey($rp.Name)) { $script:EntraPrivRoleTemplates[$rp.Name] } else { $rp.Name }
+                $v = $rp.Value
+                if (-not $v.mfa -and -not $v.authContext) { $issues['activation without MFA or authentication context'] += $rn; if ($top -contains $rp.Name) { $severe = $true } }
+                $hours = $null; try { if ("$($v.maxActivation)") { $hours = [System.Xml.XmlConvert]::ToTimeSpan("$($v.maxActivation)").TotalHours } } catch { }
+                if ($null -ne $hours -and $hours -gt 8) { $issues['activation longer than 8 hours'] += "$rn ($hours h)" }
+                if (-not $v.activeExpiryRequired) { $issues['active assignments can be permanent'] += $rn; if ($top -contains $rp.Name) { $severe = $true } }
+                if (-not $v.eligibleExpiryRequired) { $issues['eligible assignments can be permanent'] += $rn }
+            }
+            $parts = @($issues.Keys | Where-Object { @($issues[$_]).Count } | ForEach-Object { "$_`: $(@($issues[$_] | Sort-Object) -join ', ')" })
+            if ($parts.Count) {
+                Add-EntraFinding -Type entra_pim_role_settings_weak -Object 'PIM role settings' -ObjectType 'policy' -Severity $(if ($severe) { 'Medium' } else { 'Low' }) -Detail "$($parts -join '. ')."
+            }
+        }
+
+        # Scoped admins: only a gap when the admin MFA comes from role targeting, not from "all users".
+        if ($caOk -and (& $have 'roleAssignments') -and -not (Test-CaRequiresMfaAll $Snapshot)) {
+            $roleTargeted = @($Snapshot.conditionalAccess | Where-Object { $_ -and "$($_.state)" -eq 'enabled' -and (Test-CaGrantsMfa $_) -and @($_.includeRoles).Count }).Count -gt 0
+            if ($roleTargeted) {
+                $scoped = [ordered]@{}
+                foreach ($a in @($Snapshot.roleAssignments | Where-Object { $_ -and "$($_.directoryScopeId)" -and "$($_.directoryScopeId)" -ne '/' })) {
+                    $rn = $script:EntraPrivRoleTemplates["$($a.roleDefinitionId)"]
+                    if (-not $rn) { continue }
+                    $who = if ($usersById["$($a.principalId)"]) { $usersById["$($a.principalId)"].upn } else { "$($a.principalId)" }
+                    $scoped["$who ($rn)"] = $true
+                }
+                if ($scoped.Count) {
+                    Add-EntraFinding -Type entra_scoped_admin_outside_ca -Object 'scoped role assignments' -ObjectType 'policy' -Detail "Scoped privileged assignments not covered by role-targeted policies: $(@($scoped.Keys) -join ', ')."
+                }
+            }
+        }
+
+        # App admins scoped to one app: the scope is the object id of the app registration or of its service principal.
+        if (& $have 'roleAssignments') {
+            $appAdminRoles = @{ '9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3' = 'Application Administrator'; '158c047a-c907-4556-b7ef-446551a6b5f7' = 'Cloud Application Administrator' }
+            $spByAppId = @{}; foreach ($sp in @($Snapshot.servicePrincipals | Where-Object { $_ })) { $spByAppId["$($sp.appId)"] = $sp }
+            $appById = @{}; foreach ($ap in @($Snapshot.applications | Where-Object { $_ })) { $appById["$($ap.id)"] = $ap }
+            $scopedApp = [ordered]@{}
+            foreach ($a in @($Snapshot.roleAssignments | Where-Object { $_ -and $appAdminRoles.ContainsKey("$($_.roleDefinitionId)") -and "$($_.directoryScopeId)" -match '^/[0-9a-fA-F-]{36}$' })) {
+                $oid = "$($a.directoryScopeId)".TrimStart('/')
+                $target = if ($spById[$oid]) { $spById[$oid] } elseif ($appById[$oid]) { $spByAppId["$($appById[$oid].appId)"] } else { $null }
+                if (-not $target) { continue }
+                $why = & $privWhy $target
+                if (-not $why) { continue }
+                $who = if ($usersById["$($a.principalId)"]) { $usersById["$($a.principalId)"].upn } else { "$($a.principalId)" }
+                if (-not $scopedApp.Contains("$($target.id)")) { $scopedApp["$($target.id)"] = [PSCustomObject]@{ Sp = $target; Why = $why; Who = New-Object System.Collections.Generic.List[string] } }
+                $scopedApp["$($target.id)"].Who.Add("$who ($($appAdminRoles["$($a.roleDefinitionId)"]))")
+            }
+            foreach ($k in $scopedApp.Keys) {
+                $x = $scopedApp[$k]
+                Add-EntraFinding -Type entra_app_scoped_admin_privileged -Object $x.Sp.displayName -ObjectType 'serviceprincipal' -ObjectDn $x.Sp.id `
+                    -Detail "Scoped app admin(s): $(@($x.Who) -join ', '). The app holds: $($x.Why)."
+            }
+        }
+
+        if (-not $failedSections.ContainsKey('appOwners')) {
+            foreach ($sp in @($Snapshot.servicePrincipals | Where-Object { $_ -and $_.PSObject.Properties['ownerTypes'] -and $_.ownerTypes })) {
+                $why = & $privWhy $sp
+                if (-not $why) { continue }
+                $spOwners = @($sp.ownerTypes.PSObject.Properties | Where-Object { "$($_.Value)" -eq 'servicePrincipal' } | ForEach-Object { if ($spById["$($_.Name)"]) { $spById["$($_.Name)"].displayName } else { $_.Name } })
+                if ($spOwners.Count) {
+                    Add-EntraFinding -Type entra_privileged_app_sp_owner -Object $sp.displayName -ObjectType 'serviceprincipal' -ObjectDn $sp.id -Detail "Owned by service principal(s): $($spOwners -join ', '). The app holds: $why."
+                }
+            }
+        }
+
+        if ((& $have 'spSignIns') -and $Snapshot.spSignIns) {
+            foreach ($sp in @($Snapshot.servicePrincipals | Where-Object { $_ })) {
+                $why = & $privWhy $sp
+                if (-not $why -or -not $Snapshot.spSignIns.PSObject.Properties["$($sp.appId)"]) { continue }
+                $last = & $ageDays $Snapshot.spSignIns."$($sp.appId)"
+                if ($null -ne $last -and $last -gt 180) {
+                    Add-EntraFinding -Type entra_privileged_app_inactive -Object $sp.displayName -ObjectType 'serviceprincipal' -ObjectDn $sp.id -Detail "Last sign-in $last days ago. Holds: $why."
+                }
+            }
+        }
+
+        foreach ($app in @($Snapshot.applications | Where-Object { $_ -and $_.PSObject.Properties['signInAudience'] })) {
+            if ("$($app.signInAudience)" -notmatch 'Multiple|Personal') { continue }
+            $creds = @($app.keyCred | Where-Object { $_ }).Count + @($app.passwordCred | Where-Object { $_ }).Count
+            if ($creds -gt 0 -and -not $app.instanceLock) {
+                Add-EntraFinding -Type entra_app_instance_lock_off -Object $app.displayName -ObjectType 'application' -ObjectDn $app.id -Detail "Sign-in audience $($app.signInAudience), $creds credential(s), App instance property lock not enabled."
+            }
+        }
+
+        if ((& $have 'accessPackageGrants') -and $Snapshot.accessPackageGrants -and (& $have 'groups')) {
+            $roleGroupIds = @{}
+            foreach ($r in @($Snapshot.directoryRoles | Where-Object { $_ -and $_.memberTypes -and $script:EntraPrivRoleTemplates.ContainsKey("$($_.roleTemplateId)") })) {
+                foreach ($m in @($r.memberTypes.PSObject.Properties | Where-Object { "$($_.Value)" -eq 'group' })) { $roleGroupIds["$($m.Name)"] = $true }
+            }
+            foreach ($a in @($Snapshot.pim.active) + @($Snapshot.pim.eligible) | Where-Object { $_ -and $script:EntraPrivRoleTemplates.ContainsKey("$($_.roleDefinitionId)") }) { $roleGroupIds["$($a.principalId)"] = $true }
+            $grpName = @{}; foreach ($g in @($Snapshot.groups | Where-Object { $_ })) { $grpName["$($g.id)"] = $g.displayName }
+            foreach ($pol in @($Snapshot.accessPackages | Where-Object { $_ -and $_.selfAddEnabled -and -not $_.approvalRequired -and "$($_.allowedTargetScope)" -match '^all' })) {
+                if (-not $pol.PSObject.Properties['accessPackageId'] -or -not $Snapshot.accessPackageGrants.PSObject.Properties["$($pol.accessPackageId)"]) { continue }
+                $hits = @()
+                foreach ($gr in @($Snapshot.accessPackageGrants."$($pol.accessPackageId)" | Where-Object { $_ })) {
+                    if ("$($gr.originSystem)" -eq 'AadGroup' -and $roleGroupIds.ContainsKey("$($gr.scopeOriginId)")) { $hits += "group $(if ($grpName["$($gr.scopeOriginId)"]) { $grpName["$($gr.scopeOriginId)"] } else { $gr.scopeOriginId }) (holds an admin role)" }
+                    elseif ("$($gr.originSystem)" -eq 'DirectoryRole') {
+                        $rid = @($script:EntraPrivRoleTemplates.Keys | Where-Object { "$($gr.roleOriginId)" -match $_ -or "$($gr.scopeOriginId)" -match $_ })[0]
+                        if ($rid) { $hits += "role $($script:EntraPrivRoleTemplates[$rid])" }
+                    }
+                }
+                if ($hits.Count) {
+                    Add-EntraFinding -Type entra_access_package_grants_admin -Object $pol.accessPackage -ObjectType 'accesspackage' -ObjectDn $pol.id `
+                        -Detail "Policy $($pol.displayName): $($pol.allowedTargetScope) can request it for themselves without approval. Grants: $($hits -join ', ')."
+                }
+            }
+        }
+    }
+
+    # Intune roles that reach code execution on devices (or rewrite Intune RBAC), given through
+    # a group that non-Tier 0 roles or owners can add members to. The action names are not yet
+    # verified against a real tenant.
+    if ($sv -ge 8 -and (& $have 'intuneRoles') -and (& $have 'groups')) {
+        $powerfulBuiltIn = @('Intune Role Administrator', 'Policy and Profile Manager', 'Application Manager', 'School Administrator')
+        $powerfulAction = '^Microsoft\.Intune_(DeviceConfigurations|MobileApps|DeviceManagementScripts|Remediations|Roles)_(Create|Update|Assign)$'
+        $grpById = @{}; foreach ($g in @($Snapshot.groups | Where-Object { $_ })) { $grpById["$($g.id)"] = $g }
+        foreach ($ia in @($Snapshot.intuneRoles | Where-Object { $_ })) {
+            $hits = @(@($ia.actions) | Where-Object { "$_" -match $powerfulAction })
+            if (-not ($powerfulBuiltIn -contains "$($ia.roleName)" -and $ia.isBuiltIn) -and -not $hits.Count) { continue }
+            foreach ($gid in @($ia.members | Where-Object { $_ })) {
+                $g = $grpById["$gid"]
+                if (-not $g) { continue }
+                $weak = @()
+                if (-not $g.isAssignableToRole) { $weak += 'not role-assignable' }
+                if ($g.dynamic) { $weak += "dynamic membership ($($g.membershipRule))" }
+                if (-not $weak.Count) { continue }
+                $owners = @(if ($g.ownerTypes) { $g.ownerTypes.PSObject.Properties }).Count
+                $what = if ($ia.isBuiltIn) { 'built-in role' } else { "custom role with $(@($hits | Select-Object -First 3) -join ', ')" }
+                Add-EntraFinding -Type entra_intune_role_weak_group -Object "$($ia.roleName): $($g.displayName)" -ObjectType 'intunerole' -ObjectDn $ia.id `
+                    -Detail "Assignment $($ia.displayName) ($what) is given to group $($g.displayName): $($weak -join ', '); $owners owner(s). Scope groups: $(if (@($ia.resourceScopes).Count) { @($ia.resourceScopes).Count } else { 'none listed' })."
+            }
+        }
+    }
+
+    # Multi Admin Approval: without it one compromised Intune admin can wipe every device or
+    # push a script to all of them. Read only where Intune is (its roles were readable).
+    if ($sv -ge 9 -and (& $have 'intuneRoles') -and (& $have 'intuneApprovalPolicies')) {
+        $types = @(@($Snapshot.intuneApprovalPolicies) | Where-Object { $_ } | ForEach-Object { "$($_.policyType)" })
+        $cover = [ordered]@{ 'device wipe' = '(?i)wipe|deviceAction'; 'scripts' = '(?i)script'; 'apps' = '(?i)^app$'; 'Intune roles' = '(?i)^role' }
+        $missing = @(foreach ($k in $cover.Keys) { if (-not @($types | Where-Object { $_ -match $cover[$k] }).Count) { $k } })
+        if ($missing -contains 'device wipe' -or $missing -contains 'scripts') {
+            $now = if ($types.Count) { "Policies exist for: $((@($types | Sort-Object -Unique)) -join ', ')." } else { 'No approval policy at all.' }
+            Add-EntraFinding -Type entra_intune_no_multi_admin_approval -Object 'Intune' -ObjectType 'tenant' `
+                -Detail "No Multi Admin Approval for: $($missing -join ', '). $now"
+        }
+    }
+
+    # Entra Connect's provisioning app: one self-managed certificate, never a secret.
+    foreach ($app in @($Snapshot.applications | Where-Object { $_ -and "$($_.displayName)" -match '^ConnectSyncProvisioning_' })) {
+        $nk = @($app.keyCred | Where-Object { $_ }).Count; $np = @($app.passwordCred | Where-Object { $_ }).Count
+        if ($nk -gt 1 -or $np -gt 0) {
+            Add-EntraFinding -Type entra_connect_app_extra_credentials -Object $app.displayName -ObjectType 'application' -ObjectDn $app.id `
+                -Detail "$nk certificate(s) and $np client secret(s) on the Entra Connect provisioning app (expected: one certificate)."
+        }
+    }
+
+    # Look-alike service principal names: mixed scripts inside a word, full-width letters, invisible characters.
+    foreach ($sp in @($Snapshot.servicePrincipals | Where-Object { $_ -and $_.displayName })) {
+        $n = "$($sp.displayName)"
+        $tricks = @()
+        if ($n -match '[\u200B-\u200F\u2060\uFEFF\u00AD]') { $tricks += 'invisible characters' }
+        if ($n -match '[\uFF21-\uFF3A\uFF41-\uFF5A]') { $tricks += 'full-width letters' }
+        foreach ($w in ($n -split '[\s\-_.]+')) { if ($w -match '[A-Za-z]' -and $w -match '[\p{IsCyrillic}\p{IsGreek}]') { $tricks += 'Latin mixed with Cyrillic or Greek letters'; break } }
+        if ($tricks.Count) {
+            # Positions and code points only: a rewritten copy of the name would slip past the AI pseudonymizer.
+            $odd = @(for ($i = 0; $i -lt $n.Length; $i++) { if ([int]$n[$i] -ge 128) { "{0} (U+{1:X4})" -f ($i + 1), [int]$n[$i] } })
+            Add-EntraFinding -Type entra_sp_lookalike_name -Object $sp.displayName -ObjectType 'serviceprincipal' -ObjectDn $sp.id `
+                -Detail "$($tricks -join ', ') in the name; non-ASCII characters at position $($odd -join ', ')$(if ($sp.appOwnerTenant) { "; published by tenant $($sp.appOwnerTenant)" })."
+        }
+    }
+
     if ($sv -ge 4) {
         # Users owning apps that hold tenant-takeover permissions.
         if (-not $failedSections.ContainsKey('appOwners')) {
@@ -1003,7 +1332,7 @@ function Get-EntraChartsRow {
     $sevPie = Get-SvgPieChart -Labels $sevLabels -Values $sevVals -Colors $script:WolfSeverityColors -CenterLabel 'findings'
     $cats = @('Entra Identity', 'Entra Access Policy', 'Entra Applications')
     $catVals = @($cats | ForEach-Object { $c = $_; @($Findings | Where-Object { $_.Category -eq $c }).Count })
-    $catPie = Get-SvgPieChart -Labels $cats -Values $catVals -Colors @('#2A2E33', '#6F767D', '#A2A8AE') -CenterLabel 'findings'
+    $catPie = Get-SvgPieChart -Labels $cats -Values $catVals -Colors @('#2B2925', '#78726A', '#ABA497') -CenterLabel 'findings'
     return "<div class='chart-row'><div><div class='pie-chart-title'>Findings by severity</div>$sevPie</div><div><div class='pie-chart-title'>Findings by category</div>$catPie</div></div>"
 }
 
@@ -1025,14 +1354,14 @@ function Get-EntraInfoChartsRow {
         $disabled = @($users | Where-Object { -not $_.enabled }).Count
         $guests = @($users | Where-Object { $_.enabled -and $_.userType -eq 'Guest' }).Count
         $members = @($users | Where-Object { $_.enabled -and $_.userType -ne 'Guest' }).Count
-        & $add 'Users by type' 'users' @('Members', 'Guests', 'Disabled') @($members, $guests, $disabled) @('#2A2E33', '#A88B2E', '#C9CED3')
+        & $add 'Users by type' 'users' @('Members', 'Guests', 'Disabled') @($members, $guests, $disabled) @('#2B2925', '#F2B632', '#D3CCBD')
         $synced = @($users | Where-Object { $_.onPremSync }).Count
-        & $add 'Users by origin' 'users' @('Cloud-only', 'Synced from on-premises AD') @(($users.Count - $synced), $synced) @('#2A2E33', '#888F96')
+        & $add 'Users by origin' 'users' @('Cloud-only', 'Synced from on-premises AD') @(($users.Count - $synced), $synced) @('#2B2925', '#8F887C')
         if (-not $failed.ContainsKey('mfaRegistration')) {
             $en = @($users | Where-Object { $_.enabled })
             $reg = @($en | Where-Object { $_.mfaRegistered -eq $true }).Count
             $none = @($en | Where-Object { $_.mfaRegistered -eq $false }).Count
-            & $add 'MFA registration (enabled users)' 'users' @('MFA registered', 'No MFA method', 'Unknown') @($reg, $none, ($en.Count - $reg - $none)) @('#2A2E33', '#A23B3B', '#C9CED3')
+            & $add 'MFA registration (enabled users)' 'users' @('MFA registered', 'No MFA method', 'Unknown') @($reg, $none, ($en.Count - $reg - $none)) @('#2B2925', '#E2372A', '#D3CCBD')
         }
         if (-not $failed.ContainsKey('signInActivity') -and $script:RefDate) {
             $r = 0; $i = 0; $n = 0
@@ -1040,7 +1369,7 @@ function Get-EntraInfoChartsRow {
                 $age = $null; try { if ($u.lastSignIn) { $age = [int][Math]::Floor(($script:RefDate - ([datetime]$u.lastSignIn).ToUniversalTime()).TotalDays) } } catch { }
                 if ($null -eq $age) { $n++ } elseif ($age -gt 90) { $i++ } else { $r++ }
             }
-            & $add 'Enabled users by sign-in activity' 'users' @('Signed in within 90d', 'Inactive 90d+', 'Never / unknown') @($r, $i, $n) @('#2A2E33', '#888F96', '#C9CED3')
+            & $add 'Enabled users by sign-in activity' 'users' @('Signed in within 90d', 'Inactive 90d+', 'Never / unknown') @($r, $i, $n) @('#2B2925', '#8F887C', '#D3CCBD')
         }
     }
     if (-not $failed.ContainsKey('directoryRoles')) {
@@ -1056,7 +1385,7 @@ function Get-EntraInfoChartsRow {
         $sps = @($Snapshot.servicePrincipals | Where-Object { $_ })
         $mi = @($sps | Where-Object { "$($_.type)" -eq 'ManagedIdentity' }).Count
         $mine = @($sps | Where-Object { "$($_.type)" -ne 'ManagedIdentity' -and $own -and "$($_.appOwnerTenant)" -eq $own }).Count
-        & $add 'Service principals' 'principals' @('Managed identities', 'Owned by this tenant', 'Microsoft / third party') @($mi, $mine, ($sps.Count - $mi - $mine)) @('#6F767D', '#2A2E33', '#C9CED3')
+        & $add 'Service principals' 'principals' @('Managed identities', 'Owned by this tenant', 'Microsoft / third party') @($mi, $mine, ($sps.Count - $mi - $mine)) @('#78726A', '#2B2925', '#D3CCBD')
     }
     if (-not $pies.Count) { return '' }
     return "<div class='chart-row'>$($pies -join '')</div>"
@@ -1100,7 +1429,7 @@ function ConvertTo-EntraReportHtml {
 
     & $w '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
     & $w "<title>IDWolf Entra report - $(& $H $tenant)</title>"
-    & $w (Get-MooseAdReportCss)
+    & $w (Get-IDWolfReportCss)
     & $w "<h1 class=`"title`">$(Get-WolfLogoHtml)<span>IDWolf: Entra ID Hygiene Report</span></h1>"
     & $w "<div class=`"meta`">Tenant <b>$(& $H $tenant)</b> ($(& $H $Snapshot.meta.tenantId)) &middot; snapshot $(& $H $collected.ToString('yyyy-MM-dd HH:mm')) UTC &middot; IDWolf v$ToolVersion &middot; analysis $ElapsedText</div>"
     if ($Snapshot.meta.synthetic) { & $w '<blockquote>Synthetic snapshot for testing. No real tenant data.</blockquote>' }
@@ -1179,11 +1508,14 @@ function New-EntraPseudonymizer {
     foreach ($a in @($Snapshot.applications | Where-Object { $_ })) { & $add $a.displayName 'APP'; & $add $a.appId 'APPID' }
     foreach ($sp in @($Snapshot.servicePrincipals | Where-Object { $_ })) { & $add $sp.displayName 'SP'; & $add $sp.appId 'APPID'; & $add $sp.id 'SPID' }
     foreach ($p in @($Snapshot.conditionalAccess | Where-Object { $_ })) { & $add $p.displayName 'CAPOLICY' }
+    foreach ($g in @($Snapshot.groups | Where-Object { $_ })) { & $add $g.displayName 'GROUP'; & $add $g.id 'GROUPID' }
     # Verified domains can differ from the UPN suffixes (and show up in findings).
     foreach ($d in @($Snapshot.domains | Where-Object { $_ })) { & $add "$($d.id)" 'DOMAIN'; if ($d.id -and -not $suffixes.Contains("$($d.id)")) { $suffixes.Add("$($d.id)") } }
     foreach ($l in @($Snapshot.namedLocations | Where-Object { $_ })) { & $add $l.displayName 'LOCATION' }
     foreach ($r in @($Snapshot.accessReviews | Where-Object { $_ })) { & $add $r.displayName 'REVIEW' }
     foreach ($p in @($Snapshot.accessPackages | Where-Object { $_ })) { & $add $p.accessPackage 'PACKAGE'; & $add $p.displayName 'PACKAGEPOLICY' }
+    # Intune assignment names and custom role names are chosen by the tenant; built-in role names stay.
+    foreach ($ia in @($Snapshot.intuneRoles | Where-Object { $_ })) { & $add $ia.displayName 'INTUNEASSIGNMENT'; if (-not $ia.isBuiltIn) { & $add $ia.roleName 'INTUNEROLE' } }
     # Hosts in app redirect URIs end up in findings too.
     foreach ($a in @($Snapshot.applications | Where-Object { $_ })) {
         foreach ($u in @($a.redirectUris | Where-Object { $_ })) { if ("$u" -match '^[a-z][a-z0-9+.\-]*://([^/:?#]+)') { if ($Matches[1] -notmatch '^(localhost|127\.0\.0\.1)$') { & $add $Matches[1] 'HOST' } } }
@@ -1234,48 +1566,7 @@ function New-EntraAiPrompt {
 }
 
 # CSS for the Entra report.
-function Get-MooseAdReportCss {
-    return @'
-<style>
-  :root { --ink:#15171A; --paper:#F3F4F5; --accent:#4A5058; --accent-deep:#1F2226; --accent-tint:#E1E4E7; --slate:#23262A; --border:#D3D7DB; --muted:#5E656C;
-    --critical:#A23B3B; --critical-bg:#F2E1E1; --high:#B0703A; --high-bg:#F2E6DB; --medium:#A88B2E; --medium-bg:#F1ECDC; --low:#7F868D; --low-bg:#E4E7EA; }
-  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; margin:40px; color:var(--ink); background:var(--paper); line-height:1.45; }
-  @media (max-width:700px){ body{margin:16px;} .wolf-logo{font-size:7px;} }
-  h1.title { display:flex; align-items:flex-end; gap:18px; } .wolf-logo { font-family:Consolas,'Courier New',monospace; font-size:10px; line-height:1.05; font-weight:700; color:var(--slate); margin:0; flex-shrink:0; }
-  h1 { border-bottom:3px solid var(--accent); padding-bottom:10px; } h2 { margin:0; color:var(--slate); }
-  .meta { color:var(--muted); font-size:13px; }
-  .cards { display:flex; flex-wrap:wrap; gap:12px; margin:18px 0; }
-  .card { border:1px solid var(--border); border-radius:10px; padding:12px 16px; min-width:120px; background:#fff; }
-  .card .num { font-size:26px; font-weight:700; } .card .lbl { font-size:12px; color:var(--muted); }
-  .card.critical .num{color:var(--critical);} .card.high .num{color:var(--high);} .card.medium .num{color:var(--medium);} .card.low .num{color:var(--low);}
-  .grade { font-size:26px; font-weight:800; color:var(--accent-deep); }
-  .table-wrap { border:1px solid var(--border); border-radius:10px; overflow-x:auto; margin:12px 0; }
-  table { border-collapse:collapse; width:100%; font-size:12px; } th,td { padding:7px 10px; text-align:left; vertical-align:top; border-top:1px solid var(--border); }
-  th { background:var(--slate); color:var(--paper); font-weight:600; border-top:none; }
-  tr.data-row:nth-child(even) td { background:#F7F8F9; } tr.data-row:hover td { background:var(--accent-tint); }
-  .sev-pill { display:inline-block; font-size:11px; font-weight:600; padding:3px 10px; border-radius:99px; white-space:nowrap; }
-  .sev-pill-critical{background:var(--critical-bg);color:#7A2727;} .sev-pill-high{background:var(--high-bg);color:#7A4A1F;}
-  .sev-pill-medium{background:var(--medium-bg);color:#6E5A1C;} .sev-pill-low{background:var(--low-bg);color:#4A5056;}
-  code { background:#E8EBEE; padding:1px 5px; border-radius:3px; font-family:ui-monospace,Consolas,monospace; font-size:0.92em; }
-  details { margin-top:28px; } details > summary { cursor:pointer; list-style:none; border-bottom:2px solid var(--accent-tint); padding-bottom:6px; }
-  details > summary::-webkit-details-marker { display:none; } details > summary h2 { display:inline-block; }
-  details > summary::before { content:'\25b6'; display:inline-block; margin-right:8px; font-size:13px; color:var(--accent); transition:transform .15s ease; }
-  details[open] > summary::before { transform:rotate(90deg); }
-  details.check { margin:8px 0; border:1px solid var(--border); border-radius:8px; background:#fff; }
-  details.check > summary { border-bottom:none; padding:10px 12px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  details.check > summary::before { margin-right:0; } details.check .body { padding:0 14px 12px 14px; }
-  .check-title { font-weight:600; } .check-id { color:var(--muted); font-size:12px; } .count { margin-left:auto; font-size:12px; color:var(--muted); }
-  .kv { font-size:13px; margin:6px 0; } .kv b { color:var(--slate); }
-  blockquote { background:var(--accent-tint); border-left:4px solid var(--accent); margin:12px 0; padding:10px 14px; } .warn { background:var(--critical-bg); border-left-color:var(--critical); }
-  .chart-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:20px; margin:18px 0; }
-  .pie-chart-wrap { display:flex; align-items:center; gap:16px; } .pie-chart-wrap svg { flex-shrink:0; }
-  .pie-chart-title { font-size:13px; font-weight:600; margin-bottom:8px; color:var(--slate); }
-  .pie-legend { font-size:12px; } .pie-legend-item { display:flex; align-items:center; gap:6px; margin:3px 0; white-space:nowrap; }
-  .pie-legend-swatch { display:inline-block; width:10px; height:10px; border-radius:2px; flex-shrink:0; }
-  .ai-section { background:#EEF0F2; border:1px solid #CDD2D7; border-left:4px solid #23262A; border-radius:4px; padding:4px 20px 16px 20px; margin-top:16px; }
-  .ai-badge { display:inline-block; font-size:11px; font-weight:bold; color:#23262A; background:#DDE1E5; border-radius:10px; padding:2px 10px; margin:12px 0 8px 0; }
-  .ai-section h3 { color:var(--slate); margin:16px 0 6px 0; } .ai-section ol li { margin:6px 0; }
-</style>
-</head><body>
-'@
+function Get-IDWolfReportCss {
+    # Same theme as the AD report (Reporting.ps1), then the end of <head>.
+    return (Get-IDWolfThemeCss) + "`n</head><body>`n"
 }

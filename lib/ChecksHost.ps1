@@ -31,8 +31,8 @@ $script:HostCheckCatalog = [ordered]@{
         Remediation = 'Remove the assignment or scope it to a dedicated admin group; these rights on a DC are equivalent to domain compromise.' }
     anonymous_sam_enum = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1087'; Needs = @('gpo')
         Title = 'Anonymous SAM / share enumeration allowed'
-        Description = 'RestrictAnonymous / RestrictAnonymousSAM are not enforced, allowing anonymous enumeration of accounts and shares that feeds password spraying and recon.'
-        Remediation = 'Enable "Do not allow anonymous enumeration of SAM accounts and shares".' }
+        Description = 'RestrictAnonymousSAM is not enforced, or a GPO opens null sessions (RestrictAnonymous = 0, Everyone includes Anonymous, RestrictNullSessAccess = 0, anonymous shares or extra anonymous named pipes). Anonymous enumeration of accounts and shares feeds password spraying and recon.'
+        Remediation = 'Enable "Do not allow anonymous enumeration of SAM accounts" and "...of SAM accounts and shares", disable "Let Everyone permissions apply to anonymous users", keep "Restrict anonymous access to Named Pipes and Shares" enabled, and empty the anonymous shares list and the extra anonymous pipes.' }
     audit_policy_insufficient = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1562.002'; Needs = @('gpo')
         Title = 'Advanced audit policy gaps on domain controllers'
         Description = 'Key audit subcategories that the CIS benchmark expects on DCs are not set to log Success and/or Failure. Without them, attacks like Kerberoasting, DCSync, account and group changes and privilege abuse leave little or no trace for the SIEM.'
@@ -66,6 +66,74 @@ $script:HostCheckCatalog = [ordered]@{
         Title = 'LLMNR not disabled'
         Description = 'Link-Local Multicast Name Resolution is not disabled (DNSClient EnableMulticast not set to 0). LLMNR lets an attacker on the same subnet answer name queries and capture or relay NTLM credentials (Responder-style poisoning).'
         Remediation = 'Disable LLMNR via GPO (Turn off multicast name resolution = Enabled), together with NBT-NS hardening.' }
+    mdns_enabled = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1557.001'; Needs = @('gpo')
+        Title = 'mDNS not disabled'
+        Description = 'Multicast DNS is on by default on current Windows and no GPO turns it off (Dnscache EnableMDNS not set to 0). Like LLMNR, an attacker on the same subnet can answer mDNS queries and capture or relay NTLM credentials.'
+        Remediation = 'Set HKLM\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters\EnableMDNS = 0 through a GPO, together with disabling LLMNR and NBT-NS.' }
+    webclient_not_disabled = @{ Category = 'Host Hardening'; Severity = 'Low'; Mitre = 'T1187'; Needs = @('gpo', 'gpo.services')
+        Title = 'WebClient (WebDAV) service not disabled by GPO'
+        Description = 'No GPO applied to the DCs or the domain root disables the WebClient service. Where it runs, coercion (PetitPotam, PrinterBug) can force authentication over HTTP instead of SMB, which can be relayed to LDAP without signing protection.'
+        Remediation = 'Set the WebClient service to Disabled through a GPO (System Services) on servers and on workstations that do not need WebDAV.' }
+    webclient_on_dc = @{ Category = 'Host Hardening'; Severity = 'High'; Mitre = 'T1187'; Needs = @('health', 'health.dcState', 'health.webClient', 'health.dcStatePartial')
+        Title = 'WebClient (WebDAV) service enabled on a domain controller'
+        Description = 'The WebClient service is installed and not disabled on the DC (read live over CIM). Coercion (PetitPotam, PrinterBug) can then make the DC authenticate over HTTP, which is not protected by SMB signing and can be relayed to LDAP or to AD CS web enrollment (ESC8) for domain takeover. A running service is the worst case; Manual can still be started by a trigger.'
+        Remediation = 'Disable the WebClient service on the DC (or remove the WebDAV Redirector / Desktop Experience feature), and enforce it with a GPO.' }
+    nbtns_enabled_dc = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1557.001'; Needs = @('health', 'health.dcState', 'health.netbios', 'health.dcStatePartial')
+        Title = 'NetBIOS over TCP/IP enabled on a domain controller'
+        Description = 'A network adapter of the DC has NetBIOS over TCP/IP on (explicitly, or "from DHCP", which means on with a static address), read live over CIM. NBT-NS answers can be spoofed like LLMNR to capture or relay credentials, and NetBIOS keeps legacy name resolution and session services exposed.'
+        Remediation = 'Set "Disable NetBIOS over TCP/IP" on every adapter of the DCs (NIC settings, or NetbiosOptions = 2 under NetBT\Parameters\Interfaces through a GPO or script), after checking that no legacy client still needs it.' }
+    nopac_unpatched_dc = @{ Category = 'Host Hardening'; Severity = 'High'; Mitre = 'T1068'; Needs = @('health', 'health.dcState', 'health.osBuild', 'health.dcStatePartial', 'health.osBuildUnknown')
+        Title = 'Domain controller missing the noPac fix (CVE-2021-42278 / 42287)'
+        Description = 'The build of the DC (read live: build number and update revision) is older than the November 2021 cumulative update. Any user who can create or control a computer account can rename it after a DC, get a ticket for it and impersonate a domain admin (noPac / sAMAccountName spoofing). With the default machine account quota every user can do it.'
+        Remediation = 'Install the current cumulative update on every DC (the fix shipped in November 2021: KB5008380 / KB5008602 and the matching cumulative updates). Set ms-DS-MachineAccountQuota to 0 as defence in depth.' }
+    coercion_unfiltered_dc = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1187'; Needs = @('health', 'health.dcState', 'health.coercion', 'health.dcStatePartial')
+        Title = 'Coercion interfaces open on a domain controller'
+        Description = 'Any domain account can make the DC authenticate to a host it picks through MS-EFSR (PetitPotam), MS-DFSNM (DFSCoerce) or MS-EVEN, and no RPC filter for those interfaces was found. The authentication is then relayed (LDAP, AD CS) or captured by a host with unconstrained delegation. High when a relay target is open in this domain. Read-only: the interfaces are not probed, only the services behind them and the RPC filter store are read.'
+        Remediation = 'Add RPC filters (netsh rpc filter) that block or require Kerberos/packet privacy for the MS-EFSR, MS-DFSNM and MS-EVEN interface UUIDs on the DCs, and close the relay targets: LDAP signing and channel binding, HTTPS + EPA on AD CS web enrollment, IF_ENFORCEENCRYPTICERTREQUEST on the CA.' }
+    always_install_elevated = @{ Category = 'Host Hardening'; Severity = 'High'; Mitre = 'T1548'; Needs = @('gpo')
+        Title = 'AlwaysInstallElevated set by a GPO'
+        Description = 'A GPO sets AlwaysInstallElevated = 1. When both the machine and the user side are set, any user can install an MSI package as SYSTEM, a one-step local privilege escalation on every computer in scope.'
+        Remediation = 'Remove AlwaysInstallElevated from the GPO on both sides (Computer and User Configuration > Administrative Templates > Windows Installer) and deploy software with a management tool instead.' }
+    gpo_autologon_password = @{ Category = 'Host Hardening'; Severity = 'Critical'; Mitre = 'T1552.006'; Needs = @('gpo', 'sysvol', 'sysvol.autologon')
+        Title = 'Autologon password stored in a GPO'
+        Description = 'A GPO writes the Winlogon DefaultPassword (registry value or Group Policy Preferences registry item). GPO files sit in SYSVOL, readable by every domain user, so the password of the autologon account is in clear text for anyone.'
+        Remediation = 'Remove the DefaultPassword setting from the GPO, change the password of that account, and use a kiosk / assigned-access setup or LAPS-style local accounts instead of autologon.' }
+    wsus_http = @{ Category = 'Host Hardening'; Severity = 'High'; Mitre = 'T1557'; Needs = @('gpo')
+        Title = 'Windows Update server over HTTP'
+        Description = 'A GPO points clients at a WSUS server with an http:// address. Anyone who can intercept that traffic can inject a malicious "update" that runs as SYSTEM (WSUSpect / WSUS attacks).'
+        Remediation = 'Publish WSUS over HTTPS (SSL on the WSUS site and an https:// WUServer / WUStatusServer in the GPO).' }
+    rdp_nla_disabled = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1021.001'; Needs = @('gpo')
+        Title = 'RDP Network Level Authentication turned off'
+        Description = 'A GPO sets UserAuthentication = 0: RDP sessions start before the user authenticates, exposing the logon screen and the RDP stack to unauthenticated users (BlueKeep-class bugs, user enumeration).'
+        Remediation = 'Set "Require user authentication for remote connections by using Network Level Authentication" to Enabled.' }
+    rdp_restricted_admin = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1550.002'; Needs = @('gpo')
+        Title = 'RDP Restricted Admin mode enabled'
+        Description = 'A GPO sets DisableRestrictedAdmin = 0. Restricted Admin keeps credentials off the target, but it lets anyone holding an NT hash log on over RDP (pass-the-hash to RDP).'
+        Remediation = 'Prefer Remote Credential Guard. If Restricted Admin is needed, limit it to admin workstations and Tier 0 jump hosts.' }
+    credential_guard_not_configured = @{ Category = 'Host Hardening'; Severity = 'Low'; Mitre = 'T1003.001'; Needs = @('gpo')
+        Title = 'No GPO enables Credential Guard'
+        Description = 'No GPO turns on virtualization-based security with Credential Guard (LsaCfgFlags). Without it, NTLM hashes and Kerberos tickets of logged-on users sit in LSASS memory on workstations and member servers.'
+        Remediation = 'Enable "Turn On Virtualization Based Security" with Credential Guard (UEFI lock) for workstations and member servers that support it. Not on DCs, where it brings no protection.' }
+    app_control_missing = @{ Category = 'Host Hardening'; Severity = 'Low'; Mitre = 'T1204.002'; Needs = @('gpo')
+        Title = 'No application control policy in any GPO'
+        Description = 'No GPO deploys AppLocker rules or a Windows Defender Application Control policy. Any user can run any binary or script they download or drop, which is how most initial access payloads start.'
+        Remediation = 'Deploy AppLocker (or WDAC) in audit mode, review, then enforce, starting with admin workstations and servers.' }
+    force_logoff_disabled = @{ Category = 'Host Hardening'; Severity = 'Low'; Mitre = ''; Needs = @('gpo')
+        Title = 'Sessions are not closed when logon hours expire'
+        Description = '"Network security: Force logoff when logon hours expire" is off: an account restricted by logon hours keeps its open SMB sessions after its allowed time.'
+        Remediation = 'Enable "Force logoff when logon hours expire" in the domain password policy GPO.' }
+    ipv6_dhcpv6_takeover = @{ Category = 'Host Hardening'; Severity = 'Low'; Mitre = 'T1557'; Needs = @('gpo')
+        Title = 'IPv6 left on without a GPO against rogue DHCPv6 (mitm6)'
+        Description = 'No GPO disables IPv6 (DisabledComponents = 0xFF). Windows prefers IPv6 and asks for DHCPv6, so a host on the LAN can become the DNS server of every client (mitm6) and relay their authentication. Medium when a relay target is open (LDAP signing not required, or users can add computers). A firewall rule blocking inbound DHCPv6 also closes it and is not visible here.'
+        Remediation = 'Block inbound DHCPv6 and router advertisements with Windows Firewall rules, or disable IPv6 where it is not used; require LDAP signing and channel binding and set the machine account quota to 0.' }
+    wsh_enabled = @{ Category = 'Host Hardening'; Severity = 'Low'; Mitre = 'T1059.005'; Needs = @('gpo')
+        Title = 'Windows Script Host not disabled by GPO'
+        Description = 'No GPO turns off Windows Script Host (Settings\Enabled = 0), so .vbs / .js / .wsf attachments and droppers run with a double click.'
+        Remediation = 'Disable Windows Script Host for users who do not need it (HKLM\Software\Microsoft\Windows Script Host\Settings\Enabled = 0), or block the script hosts with application control.' }
+    wpad_not_disabled = @{ Category = 'Host Hardening'; Severity = 'Low'; Mitre = 'T1557.001'; Needs = @('gpo', 'gpo.services')
+        Title = 'WPAD auto-discovery not disabled by GPO'
+        Description = 'No GPO turns off Web Proxy Auto-Discovery (WinHttp DisableWpad = 1, or the WinHTTP Web Proxy Auto-Discovery service disabled). Clients keep looking for a "wpad" host through DNS, LLMNR, mDNS and NBT-NS, and whoever answers becomes their proxy and can capture NTLM authentication.'
+        Remediation = 'Set HKLM\SYSTEM\CurrentControlSet\Services\WinHttp\Parameters\DisableWpad = 1 by GPO (or disable the WinHttpAutoProxySvc service) where no proxy auto-discovery is used, and keep "wpad" in the DNS global query block list.' }
     spooler_on_dc = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1547.012'; Needs = @('gpo')
         Title = 'Print Spooler not disabled on domain controllers'
         Description = 'No GPO disables the Print Spooler service on the DCs. A running spooler on a DC is the lever for coercion attacks (PrinterBug / MS-RPRN) that force the DC to authenticate to an attacker, feeding NTLM relay and unconstrained-delegation chains.'
@@ -190,6 +258,18 @@ function Get-EffectiveRegValue {
     }
     return $null
 }
+# Startup type a GPO forces on a service: System Services setting first, then the Start
+# registry value. $null when no GPO sets it.
+function Get-EffectiveServiceStart {
+    param($Order, [string]$Service)
+    foreach ($g in $Order) {
+        $v = Get-Member2 (Get-Member2 $g 'serviceStart') $Service.ToLower()
+        if ($null -ne $v) { return [int]$v }
+        $r = Get-RegInt (Get-Member2 (Get-Member2 $g 'registryValues') "MACHINE\System\CurrentControlSet\Services\$Service\Start")
+        if ($null -ne $r) { return $r }
+    }
+    return $null
+}
 function Get-RegInt {
     param([string]$Raw)
     if (-not $Raw) { return $null }
@@ -257,8 +337,20 @@ function Invoke-GpoChecks {
         Add-Finding -Type ntlm_weak_lmcompat -Object $dcLabel -ObjectType 'gpo' -Detail "LmCompatibilityLevel = $lmcompat (5 = NTLMv2 only, refuse LM & NTLM)."
     }
     $ra = Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Control\Lsa\RestrictAnonymousSAM')
-    if ($null -eq $ra -or $ra -ne 1) {
-        Add-Finding -Type anonymous_sam_enum -Object $dcLabel -ObjectType 'gpo' -Detail "RestrictAnonymousSAM = $(if ($null -eq $ra) { 'not configured' } else { $ra })."
+    $anon = @()
+    if ($null -eq $ra -or $ra -ne 1) { $anon += "RestrictAnonymousSAM = $(if ($null -eq $ra) { 'not configured' } else { $ra })" }
+    # Null sessions: only an explicit weak value counts, the defaults are safe.
+    if ((Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Control\Lsa\RestrictAnonymous')) -eq 0) { $anon += 'RestrictAnonymous = 0' }
+    if ((Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Control\Lsa\EveryoneIncludesAnonymous')) -eq 1) { $anon += 'EveryoneIncludesAnonymous = 1' }
+    if ((Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\RestrictNullSessAccess')) -eq 0) { $anon += 'RestrictNullSessAccess = 0' }
+    # REG_MULTI_SZ in GptTmpl: "7,a,b". The DC defaults for pipes are netlogon, samr, lsarpc.
+    $multi = { param($raw) if (-not $raw) { return @() } @("$raw".Split(',') | Select-Object -Skip 1 | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+    $nShares = @(& $multi (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\NullSessionShares'))
+    if ($nShares.Count) { $anon += "NullSessionShares = $($nShares -join ', ')" }
+    $nPipes = @(& $multi (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\NullSessionPipes') | Where-Object { @('netlogon', 'samr', 'lsarpc') -notcontains "$_".ToLower() })
+    if ($nPipes.Count) { $anon += "extra NullSessionPipes = $($nPipes -join ', ')" }
+    if ($anon.Count) {
+        Add-Finding -Type anonymous_sam_enum -Object $dcLabel -ObjectType 'gpo' -Detail "$($anon -join '; ')."
     }
     # Kerberos encryption types: flag if DES (0x1|0x2) or RC4 (0x4) still allowed.
     $kenc = Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\Kerberos\Parameters\SupportedEncryptionTypes')
@@ -327,8 +419,19 @@ function Invoke-GpoChecks {
     if ($null -eq $llmnr -or $llmnr -ne 0) {
         Add-Finding -Type llmnr_enabled -Object $dcLabel -ObjectType 'gpo' -Detail "DNSClient EnableMulticast = $(if ($null -eq $llmnr) { 'not configured' } else { $llmnr }) (0 = LLMNR disabled)."
     }
+    $mdns = Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Services\Dnscache\Parameters\EnableMDNS')
+    if ($null -eq $mdns -or $mdns -ne 0) {
+        Add-Finding -Type mdns_enabled -Object $dcLabel -ObjectType 'gpo' -Detail "Dnscache EnableMDNS = $(if ($null -eq $mdns) { 'not configured (on by default)' } else { $mdns }) (0 = mDNS disabled)."
+    }
+    # Older snapshots have no System Services settings: the check is not evaluated there.
+    if (@($gpo.gpos | Where-Object { $_ -and -not (Test-Member2 $_ 'serviceStart') }).Count -eq 0) {
+        $wc = Get-EffectiveServiceStart $order 'WebClient'
+        if ($null -eq $wc -or $wc -ne 4) {
+            Add-Finding -Type webclient_not_disabled -Object $dcLabel -ObjectType 'gpo' -Detail "WebClient service startup = $(if ($null -eq $wc) { 'not configured by GPO' } else { $wc }) (4 = Disabled)."
+        }
+    }
     # Print Spooler should be disabled on DCs (service start = 4).
-    $spool = Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Services\Spooler\Start')
+    $spool = Get-EffectiveServiceStart $order 'Spooler'
     if ($null -eq $spool -or $spool -ne 4) {
         $gpoText = "Spooler service Start = $(if ($null -eq $spool) { 'not configured by GPO' } else { $spool }) (4 = Disabled)"
         # The GPO only says what is enforced. When the collector read the real service state
@@ -446,6 +549,104 @@ function Invoke-GpoChecks {
                     -Detail "$($per[$sid].Name) holds $(($per[$sid].Rights | Select-Object -Unique) -join ', ') on this GPO, linked (enabled) to the $scope."
             }
         }
+    }
+
+    # Settings meant for workstations and servers: looked for in every GPO, not only the DC order.
+    $gpoWhere = @{}
+    foreach ($l in @($gpo.domainRootLinks)) { if ($l.enabled) { $gpoWhere[("$($l.guid)").ToUpper()] = 'linked to the domain root' } }
+    foreach ($l in @($gpo.dcOuLinks)) { if ($l.enabled) { $gpoWhere[("$($l.guid)").ToUpper()] = 'linked to the Domain Controllers OU' } }
+    $linkText = { param($g) $w = $gpoWhere[("$($g.guid)").ToUpper()]; if ($w) { $w } else { 'not linked to the domain root or the DC OU (check its other links)' } }
+    $allGpos = @($gpo.gpos | Where-Object { $_ })
+    $regOf = { param($g, $k) Get-Member2 (Get-Member2 $g 'registryValues') $k }
+
+    $aieM = 'MACHINE\Software\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated'
+    $aieU = 'USER\Software\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated'
+    $userSideKnown = @($allGpos | Where-Object { -not (Get-Member2 $_ 'userPolicyRead') }).Count -eq 0
+    $anyUser = @($allGpos | Where-Object { (Get-RegInt (& $regOf $_ $aieU)) -eq 1 }).Count -gt 0
+    foreach ($g in @($allGpos | Where-Object { (Get-RegInt (& $regOf $_ $aieM)) -eq 1 })) {
+        $both = $anyUser
+        $uText = if ($both) { 'the user side is set too (in this or another GPO): any user gets SYSTEM' } elseif ($userSideKnown) { 'no GPO sets the user side, so it is not exploitable on its own yet' } else { 'the user side was not collected (older collector): check it' }
+        Add-Finding -Type always_install_elevated -Object "$($g.displayName)" -ObjectType 'gpo' -ObjectDn $g.guid -Severity $(if ($both) { 'Critical' } else { 'High' }) `
+            -Detail "Machine-side AlwaysInstallElevated = 1; $uText. GPO $(& $linkText $g)."
+    }
+
+    # Autologon: registry value (masked by the collector) or a GPP registry item in SYSVOL.
+    $alGpos = [ordered]@{}; $alFiles = @{}
+    foreach ($g in $allGpos) {
+        $pw = "$(& $regOf $g 'MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\DefaultPassword')"
+        if ($pw -and ($pw -split ',', 2)[-1]) { $alGpos[("$($g.guid)").ToUpper()] = @('Winlogon DefaultPassword registry value') }
+    }
+    if ($Snapshot.sysvol -and $Snapshot.sysvol.PSObject.Properties['autologonFiles']) {
+        foreach ($f in @($Snapshot.sysvol.autologonFiles | Where-Object { $_ })) {
+            $gid = if ("$f" -match '\{[0-9A-Fa-f\-]{36}\}') { $Matches[0].ToUpper() } else { "$f" }
+            $alGpos[$gid] = @($(if ($alGpos.Contains($gid)) { $alGpos[$gid] }) + 'Group Policy Preferences registry item')
+            $alFiles[$gid] = "$f"
+        }
+    }
+    foreach ($gid in $alGpos.Keys) {
+        $g = @($allGpos | Where-Object { ("$($_.guid)").ToUpper() -eq $gid })[0]
+        $name = if ($g) { "$($g.displayName)" } else { "GPO $gid" }
+        $auto = if ($g) { Get-RegInt (& $regOf $g 'MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\AutoAdminLogon') } else { $null }
+        # The file path goes last, with nothing glued to it, so the AI pseudonymizer tokenizes it cleanly.
+        Add-Finding -Type gpo_autologon_password -Object $name -ObjectType 'gpo' -ObjectDn $gid `
+            -Detail "Autologon password in $($alGpos[$gid] -join ' and ')$(if ($auto -eq 1) { '; AutoAdminLogon = 1' }). Value not collected. GPO $(if ($g) { & $linkText $g } else { 'not found among the GPO templates' }).$(if ($alFiles.ContainsKey($gid)) { " File: $($alFiles[$gid])" })"
+    }
+
+    foreach ($g in $allGpos) {
+        $wu = "$(& $regOf $g 'MACHINE\Software\Policies\Microsoft\Windows\WindowsUpdate\WUServer')"
+        $wuUrl = ($wu -split ',', 2)[-1]
+        if ($wuUrl -match '^(?i)\s*http://') {
+            Add-Finding -Type wsus_http -Object "$($g.displayName)" -ObjectType 'gpo' -ObjectDn $g.guid -Detail "WUServer = $($wuUrl.Trim()). GPO $(& $linkText $g)."
+        }
+        if ((Get-RegInt (& $regOf $g 'MACHINE\Software\Policies\Microsoft\Windows NT\Terminal Services\UserAuthentication')) -eq 0) {
+            Add-Finding -Type rdp_nla_disabled -Object "$($g.displayName)" -ObjectType 'gpo' -ObjectDn $g.guid -Detail "Terminal Services UserAuthentication = 0 (NLA not required). GPO $(& $linkText $g)."
+        }
+        if ((Get-RegInt (& $regOf $g 'MACHINE\System\CurrentControlSet\Control\Lsa\DisableRestrictedAdmin')) -eq 0) {
+            Add-Finding -Type rdp_restricted_admin -Object "$($g.displayName)" -ObjectType 'gpo' -ObjectDn $g.guid -Detail "Lsa DisableRestrictedAdmin = 0 (Restricted Admin allowed). GPO $(& $linkText $g)."
+        }
+    }
+
+    # Domain-wide "nobody configures it" checks: one finding on the domain.
+    $domName = "$($Snapshot.domain.dnsRoot)"
+    $cg = @($allGpos | Where-Object {
+            (Get-RegInt (& $regOf $_ 'MACHINE\Software\Policies\Microsoft\Windows\DeviceGuard\LsaCfgFlags')) -ge 1 -or
+            (Get-RegInt (& $regOf $_ 'MACHINE\System\CurrentControlSet\Control\Lsa\LsaCfgFlags')) -ge 1 })
+    if (-not $cg.Count) {
+        Add-Finding -Type credential_guard_not_configured -Object $domName -ObjectType 'domain' -Detail "None of the $($allGpos.Count) GPO templates sets LsaCfgFlags (Credential Guard)."
+    }
+    $appCtl = @($allGpos | Where-Object {
+            $rv = Get-Member2 $_ 'registryValues'
+            $keys = if ($rv -is [System.Collections.IDictionary]) { @($rv.Keys) } elseif ($rv) { @($rv.PSObject.Properties | ForEach-Object { $_.Name }) } else { @() }
+            @($keys | Where-Object { $_ -like 'MACHINE\Software\Policies\Microsoft\Windows\SrpV2\*' -or $_ -like 'MACHINE\Software\Policies\Microsoft\Windows\DeviceGuard\ConfigCIPolicyFilePath' -or $_ -like 'MACHINE\Software\Policies\Microsoft\Windows\DeviceGuard\DeployConfigCIPolicy' }).Count -gt 0 })
+    if (-not $appCtl.Count) {
+        Add-Finding -Type app_control_missing -Object $domName -ObjectType 'domain' -Detail "None of the $($allGpos.Count) GPO templates holds AppLocker rules (SrpV2) or a WDAC policy."
+    }
+    $flo = $null
+    foreach ($g in $order) { $v = Get-Member2 (Get-Member2 $g 'systemAccess') 'ForceLogoffWhenHourExpire'; if ($null -ne $v) { $flo = Get-RegInt "$v"; break } }
+    if ($flo -ne 1) {
+        Add-Finding -Type force_logoff_disabled -Object $domName -ObjectType 'domain' -Detail "ForceLogoffWhenHourExpire = $(if ($null -eq $flo) { 'not configured (off)' } else { $flo })."
+    }
+    $v6 = @($allGpos | Where-Object { $d = Get-RegInt (& $regOf $_ 'MACHINE\System\CurrentControlSet\Services\Tcpip6\Parameters\DisabledComponents'); $null -ne $d -and ($d -band 0xFF) -eq 0xFF })
+    if (-not $v6.Count) {
+        $why = @()
+        $ldapS2 = Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Services\NTDS\Parameters\LDAPServerIntegrity')
+        if ($null -eq $ldapS2 -or $ldapS2 -lt 2) { $why += 'LDAP signing not required' }
+        if ($null -ne $Snapshot.domain.machineAccountQuota -and [int]$Snapshot.domain.machineAccountQuota -gt 0) { $why += "machine account quota $($Snapshot.domain.machineAccountQuota)" }
+        Add-Finding -Type ipv6_dhcpv6_takeover -Object $domName -ObjectType 'domain' -Severity $(if ($why.Count) { 'Medium' } else { 'Low' }) `
+            -Detail "No GPO sets Tcpip6 DisabledComponents = 0xFF$(if ($why.Count) { "; relay targets: $($why -join ', ')" }). A firewall rule blocking DHCPv6 would also do, and is not read."
+    }
+    # WPAD: the WinHttp policy value, or the auto-discovery service disabled (older snapshots: not evaluated).
+    if (@($allGpos | Where-Object { -not (Test-Member2 $_ 'serviceStart') }).Count -eq 0) {
+        $wpadOff = @($allGpos | Where-Object {
+                (Get-RegInt (& $regOf $_ 'MACHINE\System\CurrentControlSet\Services\WinHttp\Parameters\DisableWpad')) -eq 1 -or
+                (Get-RegInt "$(Get-Member2 (Get-Member2 $_ 'serviceStart') 'winhttpautoproxysvc')") -eq 4 })
+        if (-not $wpadOff.Count) {
+            Add-Finding -Type wpad_not_disabled -Object $domName -ObjectType 'domain' -Detail 'No GPO sets WinHttp DisableWpad = 1 or disables the WinHttpAutoProxySvc service.'
+        }
+    }
+    $wsh = @($allGpos | Where-Object { (Get-RegInt (& $regOf $_ 'MACHINE\Software\Microsoft\Windows Script Host\Settings\Enabled')) -eq 0 })
+    if (-not $wsh.Count) {
+        Add-Finding -Type wsh_enabled -Object $domName -ObjectType 'domain' -Detail 'No GPO sets Windows Script Host Settings\Enabled = 0.'
     }
 
     # Snapshots from older collectors have no execution / localGroups: listed

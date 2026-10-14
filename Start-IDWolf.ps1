@@ -85,6 +85,8 @@ function Read-Path {
     }
 }
 function Ts { Get-Date -Format 'yyyyMMdd_HHmmss' }
+# The default paths offered below are under .\output.
+$od = Join-Path (Get-Location).Path 'output'; if (-not (Test-Path -LiteralPath $od)) { New-Item -ItemType Directory -Path $od | Out-Null }
 
 # Collect here, analyze elsewhere: one zip with a hash for each file inside.
 function Invoke-Package {
@@ -102,7 +104,7 @@ function Invoke-Package {
         if ($pw1.Length -lt 12) { Write-Host 'Use at least 12 characters: nothing packaged.' -ForegroundColor Red; return }
         $pw = $pw1
     }
-    $zipOut = Read-Path "Package path" ("idwolf_{0}.{1}" -f (Ts), $(if ($pw) { 'idwolf' } else { 'zip' }))
+    $zipOut = Read-Path "Package path" ("output\idwolf_{0}.{1}" -f (Ts), $(if ($pw) { 'idwolf' } else { 'zip' }))
     try {
         $full = New-IDWolfBundle -Snapshot $Snapshot -PasswordQuality $PasswordQuality -OutFile $zipOut -Password $pw
         Write-Host "Ready: $full" -ForegroundColor Green
@@ -175,7 +177,7 @@ while ($true) {
                 Write-Host "Run this option on a domain-joined machine or the DC, or run Export-PasswordQuality.ps1 -FromDatabase ntds.dit -BootKeyFile SYSTEM." -ForegroundColor Yellow
                 continue
             }
-            $pqOut = Read-Path "Password-quality output path" ("pwq_{0}.json" -f (Ts))
+            $pqOut = Read-Path "Password-quality output path" ("output\pwq_{0}.json" -f (Ts))
             $wl = Read-Path "Weak/breached password list path (optional, Enter to skip)"
             if (Invoke-PasswordQualityStep -OutFile $pqOut -WeakList $wl) { Write-Host "Password-quality report ready: $pqOut" -ForegroundColor Green }
         }
@@ -185,7 +187,7 @@ while ($true) {
             $wg = Get-WorkgroupParams
             if ($null -eq $wg) { Write-Host "Cancelled: no domain controller given." -ForegroundColor Yellow; continue }
             # Timestamped file, so a re-run never overwrites the last snapshot.
-            $out = Read-Path "AD snapshot output path" ("adsnap_{0}.json" -f (Ts))
+            $out = Read-Path "AD snapshot output path" ("output\adsnap_{0}.json" -f (Ts))
             $deep = ((Read-Host "Deep collection? (y/N)") -match '^[YySs]')
             $p = @{ OutFile = $out } + (Get-CredParams) + $wg
             if ($deep) { $p['Deep'] = $true }
@@ -196,7 +198,7 @@ while ($true) {
                 $pqOut = ""
                 if (-not (Test-DomainJoined)) { Write-Host "Password quality skipped: it needs a domain-joined machine (or the DC) to find the PDC. Run option 2 there." -ForegroundColor Yellow }
                 elseif ((Read-Host "Also collect password quality now? Needs DSInternals and DCSync rights; run from the DC or a trusted admin host (y/N)") -match '^[YySs]') {
-                    $pqOut = Read-Path "Password-quality output path" ("pwq_{0}.json" -f (Ts))
+                    $pqOut = Read-Path "Password-quality output path" ("output\pwq_{0}.json" -f (Ts))
                     $wl = Read-Path "Weak/breached password list path (optional, Enter to skip)"
                     $pqOut = Invoke-PasswordQualityStep -OutFile $pqOut -WeakList $wl
                     if (-not $pqOut) { Write-Host "Password quality not produced (see messages); continuing without it." -ForegroundColor Yellow }
@@ -204,7 +206,7 @@ while ($true) {
                 $next = (Read-Host "Analyze here [A], package a zip to analyze on another machine [Z], or stop [S]? (A/z/s)").Trim().ToUpper()
                 if ($next -eq 'Z') { Invoke-Package -Snapshot $out -PasswordQuality $pqOut }
                 elseif ($next -ne 'S') {
-                    $ap = @{ Snapshot = $out; OutHtml = (Read-Path "Report HTML path" ("report_{0}.html" -f (Ts))) }
+                    $ap = @{ Snapshot = $out; OutHtml = (Read-Path "Report HTML path" ("output\report_{0}.html" -f (Ts))) }
                     if ($pqOut) { $ap['PasswordQualityFile'] = $pqOut }
                     $m = Read-Host "Gemini model [gemini-3.8-flash]"
                     if ($m) { $ap['Model'] = $m.Trim() }
@@ -219,9 +221,9 @@ while ($true) {
         '6' {
             # AI summary for an existing analysis. It starts from the snapshot
             # (tokenizing needs the directory data) and rewrites the report.
-            $snaps = @(Get-ChildItem -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)snapshot|adsnap|entra' } | Select-Object -ExpandProperty Name)
-            if ($snaps.Count -eq 0) { $snaps = @(Get-ChildItem -Filter *.json -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) }
-            $snaps = @($snaps) + @(Get-ChildItem -Filter *.zip -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)idwolf' } | Select-Object -ExpandProperty Name)
+            $snaps = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)snapshot|adsnap|entra' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
+            if ($snaps.Count -eq 0) { $snaps = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName }) }
+            $snaps = @($snaps) + @(Get-ChildItem -Path '.', 'output' -Filter *.zip -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)idwolf' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
             $snap = ""
             if ($snaps.Count -gt 0) {
                 for ($i = 0; $i -lt $snaps.Count; $i++) { Write-Host ("  [{0}] {1}" -f ($i + 1), $snaps[$i]) }
@@ -235,7 +237,7 @@ while ($true) {
                 $snap = ""
             }
             if ($snap -and (Test-Path -LiteralPath $snap)) {
-                $rep = Read-Path "Report HTML to (re)write" ("report_{0}.html" -f (Ts))
+                $rep = Read-Path "Report HTML to (re)write" ("output\report_{0}.html" -f (Ts))
                 $ap = @{ Snapshot = $snap; OutHtml = $rep }
                 # No -SendToAI: the analyzer writes <report>_ai_prompt.txt first, shows its path, asks before
                 # sending, and asks for the API key then if there is none. Nothing leaves before that "y".
@@ -246,7 +248,7 @@ while ($true) {
                     if ($r -match '^\d+$') { $ap['AiMaxAttempts'] = [int]$r }
                 # A zip brings its own password-quality report, if it has one.
                 if ($snap -notmatch '(?i)\.zip$') {
-                    $pqf = @(Get-ChildItem -Filter '*.json' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)pwq|passwordquality' } | Select-Object -ExpandProperty Name)
+                    $pqf = @(Get-ChildItem -Path '.', 'output' -Filter '*.json' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)pwq|passwordquality' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
                     $pq = Read-Path "Password-quality JSON to include (optional, Enter to skip)" $(if ($pqf.Count) { $pqf[0] } else { "" })
                     if ($pq) { $ap['PasswordQualityFile'] = $pq }
                 }
@@ -255,18 +257,18 @@ while ($true) {
             elseif ($snap) { Write-Host "Snapshot not found." -ForegroundColor Red }
         }
         '7' {
-            $snapDef = @(Get-ChildItem -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)snapshot|adsnap|entra' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty Name)
+            $snapDef = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)snapshot|adsnap|entra' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
             $s = Read-Path "Snapshot JSON" $(if ($snapDef.Count) { $snapDef[0] } else { "" })
             if (-not $s -or -not (Test-Path -LiteralPath $s)) { Write-Host "Snapshot not found." -ForegroundColor Red }
             else {
-                $pqDef = @(Get-ChildItem -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)pwq|passwordquality' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty Name)
+                $pqDef = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)pwq|passwordquality' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
                 $pq = Read-Path "Password-quality JSON to add (optional, Enter to skip)" $(if ($pqDef.Count) { $pqDef[0] } else { "" })
                 if ($pq -and -not (Test-Path -LiteralPath $pq)) { Write-Host "Password-quality file not found: $pq" -ForegroundColor Red }
                 else { Invoke-Package -Snapshot $s -PasswordQuality $pq }
             }
         }
         '8' {
-            $out = Read-Path "Entra snapshot output path" ("entrasnapshot_{0}.json" -f (Ts))
+            $out = Read-Path "Entra snapshot output path" ("output\entrasnapshot_{0}.json" -f (Ts))
             $p = @{ OutFile = $out }
             $tenant = (Read-Host "Tenant ID or domain (Enter = sign-in default)").Trim()
             if ($tenant) { $p['TenantId'] = $tenant }
@@ -277,7 +279,7 @@ while ($true) {
                 $next = (Read-Host "Analyze here [A], package a zip to analyze on another machine [Z], or stop [S]? (A/z/s)").Trim().ToUpper()
                 if ($next -eq 'Z') { Invoke-Package -Snapshot $out }
                 elseif ($next -ne 'S') {
-                    $ap = @{ Snapshot = $out; OutHtml = (Read-Path "Report HTML path" ("report_{0}.html" -f (Ts))) }
+                    $ap = @{ Snapshot = $out; OutHtml = (Read-Path "Report HTML path" ("output\report_{0}.html" -f (Ts))) }
                     $m = Read-Host "Gemini model [gemini-3.8-flash]"
                     if ($m) { $ap['Model'] = $m.Trim() }
                     $r = Read-Host "Gemini attempts on timeout / busy server, 0 = keep trying [3]"

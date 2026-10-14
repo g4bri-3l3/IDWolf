@@ -14,18 +14,23 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+![A tour of an IDWolf report from a lab domain, one captioned slide every three seconds](examples/lab_report.gif)
+
+*A real report from a throw-away lab domain: the score, the charts, the attack-path
+map with its chains, the Tier 0 members, the AI summary and the findings.*
+
 IDWolf is a hygiene audit for Active Directory and Microsoft Entra ID, written
 in plain PowerShell. It takes a **read-only snapshot** of your directory using
 nothing but the native ActiveDirectory module, then analyzes that snapshot
 **offline** and gives you an HTML report, a findings CSV and, if you want, JSON
 Lines for your SIEM.
 
-On the AD side it runs **166 checks**: Kerberos, privileged access, account
+On the AD side it runs **167 checks**: Kerberos, privileged access, account
 hygiene, domain configuration, permissions, DNS, AD CS (ESC1-5, 9, 10, 13, 15),
 operational health (replication, DHCP, backups), host hardening read from the
 GPOs (SMB and LDAP signing, NTLM, LM hash, user rights) and password quality,
 all without ever handling a password hash. A separate collector covers
-**Microsoft Entra ID** with **86 checks**, mapped to the CIS Microsoft 365
+**Microsoft Entra ID** with **88 checks**, mapped to the CIS Microsoft 365
 benchmark.
 
 If you like, a Gemini step can write an executive summary and a remediation
@@ -34,11 +39,13 @@ directory name is replaced by a token before anything is sent.
 
 ## What it looks like
 
-![A tour of an IDWolf report from a lab domain, one captioned slide every three seconds](examples/lab_report.gif)
+The report is one self-contained HTML file, built to be read by the people who
+have to act on it, not only by the person who ran the audit: a score and a grade,
+charts by severity and category, an attack-path map and a trust map drawn as SVG,
+the Tier 0 members, the compliance view and every finding with its fix. No
+external libraries, no CDN, nothing loaded from the internet: it opens offline
+and can be mailed as it is.
 
-*A report from a throw-away lab domain, one slide every three seconds: the score,
-the charts, the attack-path map with its chains, the Tier 0 members, the AI
-summary and the findings.*
 GitHub shows HTML files as plain text, so download the samples and open them in
 a browser:
 
@@ -72,15 +79,38 @@ works that out by itself.
 | Privileged access | 18 | Tier 0 membership by SID through nesting and primary group, dormant / foreign / computer admins, operator groups, DnsAdmins, RID 500, silos, GPOs making everyone local admin, RODC password replication policy and Tier 0 credentials cached on RODCs |
 | Account hygiene | 19 | inactive and never-used accounts, passwords not required / never expiring / in descriptions, sIDHistory, LAPS deployment and rotation, obsolete OS |
 | Domain configuration | 28 | password policies and FGPPs, functional level, Recycle Bin, anonymous LDAP, trusts, DNS zones and WPAD records, DC hygiene |
-| Permissions | 15 | DCSync rights, dangerous ACEs on Tier 0 (or anywhere with `-Deep`: including write access to logon script, profile path, certificate mapping, account flags and account restrictions, the RBCD attribute), owners, DirSync readers of confidential attributes (SyncLAPSPassword), GPP passwords, script secrets, gMSA and LAPS readers, Shadow Credentials, GPO takeover, GPO scripts and tasks run from shares |
+| Permissions | 16 | DCSync rights, dangerous ACEs on Tier 0 (or anywhere with `-Deep`: including write access to logon script, profile path, certificate mapping, account flags and account restrictions, the RBCD attribute), owners, DirSync readers of confidential attributes (SyncLAPSPassword), GPP passwords, script secrets, gMSA and LAPS readers, Shadow Credentials, dMSA creation rights (BadSuccessor), GPO takeover, GPO scripts and tasks run from shares |
 | Certificate services | 18 | ESC1-5, 9, 10, 13, 15, weak CA keys, expiring CAs; ESC6, 7, 8, 11 and 16 read on the CA itself (admin rights on the CA host), with a manual-look note for any CA that could not be read |
 | Host hardening (GPO) | 40 | SMB/LDAP signing and channel binding, NTLM/LM, WDigest, LSA protection, audit policy, logging, ZeroLogon, LLMNR, mDNS, NBT-NS (live on DCs), null sessions, Spooler, WebClient (GPO and live on DCs), noPac patch level and coercion interfaces (live on DCs), Point and Print (PrintNightmare), cached logons, AlwaysInstallElevated, autologon passwords in GPOs, WSUS over HTTP, RDP (NLA, Restricted Admin), Credential Guard, application control, IPv6 / mitm6, WPAD auto-discovery, Windows Script Host, force logoff |
 | Password quality | 5 | duplicate, empty, default, breached and reversible passwords, without ever handling a hash |
 | Operational health | 9 | replication, backups, DHCP on a DC, FSMO holders, unreachable DCs, clock skew between DCs, disk space and stopped services on DCs |
-| **Entra ID** | 86 | MFA (registration, strength, Authenticator settings), Conditional Access (legacy auth, device code, risk, managed devices, locations, token protection, session limits), PIM (standing access, approval, activation and assignment settings, PIM for Groups owners), admins (cloud-only, licences, inactive, emergency access), devices (join, local admins, LAPS, BitLocker), guests, apps (consent, permissions, credential policy), password settings, risky app consents, app owners, groups behind Conditional Access exclusions and admin roles, the Entra Connect app, look-alike app names, credentials on Microsoft apps, sync health, federation, B2B direct connect, access packages, workload identity Conditional Access; every CIS Microsoft 365 v7 control that Graph can read |
+| **Entra ID** | 88 | MFA (registration, strength, Authenticator settings), Conditional Access (legacy auth, device code, risk, managed devices, locations, token protection, session limits), PIM (standing access, approval, activation and assignment settings, PIM for Groups owners), admins (cloud-only, licences, inactive, emergency access), devices (join, local admins, LAPS, BitLocker), guests, apps (consent, permissions, credential policy), password settings, risky app consents, app owners, groups behind Conditional Access exclusions and admin roles, the Entra Connect app, look-alike app names, credentials on Microsoft apps, sync health, federation, B2B direct connect, access packages, workload identity Conditional Access, Intune roles that can run code on devices and Multi Admin Approval for device wipes and scripts (not yet verified on a real tenant); every CIS Microsoft 365 v7 control that Graph can read |
 
 The full list of checks is further down. How they map to CIS, PingCastle, the
-InfosecMatter Top 16, HardenAD and the rest is in [`COVERAGE.md`](COVERAGE.md).
+InfosecMatter Top 16 and common attack techniques is in [`COVERAGE.md`](COVERAGE.md).
+
+### Recent attacks
+
+The vectors behind the most cited incidents and research of 2023-2026, and the
+checks that look for the condition each one needs. The full table, including
+what isn't covered yet (SCCM, ESC17, apps on Azure AD Graph), is in
+[`COVERAGE.md`](COVERAGE.md#recent-attacks-2023-2026).
+
+| Attack | When | Checks |
+|---|---|---|
+| BadSuccessor (dMSA on Windows Server 2025, CVE-2025-53779) | 2025 | `badsuccessor_dmsa_create` |
+| Golden dMSA / Golden gMSA | 2025 | `kds_root_key_readable` (`-Deep`) |
+| Coercion + NTLM relay to LDAP or AD CS (CVE-2025-24054) | 2025-26 | `coercion_unfiltered_dc`, `adcs_esc8`, `adcs_esc11`, `ldap_signing_not_required`, `ldap_channel_binding_off`, `webclient_on_dc` |
+| NTLM reflection over SMB (CVE-2025-33073) | 2025 | `smb_signing_not_required`, `smb_client_signing_not_required` (the mitigation) |
+| AD CS ESC15 (EKUwu) and ESC16 | 2024-25 | `adcs_esc15`, `adcs_esc16` |
+| Kerberoasting in ransomware intrusions | 2026 | `kerberoastable_user`, `privileged_kerberoastable`, `spn_account_rc4` |
+| Entra Connect and SyncJacking | 2025-26 | `entra_admin_synced_from_onprem`, `entra_connect_app_extra_credentials`, `dcsync_rights` (partial) |
+| Password spraying (over 99% of cloud initial access, Microsoft 2026) | 2025-26 | `entra_smart_lockout_weak`, `entra_banned_passwords_off`, `entra_legacy_auth_allowed`, `entra_admins_without_mfa` |
+| Device code phishing | 2025-26 | `entra_device_code_flow_allowed` |
+| Adversary-in-the-middle and token theft | ongoing | `entra_no_phishing_resistant_admins`, `entra_token_protection_off`, `entra_admin_sign_in_frequency` |
+| OAuth consent phishing, over-privileged apps (Midnight Blizzard) | 2024-26 | `entra_users_can_consent`, `entra_risky_delegated_grant`, `entra_app_high_privilege` |
+| Escalation through service principal ownership (Entra Agent ID) | 2026 | `entra_privileged_app_sp_owner`, `entra_privileged_app_owner` |
+| Mass device wipe from a compromised Intune admin (Stryker, reported) | 2026 | `entra_intune_no_multi_admin_approval`, `entra_intune_role_weak_group` (not yet verified on a real tenant) |
 
 ### Regulations
 
@@ -109,20 +139,21 @@ These are the tools people usually reach for to do a similar job, in their free
 or community editions. The table is based on their public documentation as of
 October 2026. If something here is out of date or wrong, please say so.
 
-| | IDWolf | PingCastle | Purple Knight | BloodHound CE | Locksmith | Maester |
-|---|---|---|---|---|---|---|
-| What it is | AD + Entra hygiene audit | AD (and Entra) health check | AD, Entra, Okta exposure assessment | attack-path graph | AD CS scanner and fixer | Entra / M365 test framework |
-| Shape | readable PowerShell scripts | compiled .NET program | compiled program | server with web UI, plus collectors | PowerShell | PowerShell (Pester) |
-| Proves it can't write to the directory (built-in code review) | **Yes** | – | – | – | – (has a fix mode) | – |
-| Collect once, analyze later on another machine, offline | **Yes** | partial (re-renders its XML report) | – | yes (import into the server) | – | – |
-| AI summary, remediation plan, attack-path story, fix scripts, exploitability ranking | **Yes** (names tokenized first, nothing sent without consent) | – | – | – | – | – |
-| AD hygiene checklist | 166 checks | yes | yes | – (paths, not a checklist) | – | – |
-| AD CS (ESC) | ESC1-5, 9, 10, 13, 15 | some | some | yes, as graph edges | **broadest**, with fixes | – |
-| Password quality (duplicates, breached) | yes, hashless | – | – | – | – | – |
-| Host hardening read from GPOs | yes | yes | yes | – | – | – |
-| DC health | replication, backup age, FSMO holders, reachability, clock skew, disk space, stopped services | backup age, DC registration, DCs not updated | ? | – | – | – |
-| Entra ID | 86 checks, CIS M365 v7 + non-human identities | **102 checks** (4.0; the list isn't public, so the overlap with IDWolf is unknown) | yes | yes (AzureHound) | – | **broadest** (CIS, CISA, EIDSCA) |
-| Attack-path view | map in the report + BloodHound export | control-path map | – | **the reference** | – | – |
+| | IDWolf | PingCastle | Purple Knight | BloodHound CE | Locksmith | Maester | ADScan |
+|---|---|---|---|---|---|---|---|
+| What it is | AD + Entra hygiene audit | AD (and Entra) health check | AD, Entra, Okta exposure assessment | attack-path graph | AD CS scanner and fixer | Entra / M365 test framework | AD pentest tool (enumerates, then exploits) |
+| Shape | readable PowerShell scripts | compiled .NET program | compiled program | server with web UI, plus collectors | PowerShell | PowerShell (Pester) | Python CLI (Docker on Linux / macOS, bundled exe on Windows), source-available (BSL 1.1) |
+| Proves it can't write to the directory (built-in code review) | **Yes** | – | – | – | – (has a fix mode) | – | – (attacks by design, after operator confirmation) |
+| Collect once, analyze later on another machine, offline | **Yes** | partial (re-renders its XML report) | – | yes (import into the server) | – | – | – |
+| AI summary, remediation plan, attack-path story, fix scripts, exploitability ranking | **Yes** (names tokenized first, nothing sent without consent) | – | – | – | – | – | – |
+| AD hygiene checklist | 167 checks | yes | yes | – (paths, not a checklist) | – | – | – (104 attack techniques, tried rather than audited) |
+| AD CS (ESC) | ESC1-5, 9, 10, 13, 15; 6, 7, 8, 11, 16 read on the CA | some | some | yes, as graph edges | **broadest**, with fixes | – | template enumeration; ESC1-16 exploitation in PRO |
+| Password quality (duplicates, breached) | yes, hashless | – | – | – | – | – | spraying and cracking (an attack, not an audit) |
+| Host hardening read from GPOs | yes | yes | yes | – | – | – | – (some preconditions probed live) |
+| DC health | replication, backup age, FSMO holders, reachability, clock skew, disk space, stopped services | backup age, DC registration, DCs not updated | ? | – | – | – | – |
+| Entra ID | 88 checks, CIS M365 v7 + non-human identities | **102 checks** (4.0; the list isn't public, so the overlap with IDWolf is unknown) | yes | yes (AzureHound) | – | **broadest** (CIS, CISA, EIDSCA) | – |
+| Attack-path view | map in the report + BloodHound export | control-path map | – | **the reference** | – | – | BloodHound CE-compatible collection; attack graph and exploitation chains in PRO |
+| Report | **one self-contained HTML** (charts, attack-path and trust maps, compliance view, no CDN), CSV, JSONL | HTML | ? | web UI | console, CSV | HTML | TXT / JSON; PDF (with NIS2 / ISO 27001 mapping) in PRO |
 
 A "–" means the feature isn't in that tool's free edition as far as I know, not
 that it's impossible. A "?" means I couldn't find a public list to compare
@@ -130,7 +161,8 @@ against.
 
 Where the others are stronger, use them next to IDWolf: BloodHound to explore
 attack paths, Locksmith to fix AD CS, Maester or PingCastle for deeper Entra and
-Microsoft 365 coverage. What IDWolf tries to be is one readable snapshot that
+Microsoft 365 coverage, ADScan (with written authorization) to prove that a
+weakness IDWolf reports can really be exploited. What IDWolf tries to be is one readable snapshot that
 you can show is read-only, that someone else can analyze offline, with an AI
 layer for the people who have to read the report.
 
@@ -146,6 +178,10 @@ could change the directory.
 .\Start-IDWolf.ps1                              # menu: collect, analyze, add AI (5 = full AD run, 8 = full Entra run)
 .\Start-IDWolf.ps1 -Credential (Get-Credential) # same, with a delegated / admin account
 ```
+
+Snapshots, reports and packages go to an `output` folder under the current
+directory unless you give a path yourself. The menu and the analyzer also look
+there for snapshots to offer.
 
 Did you download the zip? Windows marks those files as coming from the internet,
 and PowerShell will complain ("not digitally signed", or a prompt on every run).
@@ -278,6 +314,7 @@ you need more.
 | Users, computers, groups, SPNs, delegation, RBCD, sIDHistory, key credentials | Kerberos, privileged access, most account hygiene | standard user |
 | Password policy, dsHeuristics, trusts, DCs, MAQ, Recycle Bin, functional level | most domain configuration | standard user |
 | Tier 0 ACLs, SYSVOL scan (including the NETLOGON and Policies folder permissions), GPO ACLs | `dcsync_rights`, `dangerous_ace_tier0`, `gpp_cpassword`, `sysvol_writable`, `gpo_dangerous_acl`... | standard user |
+| ACLs of every OU and top-level container (create and control rights only) | `badsuccessor_dmsa_create` | standard user |
 | AD CS templates, CAs, issuance policies | `adcs_*` | standard user |
 | CA registry and installed roles (CIM on each CA host) | `adcs_esc6`, `adcs_esc7`, `adcs_esc8`, `adcs_esc11`, `adcs_esc16` | local admin on the CA host (CA servers are Tier 0, so usually Domain Admins). Otherwise *not evaluated* and `adcs_manual_checks` |
 | GPO templates in SYSVOL (GptTmpl.inf, machine and user registry.pol, audit.csv) | host hardening, `adcs_esc10` | standard user |
@@ -412,7 +449,8 @@ The collector signs in to Microsoft Graph itself, using read-only scopes
 RoleManagement.Read.Directory, RoleManagementPolicy.Read.Directory,
 Application.Read.All, AuditLog.Read.All, UserAuthenticationMethod.Read.All,
 AccessReview.Read.All, OnPremDirectorySynchronization.Read.All,
-EntitlementManagement.Read.All, PrivilegedEligibilitySchedule.Read.AzureADGroup),
+EntitlementManagement.Read.All, PrivilegedEligibilitySchedule.Read.AzureADGroup,
+DeviceManagementRBAC.Read.All),
 and only sends GET requests. It needs just the `Microsoft.Graph.Authentication`
 module and offers to install it for the current user, without admin rights.
 `-InstallModules` skips the question.
@@ -456,7 +494,7 @@ analyze. The newer checks just show as *not evaluated* until you collect again.
 | Parameter | Default | Meaning |
 |---|---|---|
 | `-Snapshot` | wizard | snapshot JSON (AD or Entra), or a zip from the launcher |
-| `-OutHtml` / `-OutCsv` | `report_<domain>_<ts>.*` | report and findings CSV |
+| `-OutHtml` / `-OutCsv` | `output\report_<domain>_<ts>.*` | report and findings CSV |
 | `-OutJson` | off | JSON Lines, one finding per line (Splunk `_json`) |
 | `-CompareTo` | off | an earlier findings CSV: new / resolved / still there |
 | `-ExceptionsFile` | off | accepted risks, see below |
@@ -613,6 +651,7 @@ particular object.
 | `sysvol_script_secrets` | High | T1552.001 | Possible credential in a SYSVOL logon script |
 | `dangerous_ace_anywhere` | High | T1098 | Dangerous permission held by a non-privileged principal |
 | `kds_root_key_readable` | High | T1003 | Non-Tier 0 principal can read a KDS root key (Golden gMSA) |
+| `badsuccessor_dmsa_create` | High | T1098 | Non-Tier 0 principal can create dMSAs (BadSuccessor) |
 | `laps_readers` | High | T1098 | Non-Tier 0 principal can read LAPS passwords |
 | `pre_win2000_anonymous` | High | T1087 | Pre-Windows 2000 Compatible Access includes Anonymous/Everyone |
 | `gmsa_password_readable` | High | T1649 | gMSA password readable by a non-Tier 0 principal |
@@ -810,6 +849,8 @@ Two permanent Global Admins are fine: those are the emergency access accounts.
 | `entra_app_instance_lock_off` | Low | T1098.001 | Multi-tenant app without App instance property lock |
 | `entra_access_package_grants_admin` | High | T1098.003 | Access package grants admin access through self-request without approval |
 | `entra_app_scoped_admin_privileged` | High | T1098.001 | App administrator scoped to a privileged application |
+| `entra_intune_role_weak_group` | High | T1072 | Intune role that can run code on devices given through an unprotected group |
+| `entra_intune_no_multi_admin_approval` | High | T1485 | Intune device wipes or scripts need no second admin (Multi Admin Approval) |
 | `entra_first_party_sp_credentials` | High | T1098.001 | Credential added to a Microsoft first-party app |
 | `entra_app_insecure_redirect` | Low | T1528 | App with an insecure redirect URI |
 | `entra_app_secret_long_lived` | Low | T1552.001 | Application secret valid for too long |
@@ -1030,7 +1071,7 @@ collections run there, and some bugs only show up there.
 - Reference results: the AD `demo` gives **193 findings** (25 Critical, 75 High,
   67 Medium, 26 Low) and 17 Tier 0 principals, and 201 with the example
   password report. `-Deep` gives 198. `partial` gives 183. The Entra tenant
-  gives 86. In total there are **514 assertions**.
+  gives 89. In total there are **528 assertions**.
 - `tests/lab/` is for a throw-away lab domain, never for production.
   `New-LabAttackPaths.ps1` plants a four-step ACL chain and a few delegation
   findings. It **writes to AD**, asks you to type the domain name first, and has
@@ -1043,14 +1084,17 @@ collections run there, and some bugs only show up there.
   publish, build the GIF from a report made with synthetic data, because a real
   one shows real names.
 
-## Limitations
+## Known Limitations
 
 - `lastLogonTimestamp` can lag by up to two weeks. That's fine for inactivity
   but not for forensics.
 - Very large groups can be cut off at the ADWS `MaxGroupOrMemberEntries` limit
   (5,000 by default).
-- AD CS ESC6, ESC7, ESC8, ESC11 and ESC16 can't be seen over LDAP, so they are
-  flagged for a manual check.
+- AD CS ESC6, ESC7, ESC8, ESC11 and ESC16 aren't in LDAP. They are read from
+  each CA's registry and roles when the collector has admin rights on the CA
+  host; otherwise they are listed as not evaluated and flagged for a manual
+  check. For ESC8, HTTPS and Extended Protection on the IIS site still have to
+  be confirmed by hand.
 - An RODC's cached credentials (`msDS-RevealedList`) are read as the collecting
   account sees them. If that account can't read the attribute, the list comes
   back empty with no error.
@@ -1063,7 +1107,8 @@ collections run there, and some bugs only show up there.
   live data. On a tenant without them, the report says so.
 - A chain in the attack-path map comes from the findings, not from a live
   reachability test, so a dashed arrow to Tier 0 is an assumption.
-- The CIS items marked Manual or Out in `COVERAGE.md` aren't covered yet.
+- The CIS items marked Manual or Out in `COVERAGE.md` aren't covered: Manual
+  ones aren't exposed by any API, Out ones need patch level or live host state.
 - The Entra report has no comparison section yet. `-CompareTo` with `-OutJson`
   still marks new and resolved findings in the JSON Lines.
 
