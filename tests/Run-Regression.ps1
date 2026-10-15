@@ -612,6 +612,20 @@ Assert-True ((Get-AdInfoChartsRow -Snapshot $snapPq -Index $r.Index) -match 'Pas
 Assert-True ((Get-AdInfoChartsRow -Snapshot $demo -Index $r.Index) -notmatch 'Password quality') 'no password-quality donut without a report'
 Assert-True ($html2 -match 'Attack paths toward Tier 0' -and $html2 -match 'ai-script' -and $html2 -match 'Exploitability triage') 'HTML renders the new AI sections (paths, scripts, triage)'
 Assert-True ($html2 -match 'chained into full compromise' -and $html2 -match 'Verdict: likely' -and $html2 -match 'from: svc_sql_admin' -and $html2 -match 'Attack vectors seen in recent attacks') 'HTML renders the compromise assessment and the recent attack vectors'
+# Dashboard tab: score hero, Gemini and the map first (both collapsible), then frameworks, categories, top risks.
+$dashEnd = $html2.IndexOf('id="tab-details"')
+$dash = if ($dashEnd -gt 0) { $html2.Substring(0, $dashEnd) } else { '' }
+Assert-True ($dash -match 'id="tab-dashboard"' -and $dash -match 'class="panel hero"' -and $dash -match 'Grade [A-F]') 'dashboard tab opens with the score hero'
+$iAi = $dash.IndexOf("class='ai-details'"); $iMap = $dash.IndexOf('class="map-details"'); $iFw = $dash.IndexOf('Regulatory frameworks')
+Assert-True ($iAi -gt 0 -and $iMap -gt $iAi -and $iFw -gt $iMap -and $dash -match "<details open class='ai-details'>") 'Gemini and the attack map sit above the dashboard cards, as open <details>'
+Assert-True (([regex]::Matches($dash, 'class="fw-name"')).Count -eq 4 -and ([regex]::Matches($dash, 'class="panel tile"')).Count -eq @($script:CheckCatalog.Values | ForEach-Object { $_.Category } | Select-Object -Unique).Count) 'dashboard has the four framework cards and one tile per category'
+$riskLinks = @([regex]::Matches($dash, "idwGo\('chk-([a-z0-9_]+)'\)") | ForEach-Object { $_.Groups[1].Value })
+Assert-True ($riskLinks.Count -eq 6 -and @($riskLinks | Where-Object { $html2 -notmatch "<details class=`"check`" id=`"chk-$_`"" }).Count -eq 0) 'top risks link to checks that exist under Details'
+Assert-True ($html2 -match '\.tab-pane\[hidden\] \{ display: block !important; \}' -and $html2 -match "className \+= ' js'") 'print shows both tabs; panes are hidden only by script'
+# A check that could not be evaluated is never counted as clean on the framework cards.
+$fwAll = ConvertTo-FrameworkCardsHtml -Catalog $script:CheckCatalog -Findings @() -NotEvaluated @()
+$fwNe = ConvertTo-FrameworkCardsHtml -Catalog $script:CheckCatalog -Findings @() -NotEvaluated @($script:CheckCatalog.Keys | ForEach-Object { [PSCustomObject]@{ Type = $_ } })
+Assert-True ($fwAll -match "$($script:CheckCatalog.Count) of $($script:CheckCatalog.Count) evaluated checks clean" -and $fwNe -notmatch 'evaluated checks clean' -and $fwNe -match 'not evaluated' -and $fwNe -match ">n/a<") 'framework cards leave not-evaluated checks out of the clean share'
 
 # ------------------------------------------------------------ host / GPO
 Write-Host "[host/gpo]"
@@ -1045,6 +1059,7 @@ $escore = Get-HygieneScore -Findings $ef
 $ehtml = ConvertTo-EntraReportHtml -Snapshot $entra -Findings $ef -Score $escore -NotEvaluated @() -ToolVersion 'test' -ElapsedText '0s' -AiResult $null
 Assert-True ($ehtml -match '</html>\s*$' -and $ehtml -match 'Entra ID Hygiene Report' -and ([regex]::Matches($ehtml, "class='pie-chart-wrap'")).Count -ge 2) 'entra HTML renders the finding donuts'
 Assert-True (($ehtml -match 'Users by type') -and ($ehtml -match 'MFA registration') -and ($ehtml -match 'Service principals') -and ($ehtml -match 'Tenant at a glance') -and ($ehtml -match 'Privileged role assignments')) 'entra HTML has the tenant info donuts and the at-a-glance table'
+Assert-True ($ehtml -match 'id="tab-dashboard"' -and $ehtml -match 'id="tab-details"' -and $ehtml -match 'function idwTab' -and ([regex]::Matches($ehtml, 'class="fw-name"')).Count -eq 4 -and $ehtml -match 'Top risks') 'entra HTML has the same dashboard and tabs'
 # A tenant with no Entra ID P1/P2 and no CA policy: one note instead of the "no policy" findings; security defaults still checked.
 $entraFree = Import-ADSnapshot (Join-Path $tmp 'entra.json')
 $entraFree.licenses = @(); $entraFree.conditionalAccess = @(); $entraFree.securityDefaults = $true

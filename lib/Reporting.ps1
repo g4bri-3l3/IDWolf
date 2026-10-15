@@ -559,35 +559,77 @@ function Get-IDWolfThemeCss {
   .ai-script { background: var(--ink); color: #ECE7DC; border: var(--line); border-radius: 12px; padding: 10px 12px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; overflow-x: auto; margin: 6px 0; }
   .ai-triage td { vertical-align: top; }
 
+  /* Dashboard / Details tabs. Panes are hidden only by the script, so without it everything shows. */
+  .tabs { display: flex; gap: 12px; margin: 4px 0 6px; flex-wrap: wrap; }
+  .tab-btn {
+    font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; cursor: pointer;
+    color: var(--ink); background: var(--surface); border: var(--line); border-radius: 12px; padding: 8px 18px; box-shadow: var(--shadow-xs);
+  }
+  .tab-btn[aria-selected="true"] { background: var(--ink); color: var(--surface); box-shadow: 3px 3px 0 var(--red); }
+  .panel { border: var(--line); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-sm); padding: 16px 18px; min-width: 0; }
+  .dash-h { margin: 34px 0 14px; border-bottom: var(--line); padding-bottom: 10px; }
+  .dash-note { margin: -4px 0 14px; }
+
+  /* Score hero. */
+  .hero { display: flex; gap: 26px; align-items: center; flex-wrap: wrap; margin-top: 18px; padding: 20px 24px; box-shadow: var(--shadow); }
+  .hero svg { flex-shrink: 0; }
+  .hero-body { flex: 1 1 320px; min-width: 0; }
+  .hero-kicker { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .hero-title { font-family: var(--display); font-weight: 800; font-size: 1.9rem; letter-spacing: -0.03em; line-height: 1.1; margin: 4px 0 8px; }
+  .pills { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 8px; }
+  .sev-pill-clean { background: var(--green); }
+  .sev-pill-na { background: var(--surface); color: var(--muted); border-style: dashed; box-shadow: none; }
+  .grade-a, .grade-b { background: var(--green); } .grade-c, .grade-d { background: var(--amber); } .grade-e, .grade-f { background: var(--red); color: var(--surface); }
+  details.score-how { margin: 6px 0 0; }
+  details.score-how > summary { border: none; padding: 0; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  details.score-how > summary::before { font-size: 9px; }
+
+  /* Framework cards. */
+  .fw-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+  .fw-head { display: flex; gap: 14px; align-items: center; margin-bottom: 10px; }
+  .fw-name { font-family: var(--display); font-weight: 750; font-size: 1.2rem; letter-spacing: -0.02em; }
+  .fw-sub { font-family: var(--mono); font-size: 11px; line-height: 1.45; color: var(--muted); }
+  .fw-row { display: grid; grid-template-columns: minmax(0, 1fr) auto 64px; gap: 10px; align-items: center; font-size: 12px; padding: 5px 0; border-top: 1.5px solid var(--tint); }
+  .fw-row .ctl b { font-family: var(--mono); font-size: 11px; margin-right: 5px; white-space: nowrap; }
+  .fw-row .n { font-family: var(--mono); font-size: 11px; font-weight: 600; text-align: right; white-space: nowrap; }
+  .fw-row .n.na { grid-column: span 2; color: var(--muted); font-weight: 400; }
+  .bar { height: 10px; border: 2px solid var(--ink); border-radius: 99px; background: var(--tint); overflow: hidden; }
+  .bar > span { display: block; height: 100%; }
+
+  /* Category tiles. */
+  .tile-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 16px; }
+  .tile { padding: 12px 14px; }
+  .tile .lbl { font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .tile .num { font-family: var(--display); font-weight: 800; font-size: 2rem; letter-spacing: -0.04em; line-height: 1.1; }
+  .tile .sub { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+
+  /* Top risks. */
+  .risk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+  .risk { border-left-width: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .risk.critical { border-left-color: var(--red); } .risk.high { border-left-color: var(--coral); }
+  .risk.medium { border-left-color: var(--amber); } .risk.low { border-left-color: #B9B1A1; }
+  .risk-title { font-family: var(--display); font-weight: 700; font-size: 1.02rem; letter-spacing: -0.01em; line-height: 1.25; }
+  .risk p { margin: 0; font-size: 13px; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
+  .risk .meta { margin-top: auto; }
+  .risk a { color: var(--ink); }
+
   @media print {
     body { background: #fff; max-width: none; }
-    h1, .card, details.check, .table-wrap, .map-wrap, blockquote, .ai-section { box-shadow: none; }
+    h1, .card, details.check, .table-wrap, .map-wrap, blockquote, .ai-section, .panel { box-shadow: none; }
     .card:hover, details.check:hover { transform: none; }
+    .tabs { display: none; }
+    .tab-pane[hidden] { display: block !important; }
   }
 </style>
 '@
 }
 
-function ConvertTo-ReportHtml {
-    param(
-        $Snapshot, $Index, $PrivMap, $Split, $Score, $NotEvaluated, $Comparison,
-        [hashtable]$Config, [string]$ToolVersion, [string]$ElapsedText,
-        $AiResult = $null
-    )
-    $H = { param($t) ConvertTo-HtmlSafe "$t" }
-    $findings = @($Split.Active)
-    $sb = New-Object System.Text.StringBuilder
-    $w = { param($t) [void]$sb.AppendLine($t) }
-
-    $sevOrder = @('Critical', 'High', 'Medium', 'Low')
-    $counts = @{}; foreach ($s in $sevOrder) { $counts[$s] = @($findings | Where-Object { $_.Severity -eq $s }).Count }
-    $collected = ConvertTo-UtcDate $Snapshot.meta.collectedAtUtc
-
-    & $w '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-    & $w "<title>IDWolf report - $(& $H $Snapshot.domain.dnsRoot)</title>"
-    & $w (Get-IDWolfThemeCss)
-    & $w @'
+# Scripts shared by the AD and the Entra report: table filter, attack-map highlight, tabs.
+# The "js" class is what hides the Details tab, so a browser without scripts shows everything.
+function Get-IDWolfReportScript {
+    return @'
 <script>
+document.documentElement.className += ' js';
 function filterIDWolfTable(input) {
   var table = input.closest('table');
   var filters = Array.prototype.map.call(table.querySelectorAll('tr.filter-row input'), function (i) { return i.value.toLowerCase(); });
@@ -615,31 +657,210 @@ function amMap(g, on) {
     })(nid);
   } catch (e) { }
 }
+function idwTab(name) {
+  var btns = document.querySelectorAll('.tab-btn'), panes = document.querySelectorAll('.tab-pane');
+  for (var i = 0; i < btns.length; i++) { btns[i].setAttribute('aria-selected', btns[i].getAttribute('data-tab') === name ? 'true' : 'false'); }
+  for (var j = 0; j < panes.length; j++) { panes[j].hidden = panes[j].id !== 'tab-' + name; }
+  return false;
+}
+function idwGo(id) {
+  var el = document.getElementById(id); if (!el) return false;
+  idwTab('details');
+  for (var p = el; p; p = p.parentElement) { if (p.tagName === 'DETAILS') p.open = true; }
+  el.scrollIntoView();
+  return false;
+}
+document.addEventListener('DOMContentLoaded', function () {
+  if (!document.querySelector('.tab-pane')) return;
+  var h = (location.hash || '').replace('#', '');
+  if (h.indexOf('chk-') === 0 && document.getElementById(h)) { idwGo(h); }
+  else if (h === 'tab-details') { idwTab('details'); }
+  else { idwTab('dashboard'); }
+});
 </script>
-</head><body>
 '@
+}
+
+function Get-ReportTabsHtml {
+    return '<nav class="tabs" role="tablist"><button type="button" class="tab-btn" role="tab" data-tab="dashboard" aria-selected="true" onclick="idwTab(''dashboard'')">Dashboard</button><button type="button" class="tab-btn" role="tab" data-tab="details" aria-selected="false" onclick="idwTab(''details'')">Details</button></nav>'
+}
+
+# A ring in plain SVG: Pct of the circle filled, or an empty dashed ring for "n/a" (Pct below 0).
+function Get-RingSvg {
+    param([int]$Pct, [string]$Color, [string]$Big, [string]$Small, [int]$Size = 120)
+    $inv = [Globalization.CultureInfo]::InvariantCulture
+    $f = { param($x) ([double]$x).ToString('0.##', $inv) }
+    $sw = $Size * 0.12; $c = $Size / 2; $r = $c - ($sw / 2) - 2
+    $circ = 2 * [Math]::PI * $r
+    $track = if ($Pct -lt 0) { " stroke-dasharray='4 4'" } else { '' }
+    $svg = "<svg viewBox='0 0 $Size $Size' width='$Size' height='$Size' role='img' aria-label='$(ConvertTo-HtmlSafe "$Big $Small")'>"
+    $svg += "<circle cx='$c' cy='$c' r='$(& $f $r)' fill='none' stroke='#E8E2D4' stroke-width='$(& $f $sw)'$track />"
+    if ($Pct -gt 0) {
+        $seg = $circ * [Math]::Min(100, $Pct) / 100
+        $svg += "<circle cx='$c' cy='$c' r='$(& $f $r)' fill='none' stroke='$Color' stroke-width='$(& $f $sw)' stroke-dasharray='$(& $f $seg) $(& $f $circ)' transform='rotate(-90 $c $c)' />"
+    }
+    $svg += "<text x='$c' y='$(& $f ($c + $Size * 0.06))' text-anchor='middle' font-size='$(& $f ($Size * 0.24))' font-weight='800' fill='#161513'>$(ConvertTo-HtmlSafe $Big)</text>"
+    if ($Small) { $svg += "<text x='$c' y='$(& $f ($c + $Size * 0.2))' text-anchor='middle' font-size='$(& $f ($Size * 0.085))' fill='#5F5A51'>$(ConvertTo-HtmlSafe $Small)</text>" }
+    return $svg + '</svg>'
+}
+
+# Clean share of the evaluated checks: green from 90%, amber from 70%, red below.
+function Get-CleanColor {
+    param([double]$Pct)
+    if ($Pct -ge 90) { return '#84CC5F' } elseif ($Pct -ge 70) { return '#F2B632' } else { return '#E2372A' }
+}
+
+# Dashboard head: the score ring, the grade, the severity counts and what was read.
+# Kicker is the line above the title (scope and inventory), Extra one more line under the counts.
+function ConvertTo-ScoreHeroHtml {
+    param($Score, $Findings, [int]$CheckTotal, [int]$NotEvaluatedCount, [string]$Kicker, [string]$Extra = '')
+    $H = { param($t) ConvertTo-HtmlSafe "$t" }
+    $words = @{ A = 'Strong'; B = 'Good'; C = 'Partial protection'; D = 'Weak'; E = 'Poor'; F = 'Critical exposure' }
+    if ($Score.Reliable) {
+        $color = if ($Score.Grade -in 'A', 'B') { '#84CC5F' } elseif ($Score.Grade -in 'C', 'D') { '#F2B632' } else { '#E2372A' }
+        $ring = Get-RingSvg -Pct $Score.Score -Color $color -Big "$($Score.Score)" -Small '/ 100' -Size 130
+        $grade = "<span class=`"sev-pill grade-$("$($Score.Grade)".ToLower())`">Grade $($Score.Grade) &middot; $($words["$($Score.Grade)"])</span>"
+    }
+    else {
+        $ring = Get-RingSvg -Pct -1 -Color '' -Big 'n/a' -Small 'not reliable' -Size 130
+        $grade = "<span class=`"sev-pill sev-pill-na`">Only $($Score.Coverage)% of the checks could be evaluated</span>"
+    }
+    $pills = foreach ($s in 'Critical', 'High', 'Medium', 'Low') {
+        "<span class=`"sev-pill sev-pill-$($s.ToLower())`">$(@($Findings | Where-Object { $_.Severity -eq $s }).Count) $s</span>"
+    }
+    $types = @($Findings | ForEach-Object { $_.Type } | Select-Object -Unique).Count
+    $line = "$(@($Findings).Count) finding(s) &middot; $types of $($CheckTotal - $NotEvaluatedCount) evaluated checks triggered"
+    if ($NotEvaluatedCount -gt 0) { $line += " &middot; $NotEvaluatedCount not evaluated" }
+    $line += " &middot; <a href=`"#tab-details`" onclick=`"return idwTab('details')`">open the details</a>"
+    $how = 'Score = 100 &times; e<sup>&minus;penalty/100</sup>, where penalty sums a weight per triggered check at its worst severity (Critical 20, High 8, Medium 3, Low 1), capped by the worst severity present: any Critical check limits the score to 35 (grade E), any High to 65 (grade C). It never reaches zero, so a bad environment and a catastrophic one still rank differently. Per-object counts are shown separately so that many low-impact objects do not hide a single critical exposure.'
+    $out = "<div class=`"panel hero`">$ring<div class=`"hero-body`"><div class=`"hero-kicker`">$Kicker</div><div class=`"hero-title`">Hygiene score</div>$grade"
+    $out += "<div class=`"pills`">$($pills -join '')</div><div class=`"meta`">$line</div>"
+    if ($Extra) { $out += "<div class=`"meta`">$Extra</div>" }
+    $out += "<details class=`"score-how`"><summary>How the score is computed</summary><p class=`"meta`">$how</p></details></div></div>"
+    return $out
+}
+
+# One card per framework: the share of evaluated checks with no finding, then one bar per
+# control. Not-evaluated checks are left out of the share and counted apart, never as clean.
+function ConvertTo-FrameworkCardsHtml {
+    param($Catalog, $Findings, $NotEvaluated)
+    $H = { param($t) ConvertTo-HtmlSafe "$t" }
+    $ne = @{}; foreach ($n in @($NotEvaluated | Where-Object { $_ })) { $ne["$($n.Type)"] = $true }
+    $worstOf = @{}
+    foreach ($f in $Findings) {
+        $cur = $worstOf["$($f.Type)"]
+        if (-not $cur -or $script:SeverityRank[$f.Severity] -gt $script:SeverityRank[$cur]) { $worstOf["$($f.Type)"] = $f.Severity }
+    }
+    $sevColor = @{ Critical = '#E2372A'; High = '#EF8A6F'; Medium = '#F2B632'; Low = '#B9B1A1' }
+    $short = @{ NIS2 = 'NIS2'; ISO27001 = 'ISO/IEC 27001'; DORA = 'DORA'; GDPR = 'GDPR' }
+    $keys = @($Catalog.Keys)
+    $cards = foreach ($fw in $script:ComplianceFrameworks.Keys) {
+        $def = $script:ComplianceFrameworks[$fw]
+        $fwChecks = @($keys | Where-Object { @(Get-CheckControls $_ | Where-Object { $_.StartsWith("$fw ") }).Count -gt 0 })
+        $eval = @($fwChecks | Where-Object { -not $ne.ContainsKey("$_") })
+        $clean = @($eval | Where-Object { -not $worstOf.ContainsKey("$_") }).Count
+        $pct = if ($eval.Count) { [int][Math]::Floor(100.0 * $clean / $eval.Count) } else { -1 }
+        $ring = if ($pct -ge 0) { Get-RingSvg -Pct $pct -Color (Get-CleanColor $pct) -Big "$pct%" -Small 'clean' -Size 84 } else { Get-RingSvg -Pct -1 -Color '' -Big 'n/a' -Size 84 }
+        $nNe = $fwChecks.Count - $eval.Count
+        $sub = if ($eval.Count) { "$clean of $($eval.Count) evaluated checks clean" } else { 'No check could be evaluated' }
+        if ($nNe) { $sub += " &middot; $nNe not evaluated" }
+        $rows = foreach ($c in $def.Controls.Keys) {
+            $id = "$fw $c"
+            $cc = @($keys | Where-Object { (Get-CheckControls $_) -contains $id })
+            $ce = @($cc | Where-Object { -not $ne.ContainsKey("$_") })
+            $label = "<span class=`"ctl`"><b>$(& $H $c)</b>$(& $H $def.Controls[$c].Title)</span>"
+            if ($ce.Count -eq 0) {
+                $why = if ($cc.Count) { 'not evaluated' } else { 'no check' }
+                "<div class=`"fw-row`">$label<span class=`"n na`">$why</span></div>"
+                continue
+            }
+            $hit = @($ce | Where-Object { $worstOf.ContainsKey("$_") })
+            $ok = $ce.Count - $hit.Count
+            $worst = ''; foreach ($s in 'Critical', 'High', 'Medium', 'Low') { if (@($hit | Where-Object { $worstOf["$_"] -eq $s }).Count) { $worst = $s; break } }
+            $color = if ($worst) { $sevColor[$worst] } else { '#84CC5F' }
+            $pctW = [int][Math]::Round(100.0 * $ok / $ce.Count)
+            $tip = if ($worst) { "$($hit.Count) check(s) with findings, worst $worst" } else { 'no findings' }
+            if ($ce.Count -lt $cc.Count) { $tip += ", $($cc.Count - $ce.Count) not evaluated" }
+            "<div class=`"fw-row`" title=`"$tip`">$label<span class=`"n`">$ok/$($ce.Count)</span><span class=`"bar`"><span style=`"width:$pctW%;background:$color`"></span></span></div>"
+        }
+        "<div class=`"panel`"><div class=`"fw-head`">$ring<div><div class=`"fw-name`">$(& $H $short[$fw])</div><div class=`"fw-sub`">$sub</div></div></div>$($rows -join '')</div>"
+    }
+    $note = '<p class="meta dash-note">Checks with no finding, out of the checks mapped to each control. A clean check is evidence for the technical, directory-side part of a control, not compliance with it. Bars take the colour of the worst finding; the full tables are under Details.</p>'
+    return "<h2 class=`"dash-h`">Regulatory frameworks</h2>$note<div class=`"fw-grid`">$($cards -join '')</div>"
+}
+
+# One tile per category, in catalog order: findings, checks triggered, worst severity.
+function ConvertTo-CategoryTilesHtml {
+    param($Catalog, $Findings, $NotEvaluated)
+    $H = { param($t) ConvertTo-HtmlSafe "$t" }
+    $ne = @{}; foreach ($n in @($NotEvaluated | Where-Object { $_ })) { $ne["$($n.Type)"] = $true }
+    $cats = @($Catalog.Values | ForEach-Object { "$($_.Category)" } | Select-Object -Unique)
+    $tiles = foreach ($c in $cats) {
+        $checks = @($Catalog.Keys | Where-Object { "$($Catalog[$_].Category)" -eq $c })
+        $cf = @($Findings | Where-Object { $_.Category -eq $c })
+        $trig = @($cf | ForEach-Object { $_.Type } | Select-Object -Unique).Count
+        $nNe = @($checks | Where-Object { $ne.ContainsKey("$_") }).Count
+        $worst = ''; foreach ($s in 'Critical', 'High', 'Medium', 'Low') { if (@($cf | Where-Object { $_.Severity -eq $s }).Count) { $worst = $s; break } }
+        $pill = if ($worst) { "worst $(Get-SevPill $worst)" } elseif ($nNe -eq $checks.Count) { '<span class="sev-pill sev-pill-na">not evaluated</span>' } else { '<span class="sev-pill sev-pill-clean">clean</span>' }
+        $sub = "$trig of $($checks.Count) check(s) triggered"
+        if ($nNe) { $sub += ", $nNe not evaluated" }
+        "<div class=`"panel tile`"><div class=`"lbl`">$(& $H $c)</div><div class=`"num`">$($cf.Count)</div><div class=`"sub`">$sub</div>$pill</div>"
+    }
+    return "<h2 class=`"dash-h`">Categories</h2><div class=`"tile-grid`">$($tiles -join '')</div>"
+}
+
+# The checks to fix first: worst severity, then most objects, then catalog order (stable on 5.1 and 7).
+function ConvertTo-TopRisksHtml {
+    param($Catalog, $Findings, [int]$Max = 6)
+    $H = { param($t) ConvertTo-HtmlSafe "$t" }
+    if (@($Findings).Count -eq 0) { return '' }
+    $groups = @($Findings | Group-Object Type | ForEach-Object {
+            $worst = ($_.Group | Sort-Object { - $script:SeverityRank[$_.Severity] } | Select-Object -First 1).Severity
+            [PSCustomObject]@{ Type = $_.Name; Worst = $worst; Rank = $script:SeverityRank[$worst]; Count = @($_.Group).Count }
+        } | Sort-Object @{ Expression = 'Rank'; Descending = $true }, @{ Expression = 'Count'; Descending = $true }, @{ Expression = { Get-CheckPosition $_.Type } } | Select-Object -First $Max)
+    $cards = foreach ($g in $groups) {
+        $meta = $Catalog[$g.Type]
+        $bits = @("$($g.Count) object$(if ($g.Count -ne 1) { 's' })")
+        if ($meta.Mitre) { $bits += "$(& $H $meta.Mitre)" }
+        if ($script:RecentAttackVectors.Contains($g.Type)) { $bits += 'seen in recent attacks' }
+        $bits += "<a href=`"#chk-$($g.Type)`" onclick=`"return idwGo('chk-$($g.Type)')`">details</a>"
+        "<div class=`"panel risk $($g.Worst.ToLower())`"><div class=`"risk-title`">$(Get-SevPill $g.Worst) $(& $H $meta.Title)</div><p>$(& $H $meta.Description)</p><div class=`"meta`">$($bits -join ' &middot; ')</div></div>"
+    }
+    return "<h2 class=`"dash-h`">Top risks</h2><div class=`"risk-grid`">$($cards -join '')</div>"
+}
+
+function ConvertTo-ReportHtml {
+    param(
+        $Snapshot, $Index, $PrivMap, $Split, $Score, $NotEvaluated, $Comparison,
+        [hashtable]$Config, [string]$ToolVersion, [string]$ElapsedText,
+        $AiResult = $null
+    )
+    $H = { param($t) ConvertTo-HtmlSafe "$t" }
+    $findings = @($Split.Active)
+    $sb = New-Object System.Text.StringBuilder
+    $w = { param($t) [void]$sb.AppendLine($t) }
+
+    $sevOrder = @('Critical', 'High', 'Medium', 'Low')
+    $counts = @{}; foreach ($s in $sevOrder) { $counts[$s] = @($findings | Where-Object { $_.Severity -eq $s }).Count }
+    $collected = ConvertTo-UtcDate $Snapshot.meta.collectedAtUtc
+
+    & $w '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+    & $w "<title>IDWolf report - $(& $H $Snapshot.domain.dnsRoot)</title>"
+    & $w (Get-IDWolfThemeCss)
+    & $w (Get-IDWolfReportScript)
+    & $w '</head><body>'
     & $w "<h1 class=`"title`">$(Get-WolfLogoHtml)<span>IDWolf: Active Directory Hygiene Report</span></h1>"
     & $w "<div class=`"meta`">Domain <b>$(& $H $Snapshot.domain.dnsRoot)</b> ($(& $H $Snapshot.domain.netbios)) &middot; forest $(& $H $Snapshot.domain.forestName) &middot; snapshot $(& $H $collected.ToString('yyyy-MM-dd HH:mm')) UTC by $(& $H $Snapshot.meta.collectedBy) from $(& $H $Snapshot.meta.collectedFrom) &middot; IDWolf v$ToolVersion &middot; analysis $ElapsedText</div>"
     if ($Snapshot.meta.synthetic) {
         & $w '<blockquote>Synthetic snapshot generated for testing and demonstration. No real directory data.</blockquote>'
     }
+    & $w (Get-ReportTabsHtml)
 
-    & $w '<div class="cards">'
-    if ($Score.Reliable) { & $w "<div class=`"card`"><div class=`"grade`">$($Score.Grade) &middot; $($Score.Score)/100</div><div class=`"lbl`">Hygiene score ($($Score.ChecksTriggered) checks triggered)</div></div>" }
-    else { & $w "<div class=`"card`"><div class=`"grade`">n/a</div><div class=`"lbl`">Hygiene score not reliable: only $($Score.Coverage)% of the checks could be evaluated</div></div>" }
-    foreach ($s in $sevOrder) { & $w "<div class=`"card $($s.ToLower())`"><div class=`"num`">$($counts[$s])</div><div class=`"lbl`">$s findings</div></div>" }
-    & $w "<div class=`"card`"><div class=`"num`">$(@($Index.Users).Count)</div><div class=`"lbl`">Users / service accounts</div></div>"
-    & $w "<div class=`"card`"><div class=`"num`">$(@($Index.Computers).Count)</div><div class=`"lbl`">Computers</div></div>"
-    & $w "<div class=`"card`"><div class=`"num`">$($PrivMap.Principals.Count)</div><div class=`"lbl`">Tier 0 principals</div></div>"
-    & $w '</div>'
-    & $w '<div class="meta">Score = 100 &times; e<sup>&minus;penalty/100</sup>, where penalty sums a weight per triggered check at its worst severity (Critical 20, High 8, Medium 3, Low 1), capped by the worst severity present: any Critical check limits the score to 35 (grade E), any High to 65 (grade C). It never reaches zero, so a bad domain and a catastrophic one still rank differently. Per-object counts are shown separately so that many low-impact objects do not hide a single critical exposure.</div>'
-    & $w (Get-ChartsRowHtml -Findings $findings -Index $Index -PrivMap $PrivMap)
-    try { & $w (Get-AdInfoChartsRow -Snapshot $Snapshot -Index $Index) } catch { Write-Warning "Directory charts skipped: $($_.Exception.Message)" }
-    if (Get-Command ConvertTo-AttackMapHtml -ErrorAction SilentlyContinue) {
-        try { & $w (ConvertTo-AttackMapHtml -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap -Findings $findings) }
-        catch { Write-Warning "Attack-path map skipped: $($_.Exception.Message)" }
-    }
-    if ($AiResult) { & $w (ConvertTo-AiSectionHtml -AiResult $AiResult) }
+    # ---------------- Dashboard ----------------
+    & $w '<section id="tab-dashboard" class="tab-pane" role="tabpanel">'
+    $kicker = "$(& $H $Snapshot.domain.dnsRoot) &middot; $(@($Index.Users).Count) users and service accounts &middot; $(@($Index.Computers).Count) computers &middot; $($PrivMap.Principals.Count) Tier 0 principals"
+    $extra = if ($Comparison) { "Since the previous run: <b>$(@($Comparison.New).Count) new</b>, $(@($Comparison.Resolved).Count) resolved, $(@($Comparison.Persisting).Count) still present." } else { '' }
+    & $w (ConvertTo-ScoreHeroHtml -Score $Score -Findings $findings -CheckTotal $script:CheckCatalog.Count -NotEvaluatedCount @($NotEvaluated).Count -Kicker $kicker -Extra $extra)
 
     $errs = @($Snapshot.meta.collectionErrors | Where-Object { $_ })
     if ($errs.Count -gt 0 -or @($NotEvaluated).Count -gt 0) {
@@ -647,6 +868,26 @@ function amMap(g, on) {
         foreach ($n in $NotEvaluated) { & $w "<li><code>$($n.Type)</code> $(& $H $n.Title): $(& $H $n.Reason)</li>" }
         & $w '</ul></blockquote>'
     }
+
+    # Gemini and the attack map stay at the top; both are <details>, so they collapse.
+    if ($AiResult) { & $w (ConvertTo-AiSectionHtml -AiResult $AiResult) }
+    if (Get-Command ConvertTo-AttackMapHtml -ErrorAction SilentlyContinue) {
+        try { & $w (ConvertTo-AttackMapHtml -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap -Findings $findings) }
+        catch { Write-Warning "Attack-path map skipped: $($_.Exception.Message)" }
+    }
+    if (Get-Command Get-CheckControls -ErrorAction SilentlyContinue) {
+        try { & $w (ConvertTo-FrameworkCardsHtml -Catalog $script:CheckCatalog -Findings $findings -NotEvaluated $NotEvaluated) }
+        catch { Write-Warning "Framework cards skipped: $($_.Exception.Message)" }
+    }
+    & $w (ConvertTo-CategoryTilesHtml -Catalog $script:CheckCatalog -Findings $findings -NotEvaluated $NotEvaluated)
+    & $w (ConvertTo-TopRisksHtml -Catalog $script:CheckCatalog -Findings $findings)
+    & $w '<details open><summary><h2>Directory at a glance</h2></summary>'
+    & $w (Get-ChartsRowHtml -Findings $findings -Index $Index -PrivMap $PrivMap)
+    try { & $w (Get-AdInfoChartsRow -Snapshot $Snapshot -Index $Index) } catch { Write-Warning "Directory charts skipped: $($_.Exception.Message)" }
+    & $w '</details></section>'
+
+    # ---------------- Details ----------------
+    & $w '<section id="tab-details" class="tab-pane" role="tabpanel">'
 
     # ---------------- Category summary ----------------
     & $w '<details open><summary><h2>Summary by category</h2></summary><div class="table-wrap"><table><tr><th>Category</th><th>Critical</th><th>High</th><th>Medium</th><th>Low</th><th>Checks triggered</th></tr>'
@@ -676,7 +917,7 @@ function amMap(g, on) {
     foreach ($t in $typeRows) {
         $meta = $script:CheckCatalog[$t.Type]
         $n = @($t.Items).Count
-        & $w "<details class=`"check`"><summary>$(Get-SevPill $t.Worst)<span class=`"check-title`">$(& $H $meta.Title)</span><span class=`"check-id`">$($t.Type) &middot; $(& $H $meta.Category)</span><span class=`"count`">$n object$(if ($n -ne 1) { 's' })</span></summary><div class=`"body`">"
+        & $w "<details class=`"check`" id=`"chk-$($t.Type)`"><summary>$(Get-SevPill $t.Worst)<span class=`"check-title`">$(& $H $meta.Title)</span><span class=`"check-id`">$($t.Type) &middot; $(& $H $meta.Category)</span><span class=`"count`">$n object$(if ($n -ne 1) { 's' })</span></summary><div class=`"body`">"
         & $w "<div class=`"kv`"><b>Why it matters.</b> $(& $H $meta.Description)</div>"
         & $w "<div class=`"kv`"><b>Remediation.</b> $(& $H $meta.Remediation)</div>"
         $attack = Format-CheckAttackHtml $t.Type $meta; if ($attack) { & $w $attack }
@@ -764,6 +1005,8 @@ function amMap(g, on) {
         & $w "<tr class=`"data-row`"><td>$(Get-SevPill $f.Severity)</td><td>$($f.Type)</td><td>$(& $H $f.Category)</td><td title=`"$(& $H $f.ObjectDn)`">$(& $H $f.Object)</td><td>$(& $H $f.ObjectType)</td><td>$(& $H $f.Detail)</td><td>$(Get-MitreLink $f.Mitre)</td></tr>"
     }
     & $w "</table></div><div class=`"filter-status`">$($findings.Count) rows</div></details>"
+
+    & $w '</section>'
 
     & $w '<p class="meta" style="margin-top:32px">Generated by IDWolf from a read-only snapshot. The report contains directory data: handle as confidential.</p>'
     & $w '</body></html>'

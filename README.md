@@ -47,9 +47,10 @@ directory name is replaced by a token before anything is sent.
 ## What it looks like
 
 The report is one self-contained HTML file, built to be read by the people who
-have to act on it, not only by the person who ran the audit: a score and a grade,
-charts by severity and category, an attack-path map and a trust map drawn as SVG,
-the Tier 0 members, the compliance view and every finding with its fix. No
+have to act on it, not only by the person who ran the audit. A dashboard tab has
+a score and a grade, an attack-path map and a trust map drawn as SVG, the Tier 0
+members, NIS2 / ISO 27001 / DORA / GDPR cards, categories, top risks and charts;
+a details tab has every finding with its fix. No
 external libraries, no CDN, nothing loaded from the internet: it opens offline
 and can be mailed as it is.
 
@@ -954,17 +955,22 @@ The model is asked for defensive output only.
 
 ## The report
 
-- **HTML**: the score and counts, donut charts about the findings and about the
-  directory itself (accounts, password age, computers, groups), the AI section if
-  there is one, the attack-path map, the Tier 0 members, and a block for every
-  triggered check with why it matters, how to fix it, the attack it enables (the
-  MITRE technique with its name and, for the checks in the "Recent attacks" table,
-  the attack seen in public incidents), the regulatory controls and the affected
-  objects. A regulatory mapping shows NIS2,
-  ISO 27001, DORA and GDPR controls with their status. It also has comparison,
-  accepted risks and a filterable
-  table of everything. When fewer than half of the checks could be evaluated,
-  the score shows as "n/a" instead of a misleading grade.
+- **HTML**, in two tabs. **Dashboard**: the score ring with its grade and the
+  counts by severity, the AI section if there is one and the attack-path map with
+  the Tier 0 members (both collapsible), one card per framework (NIS2, ISO 27001,
+  DORA, GDPR) with the share of evaluated checks that came out clean and a bar per
+  control, one tile per category, the six top risks, and donut charts about the
+  findings and about the directory itself (accounts, password age, computers,
+  groups). On the framework cards a check that could not be evaluated is counted
+  apart, never as clean, and a clean check is evidence for the directory-side part
+  of a control, not compliance with it. **Details**: a block for every triggered
+  check with why it matters, how to fix it, the attack it enables (the MITRE
+  technique with its name and, for the checks in the "Recent attacks" table, the
+  attack seen in public incidents), the regulatory controls and the affected
+  objects; the full regulatory mapping tables, the Tier 0 inventory, comparison,
+  accepted risks and a filterable table of everything. Printing shows both tabs,
+  and so does a browser with scripts disabled. When fewer than half of the checks
+  could be evaluated, the score shows as "n/a" instead of a misleading grade.
 - **CSV**: one row per check and object, with its regulatory controls in the `Controls` column. Feed it back with `-CompareTo`.
 - **JSON Lines** (`-OutJson`), for a SIEM: one JSON object per line with flat
   fields, and `time` set to the snapshot time. More on that below.

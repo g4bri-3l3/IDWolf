@@ -61,32 +61,37 @@ if (-not $Browser) { throw 'No Edge or Chrome found. Pass -Browser <path to msed
 
 # What each slide shows. Sel is a CSS selector (Idx picks the n-th match), Text narrows a heading by its text.
 $html = [System.IO.File]::ReadAllText($reportFull)
+# The report opens on the Dashboard tab with Details hidden: the copies rendered below show both tabs, one after the other.
+$bothTabs = '<style>.tab-pane[hidden] { display: block !important; } .tabs { display: none; }</style>'
 $isEntra = $html -match '(?i)<title>[^<]*Entra'
 if ($isEntra) {
     $plan = @(
-        @{ Sel = '.cards'; Idx = 0; Text = ''; Caption = 'Score and counts: the hygiene grade, findings by severity, and how many users and service principals were read.' }
+        @{ Sel = '.hero'; Idx = 0; Text = ''; Caption = 'Dashboard: the hygiene score and grade, findings by severity, and how many users and service principals were read.' }
+        @{ Sel = '.ai-section'; Idx = 0; Text = ''; Caption = 'Optional Gemini summary and remediation plan, collapsible. Names were replaced by tokens before anything was sent.' }
+        @{ Sel = '.ai-section h3'; Idx = 0; Text = 'chained into full compromise'; Caption = 'Gemini''s verdict: can the findings be chained into tenant compromise, from what starting access, and which link breaks each chain.' }
+        @{ Sel = '.fw-grid'; Idx = 0; Text = ''; Caption = 'NIS2, ISO 27001, DORA and GDPR: checks with no finding for each control. Checks that could not be evaluated are counted apart, never as clean.' }
+        @{ Sel = '.tile-grid'; Idx = 0; Text = ''; Caption = 'Categories and top risks: the checks to fix first, each linked to its details.' }
         @{ Sel = '.chart-row'; Idx = 0; Text = ''; Caption = 'Findings by severity and by category.' }
         @{ Sel = '.chart-row'; Idx = 1; Text = ''; Caption = 'The tenant itself: users by type and origin, MFA registration, sign-in activity, privileged roles and service principals.' }
         @{ Sel = 'summary h2'; Idx = 0; Text = 'Tenant at a glance'; Caption = 'Tenant at a glance: directory sync, domains, security defaults, Conditional Access policies, licence and app registrations.' }
-        @{ Sel = '.ai-section'; Idx = 0; Text = ''; Caption = 'Optional Gemini summary and remediation plan. Names were replaced by tokens before anything was sent.' }
-        @{ Sel = '.ai-section h3'; Idx = 0; Text = 'chained into full compromise'; Caption = 'Gemini''s verdict: can the findings be chained into tenant compromise, from what starting access, and which link breaks each chain.' }
         @{ Sel = 'blockquote.warn'; Idx = 0; Text = ''; Caption = 'Incomplete coverage: checks that could not be evaluated are listed, never counted as clean.' }
-        @{ Sel = 'summary h2'; Idx = 0; Text = 'Findings by check'; Caption = 'One block per triggered check: why it matters, how to fix it, the MITRE link and the affected objects.' }
+        @{ Sel = 'summary h2'; Idx = 0; Text = 'Findings by check'; Caption = 'Details tab: one block per triggered check, with why it matters, how to fix it, the MITRE link and the affected objects.' }
     )
 }
 else {
     $plan = @(
-        @{ Sel = '.cards'; Idx = 0; Text = ''; Caption = 'Score and counts: the hygiene grade, findings by severity, and how many users, computers and Tier 0 principals were read.' }
-        @{ Sel = '.chart-row'; Idx = 0; Text = ''; Caption = 'Findings by severity and category, who is in Tier 0, and how active the enabled users are.' }
-        @{ Sel = '.chart-row'; Idx = 1; Text = ''; Caption = 'The directory itself: accounts by kind, password age and settings, computers by OS and activity, groups by scope, password quality.' }
-        @{ Sel = '.ai-section'; Idx = 0; Text = ''; Caption = 'Optional Gemini summary and remediation plan. Names were replaced by tokens before anything was sent.' }
+        @{ Sel = '.hero'; Idx = 0; Text = ''; Caption = 'Dashboard: the hygiene score and grade, findings by severity, and how many users, computers and Tier 0 principals were read.' }
+        @{ Sel = 'blockquote.warn'; Idx = 0; Text = ''; Caption = 'Incomplete coverage: checks that could not be evaluated are listed, never counted as clean.' }
+        @{ Sel = '.ai-section'; Idx = 0; Text = ''; Caption = 'Optional Gemini summary and remediation plan, collapsible. Names were replaced by tokens before anything was sent.' }
         @{ Sel = '.ai-section h3'; Idx = 0; Text = 'chained into full compromise'; Caption = 'Gemini''s verdict: can the findings be chained into domain compromise, from what starting access, and which link breaks each chain.' }
         @{ Sel = '.ai-section h3'; Idx = 0; Text = 'Attack vectors seen in recent attacks'; Caption = 'Findings that match attack vectors used in publicly known attacks, starting from IDWolf''s own list of recent attacks.' }
-        @{ Sel = 'summary h2'; Idx = 0; Text = 'Attack-path map'; Caption = 'Attack-path map: every principal with a path to Tier 0. A chain reads left to right, one column per step; a dashed arrow is an assumption.' }
+        @{ Sel = 'summary h2'; Idx = 0; Text = 'Attack-path map'; Caption = 'Attack-path map, collapsible: every principal with a path to Tier 0. A chain reads left to right, one column per step; a dashed arrow is an assumption.' }
         @{ Sel = 'h3'; Idx = 0; Text = 'Tier 0 members'; Caption = 'Tier 0 members: the accounts that already hold Tier 0 rights. They are the target of the paths, not a source.' }
-        @{ Sel = 'blockquote.warn'; Idx = 0; Text = ''; Caption = 'Incomplete coverage: checks that could not be evaluated are listed, never counted as clean.' }
-        @{ Sel = 'summary h2'; Idx = 0; Text = 'Summary by category'; Caption = 'Findings by category and severity.' }
-        @{ Sel = 'summary h2'; Idx = 0; Text = 'Findings by check'; Caption = 'One block per triggered check: why it matters, how to fix it, the MITRE link and the affected objects.' }
+        @{ Sel = '.fw-grid'; Idx = 0; Text = ''; Caption = 'NIS2, ISO 27001, DORA and GDPR: checks with no finding for each control. Checks that could not be evaluated are counted apart, never as clean.' }
+        @{ Sel = '.tile-grid'; Idx = 0; Text = ''; Caption = 'Categories and top risks: the checks to fix first, each linked to its details.' }
+        @{ Sel = '.chart-row'; Idx = 0; Text = ''; Caption = 'Findings by severity and category, who is in Tier 0, and how active the enabled users are.' }
+        @{ Sel = '.chart-row'; Idx = 1; Text = ''; Caption = 'The directory itself: accounts by kind, password age and settings, computers by OS and activity, groups by scope, password quality.' }
+        @{ Sel = 'summary h2'; Idx = 0; Text = 'Findings by check'; Caption = 'Details tab: one block per triggered check, with why it matters, how to fix it, the MITRE link and the affected objects.' }
     )
 }
 
@@ -117,8 +122,13 @@ try {
 '@.Replace('__PLAN__', $planJson)
     $probe = Join-Path $tmp 'probe.html'
     $idx = $html.LastIndexOf('</body>', [System.StringComparison]::OrdinalIgnoreCase)
-    $probeHtml = if ($idx -ge 0) { $html.Insert($idx, $probeJs) } else { $html + $probeJs }
+    $probeHtml = if ($idx -ge 0) { $html.Insert($idx, $bothTabs + $probeJs) } else { $html + $bothTabs + $probeJs }
     [System.IO.File]::WriteAllText($probe, $probeHtml, (New-Object System.Text.UTF8Encoding($false)))
+    # The screenshot is taken of a copy with both tabs shown, so the positions above match it.
+    $shot = Join-Path $tmp 'shot.html'
+    $shotHtml = if ($idx -ge 0) { $html.Insert($idx, $bothTabs) } else { $html + $bothTabs }
+    [System.IO.File]::WriteAllText($shot, $shotHtml, (New-Object System.Text.UTF8Encoding($false)))
+    $url = ([System.Uri]$shot).AbsoluteUri
     $ErrorActionPreference = 'Continue'
     $dom = & $Browser --headless=new --disable-gpu --hide-scrollbars --force-device-scale-factor=1 "--user-data-dir=$profileDir-probe" "--window-size=$Width,900" --virtual-time-budget=4000 --dump-dom ([System.Uri]$probe).AbsoluteUri 2>$null | Out-String
     $ErrorActionPreference = 'Stop'

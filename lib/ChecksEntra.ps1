@@ -1433,24 +1433,33 @@ function ConvertTo-EntraReportHtml {
     & $w "<h1 class=`"title`">$(Get-WolfLogoHtml)<span>IDWolf: Entra ID Hygiene Report</span></h1>"
     & $w "<div class=`"meta`">Tenant <b>$(& $H $tenant)</b> ($(& $H $Snapshot.meta.tenantId)) &middot; snapshot $(& $H $collected.ToString('yyyy-MM-dd HH:mm')) UTC &middot; IDWolf v$ToolVersion &middot; analysis $ElapsedText</div>"
     if ($Snapshot.meta.synthetic) { & $w '<blockquote>Synthetic snapshot for testing. No real tenant data.</blockquote>' }
-    & $w '<div class="cards">'
-    if ($Score.Reliable) { & $w "<div class=`"card`"><div class=`"grade`">$($Score.Grade) &middot; $($Score.Score)/100</div><div class=`"lbl`">Hygiene score</div></div>" }
-    else { & $w "<div class=`"card`"><div class=`"grade`">n/a</div><div class=`"lbl`">Hygiene score not reliable: only $($Score.Coverage)% of the checks could be evaluated</div></div>" }
-    foreach ($s in $sevOrder) { & $w "<div class=`"card $($s.ToLower())`"><div class=`"num`">$($counts[$s])</div><div class=`"lbl`">$s findings</div></div>" }
-    & $w "<div class=`"card`"><div class=`"num`">$(@($Snapshot.users).Count)</div><div class=`"lbl`">Users</div></div>"
-    & $w "<div class=`"card`"><div class=`"num`">$(@($Snapshot.servicePrincipals).Count)</div><div class=`"lbl`">Service principals</div></div>"
-    & $w '</div>'
-    & $w (Get-EntraChartsRow -Findings $Findings)
-    & $w (Get-EntraInfoChartsRow -Snapshot $Snapshot)
-    & $w (Get-EntraGlanceHtml -Snapshot $Snapshot)
-    if ($AiResult) { & $w (ConvertTo-AiSectionHtml -AiResult $AiResult) }
+    & $w (Get-ReportTabsHtml)
 
+    # ---------------- Dashboard ----------------
+    & $w '<section id="tab-dashboard" class="tab-pane" role="tabpanel">'
+    $kicker = "$(& $H $tenant) &middot; $(@($Snapshot.users).Count) users &middot; $(@($Snapshot.servicePrincipals).Count) service principals"
+    & $w (ConvertTo-ScoreHeroHtml -Score $Score -Findings $Findings -CheckTotal $script:EntraCheckCatalog.Count -NotEvaluatedCount @($NotEvaluated).Count -Kicker $kicker)
     if (@($NotEvaluated).Count -gt 0) {
         & $w '<blockquote class="warn"><b>Incomplete coverage.</b> These checks were not evaluated:<ul>'
         foreach ($n in $NotEvaluated) { & $w "<li><code>$($n.Type)</code> $(& $H $n.Title): $(& $H $n.Reason)</li>" }
         & $w '</ul></blockquote>'
     }
+    if ($AiResult) { & $w (ConvertTo-AiSectionHtml -AiResult $AiResult) }
+    if (Get-Command Get-CheckControls -ErrorAction SilentlyContinue) {
+        try { & $w (ConvertTo-FrameworkCardsHtml -Catalog $script:EntraCheckCatalog -Findings $Findings -NotEvaluated $NotEvaluated) }
+        catch { Write-Warning "Framework cards skipped: $($_.Exception.Message)" }
+    }
+    & $w (ConvertTo-CategoryTilesHtml -Catalog $script:EntraCheckCatalog -Findings $Findings -NotEvaluated $NotEvaluated)
+    & $w (ConvertTo-TopRisksHtml -Catalog $script:EntraCheckCatalog -Findings $Findings)
+    & $w '<details open><summary><h2>Tenant charts</h2></summary>'
+    & $w (Get-EntraChartsRow -Findings $Findings)
+    & $w (Get-EntraInfoChartsRow -Snapshot $Snapshot)
+    & $w '</details>'
+    & $w (Get-EntraGlanceHtml -Snapshot $Snapshot)
+    & $w '</section>'
 
+    # ---------------- Details ----------------
+    & $w '<section id="tab-details" class="tab-pane" role="tabpanel">'
     if (Get-Command ConvertTo-ComplianceHtml -ErrorAction SilentlyContinue) {
         try { & $w (ConvertTo-ComplianceHtml -Catalog $script:EntraCheckCatalog -Findings $Findings -NotEvaluated $NotEvaluated) }
         catch { Write-Warning "Regulatory mapping skipped: $($_.Exception.Message)" }
@@ -1465,7 +1474,7 @@ function ConvertTo-EntraReportHtml {
         } | Sort-Object @{ Expression = 'Rank'; Descending = $true }, @{ Expression = { $_.Items.Count }; Descending = $true }, @{ Expression = { Get-CheckPosition $_.Type } })
     foreach ($t in $typeRows) {
         $meta = $script:EntraCheckCatalog[$t.Type]; $n = @($t.Items).Count
-        & $w "<details class=`"check`"><summary>$(Get-SevPill $t.Worst)<span class=`"check-title`">$(& $H $meta.Title)</span><span class=`"check-id`">$($t.Type) &middot; $(& $H $meta.Category)</span><span class=`"count`">$n</span></summary><div class=`"body`">"
+        & $w "<details class=`"check`" id=`"chk-$($t.Type)`"><summary>$(Get-SevPill $t.Worst)<span class=`"check-title`">$(& $H $meta.Title)</span><span class=`"check-id`">$($t.Type) &middot; $(& $H $meta.Category)</span><span class=`"count`">$n</span></summary><div class=`"body`">"
         & $w "<div class=`"kv`"><b>Why it matters.</b> $(& $H $meta.Description)</div>"
         & $w "<div class=`"kv`"><b>Remediation.</b> $(& $H $meta.Remediation)</div>"
         $attack = Format-CheckAttackHtml $t.Type $meta; if ($attack) { & $w $attack }
@@ -1476,7 +1485,7 @@ function ConvertTo-EntraReportHtml {
         }
         & $w '</table></div></div></details>'
     }
-    & $w '</details>'
+    & $w '</details></section>'
     & $w '<p class="meta" style="margin-top:32px">Generated by IDWolf from a read-only Entra ID snapshot. Handle as confidential.</p></body></html>'
     return $sb.ToString()
 }
@@ -1568,6 +1577,6 @@ function New-EntraAiPrompt {
 
 # CSS for the Entra report.
 function Get-IDWolfReportCss {
-    # Same theme as the AD report (Reporting.ps1), then the end of <head>.
-    return (Get-IDWolfThemeCss) + "`n</head><body>`n"
+    # Same theme and scripts as the AD report (Reporting.ps1), then the end of <head>.
+    return (Get-IDWolfThemeCss) + "`n" + (Get-IDWolfReportScript) + "</head><body>`n"
 }

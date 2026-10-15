@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Report: the HTML opens on a **Dashboard** tab, and the per-check blocks and tables move to a
+  **Details** tab. The dashboard has a score ring with the grade and the counts by severity, then
+  the Gemini section and the attack-path map (both collapsible, open by default), one card per
+  framework (NIS2, ISO 27001, DORA, GDPR) with the share of evaluated checks that came out clean
+  and a bar per control, one tile per category, the six top risks (worst severity, then most
+  objects, then catalog order) linked to their check, and the charts. Not-evaluated checks are
+  counted apart on the cards, never as clean. Same layout for the Entra report, which now shares
+  the AD report's scripts (`Get-IDWolfReportScript`). Printing, and a browser without scripts,
+  show both tabs. The score formula moves under "How the score is computed".
+- `tests\New-ReportGif.ps1` renders both tabs and has slides for the new dashboard cards.
+- `examples\demo_report.html` re-rendered with the new layout (findings and CSV unchanged).
+  `entra_report.html` and the lab report keep the 1.3 layout for now.
+
 ## 1.3 - 2026-10-15
 
 - AI step: the reply text is now joined from every part Gemini returns (thinking models can split
