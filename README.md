@@ -957,8 +957,10 @@ The model is asked for defensive output only.
 - **HTML**: the score and counts, donut charts about the findings and about the
   directory itself (accounts, password age, computers, groups), the AI section if
   there is one, the attack-path map, the Tier 0 members, and a block for every
-  triggered check with why it matters, how to fix it, a MITRE link, the
-  regulatory controls and the affected objects. A regulatory mapping shows NIS2,
+  triggered check with why it matters, how to fix it, the attack it enables (the
+  MITRE technique with its name and, for the checks in the "Recent attacks" table,
+  the attack seen in public incidents), the regulatory controls and the affected
+  objects. A regulatory mapping shows NIS2,
   ISO 27001, DORA and GDPR controls with their status. It also has comparison,
   accepted risks and a filterable
   table of everything. When fewer than half of the checks could be evaluated,

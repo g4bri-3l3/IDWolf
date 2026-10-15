@@ -577,6 +577,8 @@ $fake = [PSCustomObject]@{
             [PSCustomObject]@{ title = 'Invented chain'; checks = @('made_up'); objects = @(); narrative = 'x' }
         ) }
 }
+$geminiReply = Get-GeminiReplyText ('{"candidates":[{"content":{"parts":[{"text":"x","thought":true},{"text":"{\"a\": [1,"},{"text":" 2]}"}]},"finishReason":"STOP"}]}' | ConvertFrom-Json)
+Assert-True ($geminiReply.Text -eq '{"a": [1, 2]}' -and $geminiReply.FinishReason -eq 'STOP') 'Gemini reply split over several parts is joined, thought parts skipped'
 $ai = ConvertFrom-AiResponse -Raw $fake -Pz $pz -Findings $r.Findings -Model 'test'
 Assert-True (@($ai.RemediationPlan).Count -eq 1) 'plan items referencing only unknown checks are dropped'
 Assert-True ((@($ai.RemediationPlan)[0].Checks -join ',') -eq 'rbcd_configured') 'unknown check ids removed from plan item'
@@ -595,7 +597,10 @@ $cmpA = $ai.CompromiseAssessment
 Assert-True ($cmpA.Verdict -eq 'likely' -and $cmpA.Summary -eq 'Through svc_sql_admin.' -and @($cmpA.Chains).Count -eq 1 -and ($cmpA.Chains[0].Checks -join ',') -eq 'kerberoastable_user,privileged_kerberoastable' -and $cmpA.Chains[0].Narrative -eq 'Rotate svc_sql_admin to break it.' -and $cmpA.Chains[0].StartingPoint -eq 'svc_sql_admin') 'compromise assessment: verdict normalized, invented checks and chains dropped, de-tokenized'
 Assert-True (($prompt -match '(?m)^Recent attack vectors') -and ($prompt -match '(?m)^- kerberoastable_user: Kerberoasting') -and ($prompt -match '(?m)^- adcs_esc8: ') -and ($prompt -notmatch '(?m)^- badsuccessor_dmsa_create: ')) 'prompt lists only the fired checks tied to recent attacks'
 $allChecks = @($script:CheckCatalog.Keys) + @($script:EntraCheckCatalog.Keys)
-Assert-True (@($script:AiRecentAttackVectors.Keys | Where-Object { $allChecks -notcontains $_ }).Count -eq 0) "recent attack vector list names only real checks (unknown: $(@($script:AiRecentAttackVectors.Keys | Where-Object { $allChecks -notcontains $_ }) -join ', '))"
+Assert-True (@($script:RecentAttackVectors.Keys | Where-Object { $allChecks -notcontains $_ }).Count -eq 0) "recent attack vector list names only real checks (unknown: $(@($script:RecentAttackVectors.Keys | Where-Object { $allChecks -notcontains $_ }) -join ', '))"
+$unnamedMitre = @(@($script:CheckCatalog.Values) + @($script:EntraCheckCatalog.Values) | ForEach-Object { "$($_.Mitre)" } | Where-Object { $_ -and -not $script:MitreTechniqueNames.ContainsKey($_) } | Sort-Object -Unique)
+Assert-True ($unnamedMitre.Count -eq 0) "every MITRE ID in the catalogs has a technique name (missing: $($unnamedMitre -join ', '))"
+Assert-True ($html -match '<b>Attack it enables\.</b> <a [^>]+>T1558\.003</a> Steal or Forge Kerberos Tickets: Kerberoasting<br>Seen in attacks: Kerberoasting, seen in ransomware') 'report shows the technique name and the recent attack for a check'
 $html2 = ConvertTo-ReportHtml -Snapshot $demo -Index $r.Index -PrivMap $r.PrivMap -Split $split -Score $score -NotEvaluated @() -Comparison $null -Config $config -ToolVersion 'test' -ElapsedText '0s' -AiResult $ai
 Assert-True ($html2 -match 'ai-section' -and $html2 -match 'chart-row' -and ([regex]::Matches($html2, "class='pie-chart-wrap'")).Count -ge 4) 'HTML with AI section and the donut charts'
 Assert-True (([regex]::Matches($html2, "pie-chart-title'>(All accounts|Password age|Password settings|Computers by operating system|Enabled computers by activity|Groups by scope)")).Count -ge 5) 'HTML has the directory donuts (accounts, password age and settings, computers, groups)'

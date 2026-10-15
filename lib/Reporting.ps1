@@ -136,6 +136,139 @@ function Get-MitreLink {
     return "<a href=`"https://attack.mitre.org/techniques/$path/`" target=`"_blank`" rel=`"noopener`">$Id</a>"
 }
 
+# Names of the ATT&CK techniques the catalogs use, as attack.mitre.org shows them
+# (sub-techniques as "Technique: Sub-technique"). The regression asserts that every
+# Mitre ID in a catalog is here, so a new ID needs its name added.
+$script:MitreTechniqueNames = @{
+    'T1003'     = 'OS Credential Dumping'
+    'T1003.001' = 'OS Credential Dumping: LSASS Memory'
+    'T1003.005' = 'OS Credential Dumping: Cached Domain Credentials'
+    'T1003.006' = 'OS Credential Dumping: DCSync'
+    'T1021.001' = 'Remote Services: Remote Desktop Protocol'
+    'T1036'     = 'Masquerading'
+    'T1059.005' = 'Command and Scripting Interpreter: Visual Basic'
+    'T1068'     = 'Exploitation for Privilege Escalation'
+    'T1072'     = 'Software Deployment Tools'
+    'T1078'     = 'Valid Accounts'
+    'T1078.001' = 'Valid Accounts: Default Accounts'
+    'T1078.002' = 'Valid Accounts: Domain Accounts'
+    'T1078.003' = 'Valid Accounts: Local Accounts'
+    'T1078.004' = 'Valid Accounts: Cloud Accounts'
+    'T1087'     = 'Account Discovery'
+    'T1087.002' = 'Account Discovery: Domain Account'
+    'T1087.004' = 'Account Discovery: Cloud Account'
+    'T1098'     = 'Account Manipulation'
+    'T1098.001' = 'Account Manipulation: Additional Cloud Credentials'
+    'T1098.003' = 'Account Manipulation: Additional Cloud Roles'
+    'T1098.005' = 'Account Manipulation: Device Registration'
+    'T1110'     = 'Brute Force'
+    'T1110.001' = 'Brute Force: Password Guessing'
+    'T1110.003' = 'Brute Force: Password Spraying'
+    'T1110.004' = 'Brute Force: Credential Stuffing'
+    'T1111'     = 'Multi-Factor Authentication Interception'
+    'T1134.005' = 'Access Token Manipulation: SID-History Injection'
+    'T1136.002' = 'Create Account: Domain Account'
+    'T1136.003' = 'Create Account: Cloud Account'
+    'T1187'     = 'Forced Authentication'
+    'T1199'     = 'Trusted Relationship'
+    'T1204.002' = 'User Execution: Malicious File'
+    'T1207'     = 'Rogue Domain Controller'
+    'T1210'     = 'Exploitation of Remote Services'
+    'T1484.001' = 'Domain or Tenant Policy Modification: Group Policy Modification'
+    'T1485'     = 'Data Destruction'
+    'T1528'     = 'Steal Application Access Token'
+    'T1547.012' = 'Boot or Logon Autostart Execution: Print Processors'
+    'T1548'     = 'Abuse Elevation Control Mechanism'
+    'T1550'     = 'Use Alternate Authentication Material'
+    'T1550.001' = 'Use Alternate Authentication Material: Application Access Token'
+    'T1550.002' = 'Use Alternate Authentication Material: Pass the Hash'
+    'T1550.003' = 'Use Alternate Authentication Material: Pass the Ticket'
+    'T1552'     = 'Unsecured Credentials'
+    'T1552.001' = 'Unsecured Credentials: Credentials In Files'
+    'T1552.006' = 'Unsecured Credentials: Group Policy Preferences'
+    'T1555'     = 'Credentials from Password Stores'
+    'T1556.003' = 'Modify Authentication Process: Pluggable Authentication Modules'
+    'T1556.005' = 'Modify Authentication Process: Reversible Encryption'
+    'T1556.006' = 'Modify Authentication Process: Multi-Factor Authentication'
+    'T1556.009' = 'Modify Authentication Process: Conditional Access Policies'
+    'T1557'     = 'Adversary-in-the-Middle'
+    'T1557.001' = 'Adversary-in-the-Middle: LLMNR/NBT-NS Poisoning and SMB Relay'
+    'T1558'     = 'Steal or Forge Kerberos Tickets'
+    'T1558.001' = 'Steal or Forge Kerberos Tickets: Golden Ticket'
+    'T1558.003' = 'Steal or Forge Kerberos Tickets: Kerberoasting'
+    'T1558.004' = 'Steal or Forge Kerberos Tickets: AS-REP Roasting'
+    'T1562.002' = 'Impair Defenses: Disable Windows Event Logging'
+    'T1566'     = 'Phishing'
+    'T1590'     = 'Gather Victim Network Information'
+    'T1606.002' = 'Forge Web Credentials: SAML Tokens'
+    'T1621'     = 'Multi-Factor Authentication Request Generation'
+    'T1649'     = 'Steal or Forge Authentication Certificates'
+}
+
+# Checks tied to attack vectors seen in public incidents or research, mostly 2023-2026
+# (the "Recent attacks" table in README.md and COVERAGE.md). Shown in the report next to
+# the check and given to the AI step. Ordered, so the prompt is
+# the same in every process. Labels hold no directory names.
+$script:RecentAttackVectors = [ordered]@{
+    badsuccessor_dmsa_create             = 'BadSuccessor: dMSA successor link on Windows Server 2025 (CVE-2025-53779, 2025)'
+    kds_root_key_readable                = 'Golden gMSA / Golden dMSA: managed service account passwords from the KDS root key (2025)'
+    coercion_unfiltered_dc               = 'Coercion of a DC (PetitPotam family) feeding NTLM relay (CVE-2025-24054 exploited in 2025)'
+    webclient_on_dc                      = 'Coercion over WebDAV for NTLM relay to LDAP or AD CS'
+    webclient_not_disabled               = 'Coercion over WebDAV for NTLM relay to LDAP or AD CS'
+    adcs_esc8                            = 'NTLM relay to AD CS web enrollment (ESC8), common in ransomware intrusions'
+    adcs_esc11                           = 'NTLM relay to AD CS RPC enrollment (ESC11)'
+    ldap_signing_not_required            = 'NTLM relay to LDAP on the DCs'
+    ldap_channel_binding_off             = 'NTLM relay to LDAPS on the DCs'
+    ntlm_weak_lmcompat                   = 'NTLMv1 downgrade and relay'
+    smb_signing_not_required             = 'NTLM relay and reflection over SMB (CVE-2025-33073, 2025)'
+    smb_client_signing_not_required      = 'NTLM relay and reflection over SMB (CVE-2025-33073, 2025)'
+    adcs_esc1                            = 'AD CS certificate template abuse (ESC1), common in ransomware intrusions'
+    adcs_esc2                            = 'AD CS certificate template abuse (ESC2)'
+    adcs_esc3                            = 'AD CS enrollment agent abuse (ESC3)'
+    adcs_esc4                            = 'AD CS template ACL abuse (ESC4)'
+    adcs_esc15                           = 'AD CS EKUwu (ESC15, CVE-2024-49019, 2024)'
+    adcs_esc16                           = 'AD CS SID extension disabled CA-wide (ESC16, 2025)'
+    kerberoastable_user                  = 'Kerberoasting, seen in ransomware intrusions through 2026'
+    privileged_kerberoastable            = 'Kerberoasting of a privileged account, seen in ransomware intrusions through 2026'
+    spn_account_rc4                      = 'Kerberoasting with RC4 tickets (faster offline cracking)'
+    asrep_roastable                      = 'AS-REP roasting'
+    shadow_credentials_present           = 'Shadow Credentials (msDS-KeyCredentialLink)'
+    nopac_unpatched_dc                   = 'noPac (CVE-2021-42278/42287), still used by ransomware operators'
+    gpp_cpassword                        = 'Group Policy Preferences passwords in SYSVOL, routinely harvested in intrusions'
+    netlogon_vulnerable_channel          = 'ZeroLogon (CVE-2020-1472), still exploited'
+    point_and_print_unsafe               = 'PrintNightmare (Point and Print)'
+    entra_admin_synced_from_onprem       = 'Hybrid identity abuse: synced admins (Entra Connect, SyncJacking, 2025)'
+    entra_connect_app_extra_credentials  = 'Entra Connect abuse (Black Hat 2025 research)'
+    entra_smart_lockout_weak             = 'Password spraying, the main cloud initial access vector (Microsoft, 2026)'
+    entra_banned_passwords_off           = 'Password spraying, the main cloud initial access vector (Microsoft, 2026)'
+    entra_legacy_auth_allowed            = 'Password spraying through legacy authentication'
+    entra_admins_without_mfa             = 'Password spraying and credential stuffing against admins'
+    entra_device_code_flow_allowed       = 'Device code phishing (Storm-2372 and later kits, 2025-2026)'
+    entra_no_phishing_resistant_admins   = 'Adversary-in-the-middle phishing and session token theft'
+    entra_token_protection_off           = 'Session token theft and replay'
+    entra_users_can_consent              = 'OAuth consent phishing'
+    entra_risky_delegated_grant          = 'OAuth consent phishing and over-privileged apps'
+    entra_app_high_privilege             = 'Over-privileged OAuth apps (Midnight Blizzard, 2024)'
+    entra_privileged_app_sp_owner        = 'Escalation through service principal ownership (Entra Agent ID flaw, 2026)'
+    entra_privileged_app_owner           = 'Escalation through app ownership'
+    entra_intune_no_multi_admin_approval = 'Mass device wipe from a compromised Intune admin (Stryker, reported 2026)'
+    entra_intune_role_weak_group         = 'Code execution on all managed devices through Intune'
+}
+
+# "Attack it enables." in a check's details: the ATT&CK technique with its name, and the
+# attack seen in public incidents when the check is in $script:RecentAttackVectors.
+function Format-CheckAttackHtml {
+    param([string]$Type, $Meta)
+    $parts = @()
+    if ($Meta.Mitre) {
+        $name = $script:MitreTechniqueNames["$($Meta.Mitre)"]
+        $parts += "$(Get-MitreLink $Meta.Mitre)$(if ($name) { ' ' + (ConvertTo-HtmlSafe $name) })"
+    }
+    if ($script:RecentAttackVectors.Contains($Type)) { $parts += "Seen in attacks: $(ConvertTo-HtmlSafe $script:RecentAttackVectors[$Type])." }
+    if ($parts.Count -eq 0) { return '' }
+    return "<div class=`"kv`"><b>Attack it enables.</b> $($parts -join '<br>')</div>"
+}
+
 # Wolf-fur palette, charcoal to silver. Only severity and risk keep a muted
 # colour, because there it means something.
 $script:WolfCategoryRamp = @('#161513', '#2B2925', '#45413A', '#5F5A51', '#78726A', '#8F887C', '#ABA497', '#C6BFB0', '#DDD6C8')
@@ -546,7 +679,7 @@ function amMap(g, on) {
         & $w "<details class=`"check`"><summary>$(Get-SevPill $t.Worst)<span class=`"check-title`">$(& $H $meta.Title)</span><span class=`"check-id`">$($t.Type) &middot; $(& $H $meta.Category)</span><span class=`"count`">$n object$(if ($n -ne 1) { 's' })</span></summary><div class=`"body`">"
         & $w "<div class=`"kv`"><b>Why it matters.</b> $(& $H $meta.Description)</div>"
         & $w "<div class=`"kv`"><b>Remediation.</b> $(& $H $meta.Remediation)</div>"
-        if ($meta.Mitre) { & $w "<div class=`"kv`"><b>MITRE ATT&amp;CK.</b> $(Get-MitreLink $meta.Mitre)</div>" }
+        $attack = Format-CheckAttackHtml $t.Type $meta; if ($attack) { & $w $attack }
         if (Get-Command Format-CheckControls -ErrorAction SilentlyContinue) { & $w "<div class=`"kv`"><b>Regulatory controls.</b> $(& $H (Format-CheckControls $t.Type))</div>" }
         & $w '<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>'
         foreach ($f in ($t.Items | Sort-Object { - $script:SeverityRank[$_.Severity] }, Object)) {

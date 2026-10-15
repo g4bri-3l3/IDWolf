@@ -126,8 +126,12 @@ function Show-IDWolfBanner {
 #           (      ) | |
 #   ________|   _/_  | |
 # <__________\______)\__)
+#
+#                https://github.com/g4bri-3l3/IDWolf
 ######################################################################
 '@
+    # Close the box on the right: pad every inner line to the border width.
+    $b = (($b -split "`r?`n") | ForEach-Object { if ($_ -match '^#' -and $_ -notmatch '^#{10,}$') { $_.PadRight(69) + '#' } else { $_ } }) -join "`n"
     Write-Host $b -ForegroundColor DarkYellow
     Write-Host "  v$script:IDWolfVersion  offline analyzer (no AD module needed)" -ForegroundColor DarkYellow
 }
@@ -253,7 +257,7 @@ function Invoke-AnalyzerSetup {
             $cfg.PasswordQualityFile = Read-Path "  Password-quality JSON path" $pqDefault
         }
     }
-    Write-Host "`nAI step (Gemini): [S]kip, [D]ry-run (write prompt, send nothing), [G] send" -ForegroundColor Cyan
+    Write-Host "`nAI step (Gemini): [S]kip, [D]ry-run (write prompt, send nothing), [G] send (you see the prompt and confirm first)" -ForegroundColor Cyan
     switch ((Read-Host "Choice [S]").ToUpper()) {
         'G' { $cfg.AiMode = 'send' }
         'D' { $cfg.AiMode = 'dryrun' }
@@ -295,7 +299,9 @@ function Invoke-AnalyzerSetup {
     if ($cfg.Model) { $script:Model = $cfg.Model }
     if ($cfg.Contains('AiAttempts') -and "$($cfg.AiAttempts)" -match '^\d+$') { $script:AiMaxAttempts = [int]$cfg.AiAttempts }
     switch ($cfg.AiMode) {
-        'send' { $script:SendToAI = $true }
+        # Not -SendToAI: after the report the analyzer writes the prompt file, shows its path
+        # and asks before sending, so the text can be checked first.
+        'send' { }
         'dryrun' { $script:AiDryRun = Read-Path "Dry-run output file" "output\ai_prompt.txt" }
         default { $script:SkipLLM = $true }
     }

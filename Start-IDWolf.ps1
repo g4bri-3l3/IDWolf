@@ -35,7 +35,7 @@ $root = $PSScriptRoot
 . (Join-Path $root 'lib\Bundle.ps1')
 
 function Show-Banner {
-    Write-Host @'
+    $b = @'
 ######################################################################
 #                      .
 #                     / V\
@@ -48,8 +48,13 @@ function Show-Banner {
 #           (      ) | |
 #   ________|   _/_  | |
 # <__________\______)\__)
+#
+#                https://github.com/g4bri-3l3/IDWolf
 ######################################################################
-'@ -ForegroundColor DarkYellow
+'@
+    # Close the box on the right: pad every inner line to the border width.
+    $b = (($b -split "`r?`n") | ForEach-Object { if ($_ -match '^#' -and $_ -notmatch '^#{10,}$') { $_.PadRight(69) + '#' } else { $_ } }) -join "`n"
+    Write-Host $b -ForegroundColor DarkYellow
 }
 
 function Invoke-Sub {

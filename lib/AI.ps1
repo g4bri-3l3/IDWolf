@@ -247,61 +247,12 @@ Respond with one JSON object only, no markdown fences:
       "chains": [ { "title": "...", "starting_point": "...", "checks": ["..."], "objects": ["..."], "narrative": "..." } ] } }
 "@
 
-# Checks tied to attack vectors seen in public incidents or research, mostly 2023-2026
-# (the "Recent attacks" table in README.md and COVERAGE.md). Ordered, so the prompt is
-# the same in every process. Labels hold no directory names.
-$script:AiRecentAttackVectors = [ordered]@{
-    badsuccessor_dmsa_create             = 'BadSuccessor: dMSA successor link on Windows Server 2025 (CVE-2025-53779, 2025)'
-    kds_root_key_readable                = 'Golden gMSA / Golden dMSA: managed service account passwords from the KDS root key (2025)'
-    coercion_unfiltered_dc               = 'Coercion of a DC (PetitPotam family) feeding NTLM relay (CVE-2025-24054 exploited in 2025)'
-    webclient_on_dc                      = 'Coercion over WebDAV for NTLM relay to LDAP or AD CS'
-    webclient_not_disabled               = 'Coercion over WebDAV for NTLM relay to LDAP or AD CS'
-    adcs_esc8                            = 'NTLM relay to AD CS web enrollment (ESC8), common in ransomware intrusions'
-    adcs_esc11                           = 'NTLM relay to AD CS RPC enrollment (ESC11)'
-    ldap_signing_not_required            = 'NTLM relay to LDAP on the DCs'
-    ldap_channel_binding_off             = 'NTLM relay to LDAPS on the DCs'
-    ntlm_weak_lmcompat                   = 'NTLMv1 downgrade and relay'
-    smb_signing_not_required             = 'NTLM relay and reflection over SMB (CVE-2025-33073, 2025)'
-    smb_client_signing_not_required      = 'NTLM relay and reflection over SMB (CVE-2025-33073, 2025)'
-    adcs_esc1                            = 'AD CS certificate template abuse (ESC1), common in ransomware intrusions'
-    adcs_esc2                            = 'AD CS certificate template abuse (ESC2)'
-    adcs_esc3                            = 'AD CS enrollment agent abuse (ESC3)'
-    adcs_esc4                            = 'AD CS template ACL abuse (ESC4)'
-    adcs_esc15                           = 'AD CS EKUwu (ESC15, CVE-2024-49019, 2024)'
-    adcs_esc16                           = 'AD CS SID extension disabled CA-wide (ESC16, 2025)'
-    kerberoastable_user                  = 'Kerberoasting, seen in ransomware intrusions through 2026'
-    privileged_kerberoastable            = 'Kerberoasting of a privileged account, seen in ransomware intrusions through 2026'
-    spn_account_rc4                      = 'Kerberoasting with RC4 tickets (faster offline cracking)'
-    asrep_roastable                      = 'AS-REP roasting'
-    shadow_credentials_present           = 'Shadow Credentials (msDS-KeyCredentialLink)'
-    nopac_unpatched_dc                   = 'noPac (CVE-2021-42278/42287), still used by ransomware operators'
-    gpp_cpassword                        = 'Group Policy Preferences passwords in SYSVOL, routinely harvested in intrusions'
-    netlogon_vulnerable_channel          = 'ZeroLogon (CVE-2020-1472), still exploited'
-    point_and_print_unsafe               = 'PrintNightmare (Point and Print)'
-    entra_admin_synced_from_onprem       = 'Hybrid identity abuse: synced admins (Entra Connect, SyncJacking, 2025)'
-    entra_connect_app_extra_credentials  = 'Entra Connect abuse (Black Hat 2025 research)'
-    entra_smart_lockout_weak             = 'Password spraying, the main cloud initial access vector (Microsoft, 2026)'
-    entra_banned_passwords_off           = 'Password spraying, the main cloud initial access vector (Microsoft, 2026)'
-    entra_legacy_auth_allowed            = 'Password spraying through legacy authentication'
-    entra_admins_without_mfa             = 'Password spraying and credential stuffing against admins'
-    entra_device_code_flow_allowed       = 'Device code phishing (Storm-2372 and later kits, 2025-2026)'
-    entra_no_phishing_resistant_admins   = 'Adversary-in-the-middle phishing and session token theft'
-    entra_token_protection_off           = 'Session token theft and replay'
-    entra_users_can_consent              = 'OAuth consent phishing'
-    entra_risky_delegated_grant          = 'OAuth consent phishing and over-privileged apps'
-    entra_app_high_privilege             = 'Over-privileged OAuth apps (Midnight Blizzard, 2024)'
-    entra_privileged_app_sp_owner        = 'Escalation through service principal ownership (Entra Agent ID flaw, 2026)'
-    entra_privileged_app_owner           = 'Escalation through app ownership'
-    entra_intune_no_multi_admin_approval = 'Mass device wipe from a compromised Intune admin (Stryker, reported 2026)'
-    entra_intune_role_weak_group         = 'Code execution on all managed devices through Intune'
-}
-
-# One line per fired check that is in the list above, in list order.
+# One line per fired check that is in $script:RecentAttackVectors (Reporting.ps1), in list order.
 function Get-AiRecentVectorLines {
     param($Findings)
     $fired = @{}; foreach ($f in @($Findings | Where-Object { $_ })) { $fired["$($f.Type)"] = $true }
     $out = New-Object System.Collections.Generic.List[string]
-    foreach ($k in $script:AiRecentAttackVectors.Keys) { if ($fired.ContainsKey($k)) { $out.Add("- ${k}: $($script:AiRecentAttackVectors[$k])") } }
+    foreach ($k in $script:RecentAttackVectors.Keys) { if ($fired.ContainsKey($k)) { $out.Add("- ${k}: $($script:RecentAttackVectors[$k])") } }
     if ($out.Count -gt 0) {
         $out.Insert(0, 'Recent attack vectors (fired checks that the local tool links to attacks seen in public incidents or research; start known_exploitation from these):')
         $out.Insert(0, '')
@@ -460,9 +411,25 @@ function Invoke-GeminiAnalysis {
     }
     if (-not $result) { return $null }
     try { $resp = $result.Body | ConvertFrom-Json } catch { Write-Host 'ERROR: Gemini response is not valid JSON.' -ForegroundColor Red; return $null }
-    $raw = $resp.candidates[0].content.parts[0].text
-    $raw = ($raw -replace '^\s*```(?:json)?', '') -replace '```\s*$', ''
-    try { return ($raw | ConvertFrom-Json) } catch { Write-Host "ERROR: model did not return clean JSON:`n$raw" -ForegroundColor Red; return $null }
+    $reply = Get-GeminiReplyText $resp
+    $raw = ($reply.Text -replace '^\s*```(?:json)?', '') -replace '```\s*$', ''
+    try { return ($raw | ConvertFrom-Json) }
+    catch {
+        Write-Host "ERROR: model did not return clean JSON (finishReason: $(if ($reply.FinishReason) { $reply.FinishReason } else { 'none' })):`n$raw" -ForegroundColor Red
+        if ($reply.FinishReason -eq 'MAX_TOKENS') { Write-Host "The reply hit the model's output-token limit and was cut off. Run again, or try another model with -Model." -ForegroundColor Yellow }
+        elseif ($reply.FinishReason -and $reply.FinishReason -ne 'STOP') { Write-Host "Gemini stopped the reply early ($($reply.FinishReason)). Run again, or try another model with -Model." -ForegroundColor Yellow }
+        return $null
+    }
+}
+
+# The reply text of the first candidate. Thinking models can split it over several
+# parts (and add thought parts when asked to), so join every non-thought text part.
+function Get-GeminiReplyText {
+    param($Response)
+    $cand = @($Response.candidates | Where-Object { $_ }) | Select-Object -First 1
+    if (-not $cand) { return [PSCustomObject]@{ Text = ''; FinishReason = "$($Response.promptFeedback.blockReason)" } }
+    $text = (@($cand.content.parts | Where-Object { $_ -and -not $_.thought -and $null -ne $_.text }) | ForEach-Object { "$($_.text)" }) -join ''
+    return [PSCustomObject]@{ Text = $text; FinishReason = "$($cand.finishReason)" }
 }
 
 # --------------------------------------------------------------------------

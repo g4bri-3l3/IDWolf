@@ -138,7 +138,7 @@
           (      ) | |
   ________|   _/_  | |
 &lt;__________\______)\__)</pre><span>IDWolf: Entra ID Hygiene Report</span></h1>
-<div class="meta">Tenant <b>MooseBank Cloud</b> (11111111-2222-3333-4444-555555555555) &middot; snapshot 2026-09-30 08:00 UTC &middot; IDWolf v1.2 &middot; analysis 0,4s</div>
+<div class="meta">Tenant <b>MooseBank Cloud</b> (11111111-2222-3333-4444-555555555555) &middot; snapshot 2026-09-30 08:00 UTC &middot; IDWolf v1.2 &middot; analysis 0,5s</div>
 <blockquote>Synthetic snapshot for testing. No real tenant data.</blockquote>
 <div class="cards">
 <div class="card"><div class="grade">F &middot; 6/100</div><div class="lbl">Hygiene score</div></div>
@@ -203,7 +203,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-critical">Critical</span><span class="check-title">Privileged role member without MFA registered</span><span class="check-id">entra_admins_without_mfa &middot; Entra Identity</span><span class="count">2</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> A member of a control-plane admin role has no MFA method registered. A single phished or sprayed password yields tenant-level control.</div>
 <div class="kv"><b>Remediation.</b> Require and register phishing-resistant MFA for every admin; add them to a CA policy that enforces it, and prefer PIM eligible over permanent assignment.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts<br>Seen in attacks: Password spraying and credential stuffing against admins.</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.18, A.8.2, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-critical">Critical</span></td><td><b>bob.admin@moosebank.onmicrosoft.com</b></td><td>No MFA method registered. Roles: Global Administrator.</td></tr>
@@ -212,7 +212,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-critical">Critical</span><span class="check-title">Service principal with tenant-takeover permission</span><span class="check-id">entra_app_high_privilege &middot; Entra Applications</span><span class="count">2</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> A service principal holds a high-risk application permission (e.g. RoleManagement.ReadWrite.Directory, Directory.ReadWrite.All, AppRoleAssignment.ReadWrite.All). A compromise of its credential is equivalent to Global Admin.</div>
 <div class="kv"><b>Remediation.</b> Confirm the app truly needs the permission; remove it otherwise. Protect the credential as Tier 0, prefer certificate credentials and workload identity CA.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a> Account Manipulation: Additional Cloud Credentials<br>Seen in attacks: Over-privileged OAuth apps (Midnight Blizzard, 2024).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-critical">Critical</span></td><td><b>Backup Automation</b></td><td>Application permissions: RoleManagement.ReadWrite.Directory.</td></tr>
@@ -221,7 +221,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Group holding an admin role owned by a non-admin</span><span class="check-id">entra_privileged_group_owner &middot; Entra Identity</span><span class="count">2</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> A group that holds a privileged Entra role (active or eligible) has an owner who is not an admin, or a guest or service principal as owner. The owner can add any account, including their own, to the group and so take the role.</div>
 <div class="kv"><b>Remediation.</b> Remove those owners: groups that hold roles should be owned by admins of the same tier only (or by nobody, managed through PIM for Groups), and the group must be role-assignable.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/003/" target="_blank" rel="noopener">T1098.003</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/003/" target="_blank" rel="noopener">T1098.003</a> Account Manipulation: Additional Cloud Roles</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i); ISO27001 A.5.15, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>PIM - Global Admins</b></td><td>Holds: Global Administrator (eligible). Owners who can add themselves: eligible owner non-admin user14@moosebank.onmicrosoft.com.</td></tr>
@@ -230,7 +230,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Intune role that can run code on devices given through an unprotected group</span><span class="check-id">entra_intune_role_weak_group &middot; Entra Identity</span><span class="count">2</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> An Intune role that can push scripts, apps or configuration to managed devices, or change Intune roles, is assigned to a group that is not role-assignable or has a dynamic membership. Groups Administrators, User Administrators, Intune Administrators and the group&#39;s owners can add members to such a group, and a member can run code as SYSTEM on every device in scope, admin workstations included.</div>
 <div class="kv"><b>Remediation.</b> Give powerful Intune roles only to role-assignable groups managed by admins of the same tier (or through PIM for Groups), keep their membership assigned rather than dynamic, and narrow the scope tags and scope groups of the assignment.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1072/" target="_blank" rel="noopener">T1072</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1072/" target="_blank" rel="noopener">T1072</a> Software Deployment Tools<br>Seen in attacks: Code execution on all managed devices through Intune.</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i); ISO27001 A.5.15, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>Policy and Profile Manager: Endpoint team</b></td><td>Assignment Endpoint team - profiles (built-in role) is given to group Endpoint team: not role-assignable; 1 owner(s). Scope groups: none listed.</td></tr>
@@ -239,7 +239,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Security defaults off and no MFA enforced by Conditional Access</span><span class="check-id">entra_security_defaults_off &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Security defaults are disabled and no enabled Conditional Access policy requires MFA. Accounts can sign in with a password alone.</div>
 <div class="kv"><b>Remediation.</b> Enable security defaults, or (with Entra ID P1/P2) an enabled CA policy that requires MFA for all users, plus a policy blocking legacy authentication.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1556/006/" target="_blank" rel="noopener">T1556.006</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1556/006/" target="_blank" rel="noopener">T1556.006</a> Modify Authentication Process: Multi-Factor Authentication</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>MooseBank Cloud</b></td><td>Security defaults disabled and no enabled CA policy requires MFA for all users.</td></tr>
@@ -247,7 +247,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">No Conditional Access policy enforcing MFA on admins</span><span class="check-id">entra_no_ca_mfa_admins &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> No enabled CA policy targets directory roles with an MFA grant control. Admin sign-ins are not guaranteed to be challenged.</div>
 <div class="kv"><b>Remediation.</b> Create an enabled CA policy scoped to admin roles requiring MFA (ideally phishing-resistant).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1556/006/" target="_blank" rel="noopener">T1556.006</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1556/006/" target="_blank" rel="noopener">T1556.006</a> Modify Authentication Process: Multi-Factor Authentication</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>admin roles</b></td><td>No enabled CA policy with an MFA grant control targets admin roles or all users.</td></tr>
@@ -255,7 +255,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Legacy authentication not blocked</span><span class="check-id">entra_legacy_auth_allowed &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> No enabled CA policy blocks legacy authentication protocols (which cannot enforce MFA and are a primary password-spray target), and security defaults are off.</div>
 <div class="kv"><b>Remediation.</b> Add an enabled CA policy that blocks legacy authentication for all users.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1110/" target="_blank" rel="noopener">T1110</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1110/" target="_blank" rel="noopener">T1110</a> Brute Force<br>Seen in attacks: Password spraying through legacy authentication.</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>tenant</b></td><td>No enabled CA policy blocks legacy authentication.</td></tr>
@@ -263,7 +263,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Guest account in a privileged role</span><span class="check-id">entra_privileged_guest &middot; Entra Identity</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> An external (guest) identity holds an admin role: the security of the tenant then depends on an account managed outside it.</div>
 <div class="kv"><b>Remediation.</b> Remove guests from privileged roles; if unavoidable, convert to a member account governed by tenant policy and PIM.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>ext.partner_gmail.com#EXT#@moosebank.onmicrosoft.com</b></td><td>Guest holds: Global Administrator.</td></tr>
@@ -271,7 +271,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Admin account synchronized from on-premises AD</span><span class="check-id">entra_admin_synced_from_onprem &middot; Entra Identity</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> A privileged role member is synced from on-premises Active Directory. Whoever controls that domain, or the sync server, can take over the account and with it the tenant.</div>
 <div class="kv"><b>Remediation.</b> Give Entra admin roles to cloud-only accounts, separate from the on-premises identity (CIS 1.1.1).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts<br>Seen in attacks: Hybrid identity abuse: synced admins (Entra Connect, SyncJacking, 2025).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i); ISO27001 A.5.15, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>dave.appadmin@moosebank.onmicrosoft.com</b></td><td>Synced from on-premises AD. Roles: Application Administrator.</td></tr>
@@ -279,7 +279,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Service principal owns a privileged application</span><span class="check-id">entra_privileged_app_sp_owner &middot; Entra Applications</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> A service principal or managed identity owns an app that holds an admin role or a tenant-takeover permission. Whoever controls the owner (its credentials, the code or the Azure resource behind a managed identity) can add a credential to the privileged app and act as it.</div>
 <div class="kv"><b>Remediation.</b> Remove service principals from the owners of privileged apps; give ownership to a small set of admins of the same tier, or none.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a> Account Manipulation: Additional Cloud Credentials<br>Seen in attacks: Escalation through service principal ownership (Entra Agent ID flaw, 2026).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>Backup Automation</b></td><td>Owned by service principal(s): func-payroll-mi. The app holds: role Security Administrator; permission RoleManagement.ReadWrite.Directory.</td></tr>
@@ -287,7 +287,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Access package grants admin access through self-request without approval</span><span class="check-id">entra_access_package_grants_admin &middot; Entra Identity</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> An access package that a broad population can request for itself, without approval, grants a privileged Entra role or membership of a group that holds one. Any account in that population gets admin rights by asking.</div>
 <div class="kv"><b>Remediation.</b> Require approval (by admins of the same tier) on that policy, restrict who can request it, or remove the privileged resource from the package.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/003/" target="_blank" rel="noopener">T1098.003</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/003/" target="_blank" rel="noopener">T1098.003</a> Account Manipulation: Additional Cloud Roles</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>IT on-call</b></td><td>Policy IT on-call self-service: allMemberUsers can request it for themselves without approval. Grants: group Tier 2 security operators (holds an admin role).</td></tr>
@@ -295,7 +295,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">App administrator scoped to a privileged application</span><span class="check-id">entra_app_scoped_admin_privileged &middot; Entra Applications</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Application Administrator or Cloud Application Administrator is assigned with the scope of a single app, and that app holds an admin role or a tenant-takeover permission. The scoped admin can add a credential to the app and act with its permissions: a delegated &quot;just this app&quot; role that is in fact tenant takeover.</div>
 <div class="kv"><b>Remediation.</b> Remove the scoped assignment, or move the privileged permission out of that app; treat whoever manages a privileged app as an admin of the same tier.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a> Account Manipulation: Additional Cloud Credentials</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>Backup Automation</b></td><td>Scoped app admin(s): user13@moosebank.onmicrosoft.com (Cloud Application Administrator). The app holds: role Security Administrator; permission RoleManagement.ReadWrite.Directory.</td></tr>
@@ -303,7 +303,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Conditional Access exclusion group anyone can get into</span><span class="check-id">entra_ca_excluded_group_weak &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> A group excluded from an enabled Conditional Access policy is a public Microsoft 365 group (anyone can join), a dynamic group whose rule uses attributes a user or guest can influence, or a group owned by non-admins (who can add anyone). Getting into that group switches the policy off for that account, MFA included.</div>
 <div class="kv"><b>Remediation.</b> Exclude only dedicated, role-assignable or admin-owned security groups (for example the emergency access accounts), make the group private and assigned, remove non-admin owners, and review the exclusion with an access review.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1556/009/" target="_blank" rel="noopener">T1556.009</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1556/009/" target="_blank" rel="noopener">T1556.009</a> Modify Authentication Process: Conditional Access Policies</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>Project Elk team</b></td><td>Excluded from: Block device code flow. public Microsoft 365 group (anyone can join); owners: non-admin user12@moosebank.onmicrosoft.com.</td></tr>
@@ -311,7 +311,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Entra Connect application with extra credentials</span><span class="check-id">entra_connect_app_extra_credentials &middot; Entra Applications</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> The ConnectSyncProvisioning application that Entra Connect Sync uses to write to the tenant has more than one certificate, or a client secret. Entra Connect manages a single certificate itself; an extra credential lets someone else act as the sync engine (Directory Synchronization Accounts rights), a known persistence path.</div>
 <div class="kv"><b>Remediation.</b> Keep only the certificate Entra Connect rotates itself, remove other certificates and every secret, and find out who added them.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a> Account Manipulation: Additional Cloud Credentials<br>Seen in attacks: Entra Connect abuse (Black Hat 2025 research).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.17, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>ConnectSyncProvisioning_SYNC01_8f3a2c</b></td><td>2 certificate(s) and 0 client secret(s) on the Entra Connect provisioning app (expected: one certificate).</td></tr>
@@ -319,7 +319,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Regular user owns an app with tenant-takeover permissions</span><span class="check-id">entra_privileged_app_owner &middot; Entra Applications</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> A user who is not an admin owns an app (or its service principal) holding permissions such as RoleManagement.ReadWrite.Directory. An owner can add a secret and act as the app, so that user is effectively a Global Admin.</div>
 <div class="kv"><b>Remediation.</b> Remove user owners from privileged apps, or treat those owners as Tier 0 (admin roles, phishing-resistant MFA, PIM).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a> Account Manipulation: Additional Cloud Credentials<br>Seen in attacks: Escalation through app ownership.</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>Backup Automation</b></td><td>Owned by non-admin user(s): user12@moosebank.onmicrosoft.com. Permissions: RoleManagement.ReadWrite.Directory.</td></tr>
@@ -327,7 +327,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Credential added to a Microsoft first-party app</span><span class="check-id">entra_first_party_sp_credentials &middot; Entra Applications</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> A service principal of a Microsoft-owned application has a secret or certificate added in this tenant. Microsoft apps don&#39;t need that; it is a known persistence technique (seen in the SolarWinds intrusion) because these apps carry broad trusted permissions.</div>
 <div class="kv"><b>Remediation.</b> Find out who added it (audit log, &quot;Add service principal credentials&quot;), remove the credential, and investigate the sign-ins that used it.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a> Account Manipulation: Additional Cloud Credentials</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.17, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>Office 365 Exchange Online</b></td><td>1 credential(s) on a Microsoft-owned app.</td></tr>
@@ -335,7 +335,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Service principal in an admin role</span><span class="check-id">entra_sp_in_admin_role &middot; Entra Identity</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> An application holds an Entra admin role. Its secret or certificate is now a Tier 0 credential, usually stored somewhere much less protected than an admin account.</div>
 <div class="kv"><b>Remediation.</b> Replace the role with the narrowest Graph application permission that does the job, or protect the app as Tier 0 (certificate only, owners limited, workload identity Conditional Access).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/003/" target="_blank" rel="noopener">T1098.003</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/003/" target="_blank" rel="noopener">T1098.003</a> Account Manipulation: Additional Cloud Roles</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i); ISO27001 A.5.15, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>Backup Automation</b></td><td>Holds the Security Administrator role.</td></tr>
@@ -343,7 +343,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">External users can get an access package without approval</span><span class="check-id">entra_access_package_external_no_approval &middot; Entra Identity</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> An entitlement management policy lets external users request an access package and get it straight away. With &quot;all external users&quot;, anyone with a Microsoft account can sign up for the groups, apps and sites in that package.</div>
 <div class="kv"><b>Remediation.</b> Require approval (by a sponsor or the package owner) for external requests, limit the policy to specific connected organizations, and set an expiry.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/" target="_blank" rel="noopener">T1098</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/" target="_blank" rel="noopener">T1098</a> Account Manipulation</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>Project Elk partners</b></td><td>Policy &#39;Partner self-service&#39;: requests from allExternalUsers, no approval.</td></tr>
@@ -351,7 +351,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-high">High</span><span class="check-title">Intune device wipes or scripts need no second admin (Multi Admin Approval)</span><span class="check-id">entra_intune_no_multi_admin_approval &middot; Entra Identity</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> No Intune Multi Admin Approval policy covers device wipes or scripts. One compromised Intune or Global Administrator can then factory-reset every managed device, or run code as SYSTEM on all of them, in a single action: in March 2026 the attack on Stryker was reported to have wiped tens of thousands of devices this way. The policy types are matched by name from the documentation and have not yet been verified on a real tenant.</div>
 <div class="kv"><b>Remediation.</b> In Intune admin center &gt; Tenant administration &gt; Multi Admin Approval, create access policies for device wipe (and retire/delete), scripts, apps and Intune roles, with an approver group of admins other than the requester. Protect the Multi Admin Approval settings themselves with an access policy as well.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1485/" target="_blank" rel="noopener">T1485</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1485/" target="_blank" rel="noopener">T1485</a> Data Destruction<br>Seen in attacks: Mass device wipe from a compromised Intune admin (Stryker, reported 2026).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i); ISO27001 A.5.15, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>Intune</b></td><td>No Multi Admin Approval for: device wipe, scripts, Intune roles. Policies exist for: app.</td></tr>
@@ -359,7 +359,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Admin without a phishing-resistant method registered</span><span class="check-id">entra_admin_no_phishing_resistant_method &middot; Entra Identity</span><span class="count">3</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> An admin has no FIDO2 key, passkey, Windows Hello or certificate registered, so a phishing-resistant MFA policy can&#39;t even be enforced for them.</div>
 <div class="kv"><b>Remediation.</b> Register a FIDO2 key or passkey for every admin, then require the phishing-resistant authentication strength.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1556/006/" target="_blank" rel="noopener">T1556.006</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1556/006/" target="_blank" rel="noopener">T1556.006</a> Modify Authentication Process: Multi-Factor Authentication</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.18, A.8.2, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>bob.admin@moosebank.onmicrosoft.com</b></td><td>Registered: sms. Roles: Global Administrator.</td></tr>
@@ -369,7 +369,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">All users can register applications</span><span class="check-id">entra_users_can_register_apps &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> The authorization policy lets any user create app registrations / service principals, a common consent-phishing and persistence vector.</div>
 <div class="kv"><b>Remediation.</b> Set &quot;Users can register applications&quot; to No; delegate app registration to a controlled group.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a> Account Manipulation: Additional Cloud Credentials</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>authorizationPolicy</b></td><td>defaultUserRolePermissions.allowedToCreateApps = true.</td></tr>
@@ -377,7 +377,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Admin consent workflow not enabled</span><span class="check-id">entra_users_can_consent &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Without an admin consent workflow, user consent settings are the only guardrail against illicit-consent (OAuth) attacks.</div>
 <div class="kv"><b>Remediation.</b> Restrict user consent to verified publishers / low-risk permissions and enable the admin consent request workflow.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1528/" target="_blank" rel="noopener">T1528</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1528/" target="_blank" rel="noopener">T1528</a> Steal Application Access Token<br>Seen in attacks: OAuth consent phishing.</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>adminConsentRequestPolicy</b></td><td>Admin consent request workflow is not enabled.</td></tr>
@@ -385,7 +385,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Standing admin access (PIM not used)</span><span class="check-id">entra_pim_not_used &middot; Entra Identity</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Admin roles are held permanently instead of being activated just in time. A stolen admin session or token is immediately tenant-level access.</div>
 <div class="kv"><b>Remediation.</b> Make admin roles eligible in PIM with MFA and approval on activation. Keep permanent Global Admin only for the two emergency access accounts (CIS 5.3.1).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i); ISO27001 A.5.15, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>admin roles</b></td><td>4 principals hold admin roles permanently (expected at most 2 emergency accounts); 2 eligible assignments in PIM. Permanent: alice.ceo@moosebank.onmicrosoft.com, bob.admin@moosebank.onmicrosoft.com, ext.partner_gmail.com#EXT#@moosebank.onmicrosoft.com, carol.sec@moosebank.onmicrosoft.com.</td></tr>
@@ -393,7 +393,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Admins not required to use phishing-resistant MFA</span><span class="check-id">entra_no_phishing_resistant_admins &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> No enabled Conditional Access policy requires the phishing-resistant authentication strength for admin roles. Push or OTP MFA can still be phished with an adversary-in-the-middle kit.</div>
 <div class="kv"><b>Remediation.</b> Require the &quot;Phishing-resistant MFA&quot; authentication strength (FIDO2, Windows Hello, certificate) for all admin roles (CIS 5.2.2.5).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1556/006/" target="_blank" rel="noopener">T1556.006</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1556/006/" target="_blank" rel="noopener">T1556.006</a> Modify Authentication Process: Multi-Factor Authentication<br>Seen in attacks: Adversary-in-the-middle phishing and session token theft.</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>admin roles</b></td><td>No enabled CA policy for admin roles requires the phishing-resistant MFA strength.</td></tr>
@@ -401,7 +401,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">No user-risk / sign-in-risk Conditional Access</span><span class="check-id">entra_risk_policies_missing &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> No enabled Conditional Access policy reacts to Entra ID Protection risk. Leaked credentials and risky sign-ins are detected but nothing happens.</div>
 <div class="kv"><b>Remediation.</b> With Entra ID P2, require a secure password change for high user risk and MFA for medium/high sign-in risk (CIS 5.2.2.6, 5.2.2.7).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>tenant</b></td><td>No enabled CA policy on user risk.</td></tr>
@@ -409,7 +409,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Weak authentication methods enabled</span><span class="check-id">entra_weak_auth_methods &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> SMS, voice call or email one-time codes are enabled. They can be intercepted (SIM swap, mailbox compromise) and are not phishing resistant.</div>
 <div class="kv"><b>Remediation.</b> Disable SMS, voice and email OTP in the authentication methods policy once users have Authenticator or passkeys (CIS 5.2.3.5, 5.2.3.7).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1111/" target="_blank" rel="noopener">T1111</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1111/" target="_blank" rel="noopener">T1111</a> Multi-Factor Authentication Interception</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.17, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>authenticationMethodsPolicy</b></td><td>Enabled: Sms, Email.</td></tr>
@@ -417,7 +417,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Users can consent to applications</span><span class="check-id">entra_user_consent_allowed &middot; Entra Applications</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Users can grant third-party apps access to company data on their own. This is how illicit-consent (OAuth) phishing gets persistent access without a password.</div>
 <div class="kv"><b>Remediation.</b> Set user consent to &quot;Do not allow&quot; and route requests through the admin consent workflow (CIS 5.1.5.1, 5.1.5.2).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1528/" target="_blank" rel="noopener">T1528</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1528/" target="_blank" rel="noopener">T1528</a> Steal Application Access Token</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>authorizationPolicy</b></td><td>Users can consent to any app, for any permission it asks.</td></tr>
@@ -425,7 +425,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Inactive admin account</span><span class="check-id">entra_admin_inactive &middot; Entra Identity</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> An enabled member of an admin role has not signed in for months. Nobody notices when an unused admin account starts being used by someone else.</div>
 <div class="kv"><b>Remediation.</b> Remove the role, or disable the account. Prefer eligible PIM assignments, which expire on their own.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>ext.partner_gmail.com#EXT#@moosebank.onmicrosoft.com</b></td><td>Last sign-in: 400 days ago (threshold 90). Roles: Global Administrator.</td></tr>
@@ -440,7 +440,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Members not capable of MFA</span><span class="check-id">entra_users_not_mfa_capable &middot; Entra Identity</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Enabled member accounts have no MFA method registered. When MFA is enforced they either get locked out or, worse, an attacker registers a method first.</div>
 <div class="kv"><b>Remediation.</b> Require registration for everyone, protect the registration itself with Conditional Access, and follow up on the accounts listed (CIS 5.2.3.4).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.18, A.8.2, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>4 users</b></td><td>Not MFA capable: bob.admin@moosebank.onmicrosoft.com, carol.sec@moosebank.onmicrosoft.com, user7@moosebank.onmicrosoft.com, user8@moosebank.onmicrosoft.com.</td></tr>
@@ -448,7 +448,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Users become local admins on the devices they join</span><span class="check-id">entra_device_join_user_local_admin &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Whoever joins a device becomes its local administrator: installed tools, disabled defences, harvested credentials are one click away.</div>
 <div class="kv"><b>Remediation.</b> Set &quot;Registering user is added as local administrator&quot; to None (CIS 5.1.4.4).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/003/" target="_blank" rel="noopener">T1078.003</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/003/" target="_blank" rel="noopener">T1078.003</a> Valid Accounts: Local Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>deviceRegistrationPolicy</b></td><td>Registering users made local admin: all.</td></tr>
@@ -456,7 +456,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Windows LAPS not enabled for Entra-joined devices</span><span class="check-id">entra_device_laps_off &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Local admin passwords on Entra-joined devices are not rotated by LAPS, so the same password can open many machines.</div>
 <div class="kv"><b>Remediation.</b> Enable Microsoft Entra LAPS and push the LAPS policy through Intune (CIS 5.1.4.5).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1550/002/" target="_blank" rel="noopener">T1550.002</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1550/002/" target="_blank" rel="noopener">T1550.002</a> Use Alternate Authentication Material: Pass the Hash</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.17, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>deviceRegistrationPolicy</b></td><td>Microsoft Entra LAPS is not enabled.</td></tr>
@@ -464,7 +464,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">No Conditional Access requiring a managed device</span><span class="check-id">entra_no_managed_device &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> No enabled policy requires a compliant or hybrid-joined device. A stolen password plus MFA fatigue works from any laptop in the world.</div>
 <div class="kv"><b>Remediation.</b> Require a compliant or hybrid-joined device for all users (CIS 5.2.2.9).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>all users</b></td><td>No enabled CA policy for all users requires a compliant or hybrid-joined device.</td></tr>
@@ -472,7 +472,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Authenticator prompts lack app name and location</span><span class="check-id">entra_authenticator_context_off &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Push notifications don&#39;t show which app and where the sign-in comes from, so users approve MFA prompts they didn&#39;t start (MFA fatigue).</div>
 <div class="kv"><b>Remediation.</b> Show the application name and the geographic location in Microsoft Authenticator notifications (CIS 5.2.3.1).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1621/" target="_blank" rel="noopener">T1621</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1621/" target="_blank" rel="noopener">T1621</a> Multi-Factor Authentication Request Generation</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.17, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>Microsoft Authenticator</b></td><td>App name: enabled; location: default.</td></tr>
@@ -480,7 +480,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Top admin roles activate without approval</span><span class="check-id">entra_pim_activation_no_approval &middot; Entra Identity</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Global Administrator or Privileged Role Administrator can be activated in PIM without anyone approving it, so a stolen eligible account becomes a Global Admin on its own.</div>
 <div class="kv"><b>Remediation.</b> Require approval to activate Global Administrator and Privileged Role Administrator (CIS 5.3.4, 5.3.5).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i); ISO27001 A.5.15, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>PIM</b></td><td>Activation without approval: Privileged Role Administrator.</td></tr>
@@ -488,7 +488,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Third-party app with risky delegated permissions</span><span class="check-id">entra_risky_delegated_grant &middot; Entra Applications</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> An app from another tenant has been granted delegated permissions to read or write mail, files or the directory on behalf of users. That is what an illicit-consent (OAuth) phishing campaign leaves behind, and it survives a password reset.</div>
 <div class="kv"><b>Remediation.</b> Check who the app belongs to and why it needs this. If nobody can vouch for it, revoke the grant and disable the service principal, then look at the sign-in and audit logs for the app.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1528/" target="_blank" rel="noopener">T1528</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1528/" target="_blank" rel="noopener">T1528</a> Steal Application Access Token<br>Seen in attacks: OAuth consent phishing and over-privileged apps.</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>Mail Helper Pro</b></td><td>App from another tenant, consented by 2 user(s): Mail.Read.</td></tr>
@@ -496,7 +496,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Weak PIM settings on privileged roles</span><span class="check-id">entra_pim_role_settings_weak &middot; Entra Identity</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> PIM settings of privileged roles let an admin activate without MFA or an authentication context, keep the role active for more than 8 hours, or receive eligible or active assignments that never expire. Each of these turns just-in-time access back into standing access for whoever holds the account.</div>
 <div class="kv"><b>Remediation.</b> For every privileged role in PIM: require MFA (or an authentication context bound to phishing-resistant MFA) and a justification on activation, keep the activation at 8 hours or less, and require an end date on eligible and active assignments (except the emergency access accounts).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i); ISO27001 A.5.15, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>PIM role settings</b></td><td>activation without MFA or authentication context: Privileged Role Administrator. activation longer than 8 hours: Privileged Role Administrator (10 h). active assignments can be permanent: Global Administrator. eligible assignments can be permanent: Global Administrator.</td></tr>
@@ -504,7 +504,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Privileged application not used for months</span><span class="check-id">entra_privileged_app_inactive &middot; Entra Applications</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> A service principal with an admin role or a tenant-takeover permission has not signed in for more than 180 days. Its permissions and credentials are attack surface nobody uses or watches.</div>
 <div class="kv"><b>Remediation.</b> Confirm with the owner that the app is still needed; if not, remove its permissions and credentials, then delete it.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>Backup Automation</b></td><td>Last sign-in 400 days ago. Holds: role Security Administrator; permission RoleManagement.ReadWrite.Directory.</td></tr>
@@ -512,7 +512,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Service principal name with look-alike characters</span><span class="check-id">entra_sp_lookalike_name &middot; Entra Applications</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> A service principal name mixes Latin letters with look-alike letters from another script (Cyrillic, Greek, full-width) or hides invisible characters. That is how consent-phishing apps pose as Microsoft or a trusted vendor in consent prompts and in the admin portal.</div>
 <div class="kv"><b>Remediation.</b> Check who published the app and what it was granted; if it is not a known app, revoke its grants and delete the service principal.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1036/" target="_blank" rel="noopener">T1036</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1036/" target="_blank" rel="noopener">T1036</a> Masquerading</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>Micrоsoft Teams Connector</b></td><td>Latin mixed with Cyrillic or Greek letters in the name; non-ASCII characters at position 5 (U+043E); published by tenant 88888888-8888-8888-8888-888888888888.</td></tr>
@@ -527,7 +527,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">MFA or device claims trusted from any tenant</span><span class="check-id">entra_cross_tenant_mfa_trust &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> The default cross-tenant settings accept MFA (or device compliance) done in any other tenant. Your policies then rely on how well every external tenant protects its accounts.</div>
 <div class="kv"><b>Remediation.</b> Keep the default inbound trust off and trust MFA only from specific partner tenants you have vetted.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1199/" target="_blank" rel="noopener">T1199</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1199/" target="_blank" rel="noopener">T1199</a> Trusted Relationship</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(e), 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.5, A.8.20; DORA 9(4)(b), 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>cross-tenant default</b></td><td>Accepted from any external tenant: MFA.</td></tr>
@@ -535,7 +535,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Federated domain</span><span class="check-id">entra_federated_domain &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Sign-ins for this domain are handled by an on-premises identity provider (AD FS or similar). Its token-signing key can mint tokens for any user (Golden SAML), so it is Tier 0. Trusting its MFA claim makes that worse.</div>
 <div class="kv"><b>Remediation.</b> Move to managed authentication (password hash sync or cloud authentication) if you can. Otherwise protect the federation servers as Tier 0 and set federatedIdpMfaBehavior to rejectMfaByFederatedIdp so Entra does the MFA.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1606/002/" target="_blank" rel="noopener">T1606.002</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1606/002/" target="_blank" rel="noopener">T1606.002</a> Forge Web Credentials: SAML Tokens</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>moosebank.example</b></td><td>Federated; IdP MFA: acceptIfMfaDoneByFederatedIdp.</td></tr>
@@ -543,7 +543,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">B2B direct connect open to every tenant</span><span class="check-id">entra_b2b_direct_connect_open &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> The default cross-tenant settings allow B2B direct connect (Teams shared channels) with any external tenant. Those users reach your shared channels without a guest account, so they never show up in your directory, your guest reviews or your Conditional Access. Microsoft ships it blocked.</div>
 <div class="kv"><b>Remediation.</b> Set B2B direct connect back to blocked in the default cross-tenant settings and allow it only for named partner organizations.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1199/" target="_blank" rel="noopener">T1199</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1199/" target="_blank" rel="noopener">T1199</a> Trusted Relationship</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(e), 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.20; DORA 9(4)(b), 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>cross-tenant default</b></td><td>B2B direct connect allowed with any tenant: inbound (their users into your shared channels).</td></tr>
@@ -551,7 +551,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-medium">Medium</span><span class="check-title">Privileged apps without workload identity Conditional Access</span><span class="check-id">entra_no_workload_identity_ca &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Apps registered in this tenant hold admin roles or tenant-wide permissions, and no Conditional Access policy covers service principals. A stolen secret or certificate for those apps works from anywhere on the internet.</div>
 <div class="kv"><b>Remediation.</b> With Workload Identities Premium, add a Conditional Access policy that targets those service principals and blocks sign-ins outside your known locations (and high service principal risk). Without the licence, move them to certificates and managed identities and watch their sign-ins.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>workload identities</b></td><td>No enabled policy targets service principals. Privileged apps of this tenant: Backup Automation.</td></tr>
@@ -559,7 +559,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Stale guest account</span><span class="check-id">entra_stale_guest &middot; Entra Identity</span><span class="count">2</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> An enabled guest has not signed in for a long time. Unused external identities are unmonitored standing access.</div>
 <div class="kv"><b>Remediation.</b> Review and remove stale guests; use access reviews to expire external access automatically.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>ext.partner_gmail.com#EXT#@moosebank.onmicrosoft.com</b></td><td>Guest, last sign-in: 400 days ago (threshold 90).</td></tr>
@@ -576,7 +576,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Non-admins can invite guests</span><span class="check-id">entra_guest_invite_open &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Regular members (or even guests) can invite external users, so the external population grows without anyone deciding it should.</div>
 <div class="kv"><b>Remediation.</b> Let only admins and the Guest Inviter role send invitations (CIS 5.1.6.3).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1136/003/" target="_blank" rel="noopener">T1136.003</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1136/003/" target="_blank" rel="noopener">T1136.003</a> Create Account: Cloud Account</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>authorizationPolicy</b></td><td>allowInvitesFrom = everyone (everyone, guests included).</td></tr>
@@ -591,7 +591,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Admin sessions not limited</span><span class="check-id">entra_admin_sign_in_frequency &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> No enabled Conditional Access policy limits how long an admin session lasts or stops the browser from keeping it. A stolen admin session stays useful for its full lifetime.</div>
 <div class="kv"><b>Remediation.</b> Set a sign-in frequency (for example 4 hours) and a non-persistent browser session for admin roles (CIS 5.2.2.4).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1550/001/" target="_blank" rel="noopener">T1550.001</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1550/001/" target="_blank" rel="noopener">T1550.001</a> Use Alternate Authentication Material: Application Access Token</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>admin roles</b></td><td>No enabled CA policy for admin roles sets a sign-in frequency or a non-persistent browser session.</td></tr>
@@ -606,7 +606,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Guest access to the directory not restricted</span><span class="check-id">entra_guest_access_not_restricted &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Guests can browse users and groups in the directory, which helps an external account map the organisation.</div>
 <div class="kv"><b>Remediation.</b> Set guest user access to &quot;restricted to properties and memberships of their own directory objects&quot; (CIS 5.1.6.2).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1087/004/" target="_blank" rel="noopener">T1087.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1087/004/" target="_blank" rel="noopener">T1087.004</a> Account Discovery: Cloud Account</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>authorizationPolicy</b></td><td>Guest user access: limited (default).</td></tr>
@@ -614,7 +614,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Custom banned password list not enforced</span><span class="check-id">entra_banned_passwords_off &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Only the global banned list is used. Passwords built on the company name, products or city are still accepted and are the first ones sprayed.</div>
 <div class="kv"><b>Remediation.</b> Enable the custom banned password list with organisation-specific words (CIS 5.2.3.2), and Password Protection on-premises for hybrid tenants.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1110/003/" target="_blank" rel="noopener">T1110.003</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1110/003/" target="_blank" rel="noopener">T1110.003</a> Brute Force: Password Spraying<br>Seen in attacks: Password spraying, the main cloud initial access vector (Microsoft, 2026).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.17, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>Password Rule Settings</b></td><td>Custom banned list enforced: False; entries: 0.</td></tr>
@@ -622,7 +622,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Smart lockout weaker than baseline</span><span class="check-id">entra_smart_lockout_weak &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> The smart lockout threshold is above 10 attempts or the lockout lasts under 60 seconds, so online guessing is cheaper than it should be.</div>
 <div class="kv"><b>Remediation.</b> Keep the lockout threshold at 10 or less and the lockout duration at 60 seconds or more (CIS 5.2.3.8, 5.2.3.9).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1110/001/" target="_blank" rel="noopener">T1110.001</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1110/001/" target="_blank" rel="noopener">T1110.001</a> Brute Force: Password Guessing<br>Seen in attacks: Password spraying, the main cloud initial access vector (Microsoft, 2026).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.17, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>Password Rule Settings</b></td><td>Lockout threshold 20, duration 30 s (baseline: 10 or less, 60 s or more).</td></tr>
@@ -637,7 +637,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">No periodic reauthentication for all users</span><span class="check-id">entra_no_periodic_reauth &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> No enabled Conditional Access policy sets a sign-in frequency for everyone, so a stolen session or token keeps working for as long as it lives.</div>
 <div class="kv"><b>Remediation.</b> Add a Conditional Access policy with a sign-in frequency for all users (CIS 5.2.2.13).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1550/001/" target="_blank" rel="noopener">T1550.001</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1550/001/" target="_blank" rel="noopener">T1550.001</a> Use Alternate Authentication Material: Application Access Token</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>all users</b></td><td>No enabled CA policy for all users sets a sign-in frequency.</td></tr>
@@ -645,7 +645,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Medium and high sign-in risk not blocked</span><span class="check-id">entra_sign_in_risk_not_blocked &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> No enabled Conditional Access policy blocks sign-ins that Entra ID Protection rates medium or high risk; at best they get an MFA prompt.</div>
 <div class="kv"><b>Remediation.</b> With Entra ID P2, block medium and high sign-in risk (CIS 5.2.2.8), with an exclusion for the emergency access accounts.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>tenant</b></td><td>No enabled CA policy blocks medium and high sign-in risk.</td></tr>
@@ -653,7 +653,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Admin account licensed for mailbox and productivity apps</span><span class="check-id">entra_admin_licensed &middot; Entra Identity</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> An admin account has Exchange, SharePoint or Teams. Reading mail and browsing with an admin account is how admin sessions get phished.</div>
 <div class="kv"><b>Remediation.</b> Keep admin accounts separate and give them no productivity licence, or only Entra ID P1/P2 (CIS 1.1.4).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1566/" target="_blank" rel="noopener">T1566</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1566/" target="_blank" rel="noopener">T1566</a> Phishing</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i); ISO27001 A.5.15, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>alice.ceo@moosebank.onmicrosoft.com</b></td><td>Licences with mail / productivity apps: SPE_E5. Roles: Global Administrator.</td></tr>
@@ -696,7 +696,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Any user can join devices to Entra ID</span><span class="check-id">entra_device_join_unrestricted &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Every user can Entra-join a device. A stolen account can register an attacker machine, which then counts as a corporate device.</div>
 <div class="kv"><b>Remediation.</b> Allow device join only for a selected group (CIS 5.1.4.1).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/005/" target="_blank" rel="noopener">T1098.005</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/005/" target="_blank" rel="noopener">T1098.005</a> Account Manipulation: Device Registration</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>deviceRegistrationPolicy</b></td><td>All users can join devices to Entra ID.</td></tr>
@@ -704,7 +704,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">High device limit per user</span><span class="check-id">entra_device_quota_high &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Each user can register many devices, so a compromised account can enrol several attacker machines before anyone notices.</div>
 <div class="kv"><b>Remediation.</b> Keep the maximum number of devices per user at 10 or less (CIS 5.1.4.2).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/005/" target="_blank" rel="noopener">T1098.005</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/005/" target="_blank" rel="noopener">T1098.005</a> Account Manipulation: Device Registration</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>deviceRegistrationPolicy</b></td><td>Up to 50 devices per user (baseline 10).</td></tr>
@@ -712,7 +712,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Global Admins become local admins on joined devices</span><span class="check-id">entra_device_join_ga_local_admin &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Global Administrators are added to the local Administrators group of every Entra-joined device, so their credentials end up on ordinary workstations.</div>
 <div class="kv"><b>Remediation.</b> Turn off &quot;Global administrator role is added as local administrator on the device&quot; (CIS 5.1.4.3).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>deviceRegistrationPolicy</b></td><td>Global Administrators are added as local admins on join.</td></tr>
@@ -734,7 +734,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">MFA registration not protected</span><span class="check-id">entra_security_info_registration &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> No enabled policy protects the registration of security info. Whoever has a password first can register their own MFA method.</div>
 <div class="kv"><b>Remediation.</b> Require a managed device (or a trusted location) to register security info (CIS 5.2.2.10).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/005/" target="_blank" rel="noopener">T1098.005</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/005/" target="_blank" rel="noopener">T1098.005</a> Account Manipulation: Device Registration</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>security info registration</b></td><td>No enabled CA policy protects the &quot;register security information&quot; action.</td></tr>
@@ -749,7 +749,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">No geographic access restriction</span><span class="check-id">entra_no_geo_restriction &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> No enabled policy blocks sign-ins from countries you don&#39;t operate in, so sprayed passwords work from anywhere.</div>
 <div class="kv"><b>Remediation.</b> Block sign-ins from countries outside your footprint with a country named location (CIS 5.2.2.15).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(e), 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.20; DORA 9(4)(b), 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>tenant</b></td><td>No enabled block policy uses a country location (1 country location(s) defined).</td></tr>
@@ -757,7 +757,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Token protection not enforced</span><span class="check-id">entra_token_protection_off &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> No enabled policy binds session tokens to the device. Tokens stolen by infostealers or adversary-in-the-middle kits can be replayed elsewhere.</div>
 <div class="kv"><b>Remediation.</b> Enforce token protection for supported apps, starting with admins (CIS 5.2.2.16).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1550/001/" target="_blank" rel="noopener">T1550.001</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1550/001/" target="_blank" rel="noopener">T1550.001</a> Use Alternate Authentication Material: Application Access Token<br>Seen in attacks: Session token theft and replay.</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(h), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.24; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(a), 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>tenant</b></td><td>No enabled CA policy enforces token protection.</td></tr>
@@ -765,7 +765,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Authentication transfer not blocked</span><span class="check-id">entra_auth_transfer_allowed &middot; Entra Access Policy</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> No enabled policy blocks authentication transfer, which moves a signed-in session from one device to another (desktop to phone).</div>
 <div class="kv"><b>Remediation.</b> Block authentication transfer for all users (CIS 5.2.2.17).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1528/" target="_blank" rel="noopener">T1528</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1528/" target="_blank" rel="noopener">T1528</a> Steal Application Access Token</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>tenant</b></td><td>No enabled CA policy blocks authentication transfer.</td></tr>
@@ -787,7 +787,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">No access review for admin roles</span><span class="check-id">entra_no_admin_access_review &middot; Entra Identity</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Admin role assignments are never reviewed, so they pile up and nobody remembers why someone has them.</div>
 <div class="kv"><b>Remediation.</b> Create a recurring access review of privileged role assignments in PIM (CIS 5.3.3).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>access reviews</b></td><td>1 active review(s), none covering admin roles.</td></tr>
@@ -795,7 +795,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">No tenant-wide rules for app credentials</span><span class="check-id">entra_app_management_policy_weak &middot; Entra Applications</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Nothing stops new client secrets, custom secrets or long-lived credentials on app registrations, so weak credentials keep appearing.</div>
 <div class="kv"><b>Remediation.</b> Enable the default app management policy: block password addition and custom passwords, cap secret and certificate lifetimes at 180 days (CIS 5.1.5.3 to 5.1.5.6).</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1552/001/" target="_blank" rel="noopener">T1552.001</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1552/001/" target="_blank" rel="noopener">T1552.001</a> Unsecured Credentials: Credentials In Files</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(e), 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.9; DORA 9(2), 9(4)(b), 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>defaultAppManagementPolicy</b></td><td>the policy is off.</td></tr>
@@ -803,7 +803,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Multi-tenant app without App instance property lock</span><span class="check-id">entra_app_instance_lock_off &middot; Entra Applications</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> A multi-tenant app registration with credentials does not lock the sensitive properties of its service principals. In a tenant where the app is installed, someone with rights on the service principal can add a credential to it and use the permissions granted there.</div>
 <div class="kv"><b>Remediation.</b> Enable App instance property lock for all properties (servicePrincipalLockConfiguration) on multi-tenant apps.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a> Account Manipulation: Additional Cloud Credentials</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>Legacy Sync App</b></td><td>Sign-in audience AzureADMultipleOrgs, 1 credential(s), App instance property lock not enabled.</td></tr>
@@ -811,7 +811,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Admin password not changed in over a year</span><span class="check-id">entra_admin_password_old &middot; Entra Identity</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> An admin account still uses a password set more than a year ago. Old passwords have had more time to be phished, reused or leaked.</div>
 <div class="kv"><b>Remediation.</b> Move admins to passwordless (FIDO2, Windows Hello); until then, rotate the password and make sure leaked-credential detection is on.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i); ISO27001 A.5.15, A.5.17, A.5.18, A.8.2, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>alice.ceo@moosebank.onmicrosoft.com</b></td><td>Password last changed 500 days ago. Roles: Global Administrator.</td></tr>
@@ -819,7 +819,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">App with an insecure redirect URI</span><span class="check-id">entra_app_insecure_redirect &middot; Entra Applications</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> An app registration sends tokens to a plain-HTTP or wildcard address. Whoever can answer on that address can collect tokens.</div>
 <div class="kv"><b>Remediation.</b> Use HTTPS redirect URIs on domains you control, no wildcards; remove addresses that are no longer used.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1528/" target="_blank" rel="noopener">T1528</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1528/" target="_blank" rel="noopener">T1528</a> Steal Application Access Token</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(e), 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.9; DORA 9(2), 9(4)(b), 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>Legacy Sync App</b></td><td>Redirect URI(s): http://sync.moosebank-cloud.example/callback.</td></tr>
@@ -827,7 +827,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Application secret valid for too long</span><span class="check-id">entra_app_secret_long_lived &middot; Entra Applications</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> An app registration has a client secret valid for more than the allowed lifetime. Long-lived secrets end up in scripts and config files and outlive the people who knew about them.</div>
 <div class="kv"><b>Remediation.</b> Prefer certificates or managed identities; keep client secrets to 180 days or less (CIS 5.1.5.4) and rotate them.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1552/001/" target="_blank" rel="noopener">T1552.001</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1552/001/" target="_blank" rel="noopener">T1552.001</a> Unsecured Credentials: Credentials In Files</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>Legacy Sync App</b></td><td>Client secret valid for 730 days (limit 180).</td></tr>
@@ -835,7 +835,7 @@
 <details class="check"><summary><span class="sev-pill sev-pill-low">Low</span><span class="check-title">Access package assignments never expire and are never reviewed</span><span class="check-id">entra_access_package_no_expiry &middot; Entra Identity</span><span class="count">1</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> Access granted through this package lasts forever and no access review checks it. People keep it after they change role or the project ends.</div>
 <div class="kv"><b>Remediation.</b> Set an expiry on the assignment policy (for example 180 or 365 days) or turn on periodic access reviews for it.</div>
-<div class="kv"><b>MITRE ATT&amp;CK.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a></div>
+<div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>Finance share</b></td><td>Policy &#39;Finance staff&#39;: no expiry, no access review.</td></tr>

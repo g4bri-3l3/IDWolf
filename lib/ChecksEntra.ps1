@@ -1468,7 +1468,7 @@ function ConvertTo-EntraReportHtml {
         & $w "<details class=`"check`"><summary>$(Get-SevPill $t.Worst)<span class=`"check-title`">$(& $H $meta.Title)</span><span class=`"check-id`">$($t.Type) &middot; $(& $H $meta.Category)</span><span class=`"count`">$n</span></summary><div class=`"body`">"
         & $w "<div class=`"kv`"><b>Why it matters.</b> $(& $H $meta.Description)</div>"
         & $w "<div class=`"kv`"><b>Remediation.</b> $(& $H $meta.Remediation)</div>"
-        if ($meta.Mitre) { & $w "<div class=`"kv`"><b>MITRE ATT&amp;CK.</b> $(Get-MitreLink $meta.Mitre)</div>" }
+        $attack = Format-CheckAttackHtml $t.Type $meta; if ($attack) { & $w $attack }
         if (Get-Command Format-CheckControls -ErrorAction SilentlyContinue) { & $w "<div class=`"kv`"><b>Regulatory controls.</b> $(& $H (Format-CheckControls $t.Type))</div>" }
         & $w '<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>'
         foreach ($f in ($t.Items | Sort-Object { - $script:SeverityRank[$_.Severity] }, Object)) {

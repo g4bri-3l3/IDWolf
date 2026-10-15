@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- AI step: the reply text is now joined from every part Gemini returns (thinking models can split
+  it over several parts, and only the first was read, so the JSON came out cut short). When the
+  reply still isn't clean JSON, the error shows Gemini's `finishReason` and says what to do on
+  `MAX_TOKENS` or an early stop.
+- Report: each check's details have an "Attack it enables" line in place of the bare MITRE
+  link: the ATT&CK technique with its name, and for the checks in the "Recent attacks" table
+  the attack seen in public incidents (the same list the AI step gets, now kept in
+  `Reporting.ps1`). The regression asserts that every MITRE ID in the catalogs has a name.
+- Analyzer wizard: choosing `[G] send` no longer acts like `-SendToAI`. It skipped the step that
+  shows the `_ai_prompt.txt` path and asks before sending; now the text can be checked first, as
+  from the menu. `-SendToAI` on the command line still sends without asking.
+- Banner: the box is closed on the right and shows the repository link.
+- `examples\lab_report.html` and `lab_report.gif` rebuilt from a `-Deep` collection of the lab
+  (BadSuccessor evaluated) with a fresh Gemini reply: the AI section shows the least access
+  needed and the starting point of each chain. `demo_report.html` and `entra_report.html`
+  re-rendered for the "Attack it enables" line (findings, CSV and JSON Lines unchanged).
+
 ## 1.2 - 2026-10-14
 
 Checks: 167 AD (from 166) and 88 Entra (from 86). The Entra snapshot schema goes from 7 to 9;
