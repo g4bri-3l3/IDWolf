@@ -225,6 +225,20 @@ Snapshots, reports and packages go to an `output` folder under the current
 directory unless you give a path yourself. The menu and the analyzer also look
 there for snapshots to offer.
 
+A full run (5 or 8) asks all its questions first, then shows every answer on one
+screen: change one by its number, Q to cancel, Enter to start. Nothing is collected
+before that. The launcher and the analyzer wizard remember your answers and offer them as
+defaults next time. If a run was interrupted (Ctrl+C, a closed window), the next
+launch offers to pick up a snapshot that was collected but never analyzed, or to
+repeat the last full run with the same answers. The analyzer wizard offers the
+last snapshot with the same settings, and compares against the report of the last
+run if you compared last time. Everything is saved after each answer, in
+`%LOCALAPPDATA%\IDWolf\wizard.json`: choices and file paths only, never a
+password, an API key or anything read from the directory. `[C]` in the menu
+deletes it. At the end of an interactive analysis you're asked whether to open
+the report in the default browser. Runs with `-Snapshot` on the command line and
+the scheduled script never ask and never read or write that file.
+
 Did you download the zip? Windows marks those files as coming from the internet,
 and PowerShell will complain ("not digitally signed", or a prompt on every run).
 Unblock them once with `Get-ChildItem -Recurse .\IDWolf | Unblock-File`, or just

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Launcher and analyzer wizard: answers are remembered between runs and offered as defaults,
+  saved after each answer so a Ctrl+C half way loses nothing. On start the launcher offers to
+  pick up a snapshot that was collected but never analyzed or packaged, or to repeat the last
+  full run (option 5 or 8) with the same answers; `[C]` deletes what was remembered. The
+  analyzer wizard offers the last snapshot with the same settings, and compares against the
+  report of the last run. The file (`%LOCALAPPDATA%\IDWolf\wizard.json`, new `lib\Wizard.ps1`)
+  takes keys from a fixed list only: never a password, an API key or directory data.
+- Launcher, full runs (5 and 8): every question is asked up front, password quality and what to
+  do after collecting included, then one settings screen lists all the answers. Change one by
+  its number, Q cancels, Enter starts; nothing is collected before that. Repeating the last run
+  goes straight to that screen.
+- After an interactive analysis, the launcher and the wizard ask whether to open the report in
+  the default browser. `Invoke-Item` joins the safety review's list, allowed in
+  `lib\Wizard.ps1` only, which opens nothing but the `.html` the run has just written. Runs
+  with `-Snapshot`, piped input and the scheduled script never ask.
 - Report: the HTML opens on a **Dashboard** tab, and the per-check blocks and tables move to a
   **Details** tab. The dashboard has a score ring with the grade and the counts by severity, then
   the Gemini section and the attack-path map (both collapsible, open by default), one card per

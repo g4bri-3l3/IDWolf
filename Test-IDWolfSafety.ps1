@@ -16,6 +16,7 @@
         decoding, downloads, starting processes, scheduled tasks, services;
       - a Graph request that isn't a GET;
       - a CIM method call other than reading the registry (StdRegProv Get*/Enum*);
+      - Invoke-Item anywhere but lib\Wizard.ps1 (which only opens the .html report);
       - a web address in the code other than Microsoft Graph, Gemini and the
         MITRE links in the report.
 
@@ -51,6 +52,7 @@ $allowed = [ordered]@{
     'Files: read inputs, write the snapshot / report' = @('Get-Acl', 'Get-Content', 'Set-Content', 'Export-Csv', 'Import-Csv', 'Get-ChildItem', 'Select-String', 'Test-Path', 'Resolve-Path', 'Join-Path', 'Split-Path', 'Get-Location', 'New-Item', 'Remove-Item', 'Get-PSDrive')
     'Modules and environment' = @('Import-Module', 'Get-Module', 'Get-PackageProvider', 'Get-Command', 'Add-Type', 'Get-Credential', 'Get-Date', 'Start-Sleep')
     'Console' = @('Write-Host', 'Write-Warning', 'Write-Progress', 'Read-Host', 'Out-Null')
+    'Open the finished report in the default browser (wizard only, after asking; lib\Wizard.ps1 only: checked below)' = @('Invoke-Item')
     'Data handling' = @('Measure-Command', 'ConvertTo-Json', 'ConvertFrom-Json', 'Select-Object', 'Where-Object', 'ForEach-Object', 'Sort-Object', 'Group-Object', 'Measure-Object', 'New-Object', 'Add-Member')
 }
 $allowedSet = @{}; foreach ($k in $allowed.Keys) { foreach ($c in $allowed[$k]) { $allowedSet[$c.ToLower()] = $k } }
@@ -123,6 +125,9 @@ foreach ($f in $files) {
         if ($name -match $writeVerbs) { $problems.Add("${rel}:${line}: $name changes the directory") }
         if ($bannedCommands -contains $lc) { $problems.Add("${rel}:${line}: $name is not allowed") }
         if (-not $allowedSet.ContainsKey($lc) -and $name -notmatch $writeVerbs -and $bannedCommands -notcontains $lc) { $problems.Add("${rel}:${line}: $name is not on the reviewed list") }
+        # Invoke-Item opens a file with its default program: only the report opener may use it,
+        # and that one opens nothing but an .html file the run has just written.
+        if ($lc -eq 'invoke-item' -and ($rel -replace '\\', '/') -ne 'lib/Wizard.ps1') { $problems.Add("${rel}:${line}: Invoke-Item outside lib\Wizard.ps1") }
         if ($lc -eq 'invoke-mggraphrequest' -and $c.Extent.Text -notmatch '(?i)-Method\s+GET\b') { $problems.Add("${rel}:${line}: Graph request that is not a GET") }
         # StdRegProv also has Set*/Delete* methods: only a literal read method may be named.
         if ($lc -eq 'invoke-cimmethod' -and ($c.Extent.Text -notmatch "(?i)-ClassName\s+'?StdRegProv'?\s" -or $c.Extent.Text -notmatch "(?i)-MethodName\s+'?(GetDWORDValue|GetQWORDValue|GetStringValue|GetExpandedStringValue|GetMultiStringValue|GetBinaryValue|EnumKey|EnumValues)'?\s")) {

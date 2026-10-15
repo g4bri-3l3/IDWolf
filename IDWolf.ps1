@@ -106,7 +106,7 @@ $ErrorActionPreference = 'Stop'
 $script:IDWolfVersion = "1.3"
 
 $libDir = Join-Path $PSScriptRoot 'lib'
-foreach ($f in @('Common.ps1', 'Checks.ps1', 'ChecksHost.ps1', 'Reporting.ps1', 'Graph.ps1', 'AI.ps1', 'ChecksEntra.ps1', 'Compliance.ps1', 'Bundle.ps1')) {
+foreach ($f in @('Common.ps1', 'Checks.ps1', 'ChecksHost.ps1', 'Reporting.ps1', 'Graph.ps1', 'AI.ps1', 'ChecksEntra.ps1', 'Compliance.ps1', 'Bundle.ps1', 'Wizard.ps1')) {
     $p = Join-Path $libDir $f
     if (-not (Test-Path -LiteralPath $p)) { throw "Missing $p. Keep the lib\ folder next to IDWolf.ps1." }
     . $p
@@ -194,6 +194,16 @@ function Read-Path {
     }
 }
 
+# Last step of a run started from the wizard: remember the report (the next wizard offers to
+# compare against it) and offer to open it. Runs with -Snapshot never get here with WizardMode set.
+$script:WizardMode = $false
+function Complete-WizardRun {
+    param([string]$Html)
+    if (-not $script:WizardMode) { return }
+    if ($Html -and (Test-Path -LiteralPath $Html)) { Save-IDWolfState -Section analyzer -Values @{ LastReport = (Resolve-Path -LiteralPath $Html).ProviderPath } }
+    [void](Request-OpenReport -Path $Html -Since $start)
+}
+
 # Guided setup when there's no -Snapshot: a few questions, then a short
 # review menu before running.
 function Invoke-AnalyzerSetup {
@@ -203,22 +213,41 @@ function Invoke-AnalyzerSetup {
     # The default paths below are under .\output.
     $od = Join-Path (Get-Location).Path 'output'; if (-not (Test-Path -LiteralPath $od)) { New-Item -ItemType Directory -Path $od | Out-Null }
 
-    # Offer the snapshots found in this folder and in .\output.
-    $cands = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)snapshot|adsnap|entra' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
-    if ($cands.Count -eq 0) { $cands = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName }) }
-    $cands = @($cands) + @(Get-ChildItem -Path '.', 'output' -Filter *.zip -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)idwolf|snap|entra' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
-    $cands = @($cands) + @(Get-ChildItem -Path '.', 'output' -Filter *.idwolf -ErrorAction SilentlyContinue | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
-    $snap = ""
-    if ($cands.Count -gt 0) {
-        Write-Host "`nSnapshot files found here:" -ForegroundColor Cyan
-        for ($i = 0; $i -lt $cands.Count; $i++) { Write-Host ("  [{0}] {1}" -f ($i + 1), $cands[$i]) }
-        $pick = Read-Host "Pick a number, or type a path (Tab completes)"
-        if ($pick -match '^\d+$' -and [int]$pick -ge 1 -and [int]$pick -le $cands.Count) { $snap = $cands[[int]$pick - 1] }
-        elseif ($pick) { $snap = $pick }
-        else { $snap = Read-Path "Snapshot JSON or zip path" }
+    # Choices of the last wizard run are the defaults (lib\Wizard.ps1); each answer is saved
+    # as soon as it is given, so a Ctrl+C half way keeps what was already answered.
+    $script:WizardMode = $true
+    $mem = (Read-IDWolfState).analyzer
+    $remember = { param([string]$Key, $Value) Save-IDWolfState -Section analyzer -Values @{ $Key = $Value } }
+    $lastCsv = ''
+    if ($mem.LastReport) { $c = [System.IO.Path]::ChangeExtension($mem.LastReport, '.csv'); if (Test-Path -LiteralPath $c) { $lastCsv = $c } }
+
+    # The last analysis, if its snapshot is still there: same settings, straight to the review below.
+    $snap = ""; $reuse = $false
+    if ($mem.Snapshot -and (Test-Path -LiteralPath $mem.Snapshot)) {
+        Write-Host "`nLast analysis: $($mem.Snapshot) (AI step: $(if ($mem.AiMode) { $mem.AiMode } else { 'skip' }))" -ForegroundColor Cyan
+        if (Read-YesNo "Same settings again?" $true) { $snap = $mem.Snapshot; $reuse = $true }
     }
-    else { $snap = Read-Path "Snapshot JSON or zip path (from the collectors, or a zip from Start-IDWolf.ps1)" }
+
+    if (-not $snap) {
+        # Offer the snapshots found in this folder and in .\output.
+        $cands = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)snapshot|adsnap|entra' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
+        if ($cands.Count -eq 0) { $cands = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName }) }
+        $cands = @($cands) + @(Get-ChildItem -Path '.', 'output' -Filter *.zip -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)idwolf|snap|entra' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
+        $cands = @($cands) + @(Get-ChildItem -Path '.', 'output' -Filter *.idwolf -ErrorAction SilentlyContinue | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
+        $lastSnap = if ($mem.Snapshot -and (Test-Path -LiteralPath $mem.Snapshot)) { $mem.Snapshot } else { '' }
+        if ($cands.Count -gt 0) {
+            Write-Host "`nSnapshot files found here:" -ForegroundColor Cyan
+            for ($i = 0; $i -lt $cands.Count; $i++) { Write-Host ("  [{0}] {1}" -f ($i + 1), $cands[$i]) }
+            $pick = Read-Host ("Pick a number, or type a path (Tab completes)" + $(if ($lastSnap) { " [Enter = $lastSnap]" } else { '' }))
+            if ($pick -match '^\d+$' -and [int]$pick -ge 1 -and [int]$pick -le $cands.Count) { $snap = $cands[[int]$pick - 1] }
+            elseif ($pick) { $snap = $pick.Trim() }
+            elseif ($lastSnap) { $snap = $lastSnap }
+            else { $snap = Read-Path "Snapshot JSON or zip path" }
+        }
+        else { $snap = Read-Path "Snapshot JSON or zip path (from the collectors, or a zip from Start-IDWolf.ps1)" $lastSnap }
+    }
     if (-not $snap -or -not (Test-Path -LiteralPath $snap)) { throw "Snapshot not found: $snap" }
+    & $remember 'Snapshot' $snap
 
     # AD or Entra decides which questions make sense.
     $kind = 'ad'; $zipHasPq = $false
@@ -235,43 +264,69 @@ function Invoke-AnalyzerSetup {
     catch { }
     Write-Host ("Detected snapshot type: {0}" -f $(if ($kind -eq 'entra') { 'Microsoft Entra ID' } else { 'on-prem Active Directory' })) -ForegroundColor Green
 
+    $defaultHtml = "output\report{0}_{1}.html" -f $(if ($kind -eq 'entra') { '_entra' } else { '' }), (Get-Date -Format 'yyyyMMdd_HHmmss')
     $cfg = [ordered]@{
         Snapshot            = $snap
-        OutHtml             = (Read-Path "HTML report path" ("output\report{0}_{1}.html" -f $(if ($kind -eq 'entra') { '_entra' } else { '' }), (Get-Date -Format 'yyyyMMdd_HHmmss')))
+        OutHtml             = $defaultHtml
         OutJson             = ""
         ExceptionsFile      = ""
         CompareTo           = ""
         PasswordQualityFile = ""
         AiMode              = 'skip'
     }
-    if (Read-YesNo "Also write JSON Lines for a SIEM (Splunk)?" $false) { $cfg.OutJson = Read-Path "  JSON Lines path" "output\findings.jsonl" }
-    if (Read-YesNo "Use an exceptions file (accepted risks)?" $false) { $cfg.ExceptionsFile = Read-Path "  Exceptions JSON path" "exceptions.json" }
-    if (Read-YesNo "Compare against a previous findings CSV?" $false) { $cfg.CompareTo = Read-Path "  Previous report CSV path" "report_previous.csv" }
+    $usePq = ($kind -eq 'ad' -and -not $zipHasPq)
     if ($kind -eq 'ad' -and $zipHasPq) { Write-Host "The zip carries a password-quality report: it will be used." -ForegroundColor Green }
-    elseif ($kind -eq 'ad') {
-        # A password-quality report in the folder becomes the default.
-        $pqFound = @(Get-ChildItem -Path '.', 'output' -Filter '*.json' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)pwq|passwordquality' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
-        $pqDefault = if ($pqFound.Count -gt 0) { $pqFound[0] } else { 'pwq.json' }
-        $pqPrompt = if ($pqFound.Count -gt 0) { "Add the hashless password-quality report ($($pqFound[0]) found)?" } else { "Add a hashless password-quality report (from Export-PasswordQuality.ps1)?" }
-        if (Read-YesNo $pqPrompt ($pqFound.Count -gt 0)) {
-            $cfg.PasswordQualityFile = Read-Path "  Password-quality JSON path" $pqDefault
+    if ($reuse) {
+        # Same choices; a comparison goes against the report of that last run.
+        $cfg.OutJson = "$($mem.OutJson)"
+        $cfg.ExceptionsFile = "$($mem.ExceptionsFile)"
+        $cfg.CompareTo = if ($mem.CompareTo -and $lastCsv) { $lastCsv } else { "$($mem.CompareTo)" }
+        if ($usePq) { $cfg.PasswordQualityFile = "$($mem.PasswordQualityFile)" }
+        if (@('skip', 'dryrun', 'send') -contains $mem.AiMode) { $cfg.AiMode = $mem.AiMode }
+    }
+    else {
+        $cfg.OutHtml = Read-Path "HTML report path" $defaultHtml
+        if (Read-YesNo "Also write JSON Lines for a SIEM (Splunk)?" ([bool]$mem.OutJson)) { $cfg.OutJson = Read-Path "  JSON Lines path" $(if ($mem.OutJson) { $mem.OutJson } else { "output\findings.jsonl" }) }
+        & $remember 'OutJson' $cfg.OutJson
+        if (Read-YesNo "Use an exceptions file (accepted risks)?" ([bool]$mem.ExceptionsFile)) { $cfg.ExceptionsFile = Read-Path "  Exceptions JSON path" $(if ($mem.ExceptionsFile) { $mem.ExceptionsFile } else { "exceptions.json" }) }
+        & $remember 'ExceptionsFile' $cfg.ExceptionsFile
+        $cmpDefault = if ($lastCsv) { $lastCsv } elseif ($mem.CompareTo) { $mem.CompareTo } else { "report_previous.csv" }
+        $cmpPrompt = if ($lastCsv) { "Compare against the previous findings CSV ($lastCsv)?" } else { "Compare against a previous findings CSV?" }
+        if (Read-YesNo $cmpPrompt ([bool]$mem.CompareTo)) { $cfg.CompareTo = Read-Path "  Previous report CSV path" $cmpDefault }
+        & $remember 'CompareTo' $cfg.CompareTo
+        if ($usePq) {
+            # The last report used, or one found in the folder, becomes the default.
+            $pqFound = @(Get-ChildItem -Path '.', 'output' -Filter '*.json' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)pwq|passwordquality' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
+            $pqLast = if ($mem.PasswordQualityFile -and (Test-Path -LiteralPath $mem.PasswordQualityFile)) { $mem.PasswordQualityFile } else { '' }
+            $pqDefault = if ($pqLast) { $pqLast } elseif ($pqFound.Count -gt 0) { $pqFound[0] } else { 'pwq.json' }
+            $pqPrompt = if ($pqLast -or $pqFound.Count -gt 0) { "Add the hashless password-quality report ($pqDefault found)?" } else { "Add a hashless password-quality report (from Export-PasswordQuality.ps1)?" }
+            if (Read-YesNo $pqPrompt ([bool]($pqLast -or $pqFound.Count -gt 0))) {
+                $cfg.PasswordQualityFile = Read-Path "  Password-quality JSON path" $pqDefault
+            }
+            & $remember 'PasswordQualityFile' $cfg.PasswordQualityFile
         }
+        $aiLetter = switch ("$($mem.AiMode)") { 'send' { 'G' } 'dryrun' { 'D' } default { 'S' } }
+        Write-Host "`nAI step (Gemini): [S]kip, [D]ry-run (write prompt, send nothing), [G] send (you see the prompt and confirm first)" -ForegroundColor Cyan
+        $aiPick = Read-Host "Choice [$aiLetter]"
+        if ([string]::IsNullOrWhiteSpace($aiPick)) { $aiPick = $aiLetter }
+        switch ($aiPick.Trim().ToUpper()) {
+            'G' { $cfg.AiMode = 'send' }
+            'D' { $cfg.AiMode = 'dryrun' }
+            default { $cfg.AiMode = 'skip' }
+        }
+        & $remember 'AiMode' $cfg.AiMode
     }
-    Write-Host "`nAI step (Gemini): [S]kip, [D]ry-run (write prompt, send nothing), [G] send (you see the prompt and confirm first)" -ForegroundColor Cyan
-    switch ((Read-Host "Choice [S]").ToUpper()) {
-        'G' { $cfg.AiMode = 'send' }
-        'D' { $cfg.AiMode = 'dryrun' }
-        default { $cfg.AiMode = 'skip' }
-    }
-    $cfg.Model = $script:Model
+    $cfg.Model = if ($mem.Model) { $mem.Model } else { $script:Model }
     if ($cfg.AiMode -ne 'skip') {
-        $cfg.Model = Read-Default "Gemini model" $script:Model
+        if (-not $reuse) { $cfg.Model = Read-Default "Gemini model" $cfg.Model; & $remember 'Model' $cfg.Model }
+        # The key is never remembered: asked again on every run that sends.
         if ($cfg.AiMode -eq 'send' -and -not $script:ApiKey) {
             $k = Read-Host "GEMINI_API_KEY not set. Paste key now, or Enter to switch to dry-run"
             if ($k) { $script:ApiKey = $k.Trim() } else { $cfg.AiMode = 'dryrun' }
         }
         if ($cfg.AiMode -eq 'send') {
-            $cfg.AiAttempts = Read-Default "Gemini attempts on timeout / busy server (0 = keep trying)" "$script:AiMaxAttempts"
+            $cfg.AiAttempts = if ($mem.AiAttempts -match '^\d+$') { $mem.AiAttempts } else { "$script:AiMaxAttempts" }
+            if (-not $reuse) { $cfg.AiAttempts = Read-Default "Gemini attempts on timeout / busy server (0 = keep trying)" $cfg.AiAttempts; & $remember 'AiAttempts' $cfg.AiAttempts }
         }
     }
 
@@ -288,6 +343,12 @@ function Invoke-AnalyzerSetup {
             else { $cfg[$k] = Read-Default "  $k" $cfg[$k] }
         }
     }
+    # What runs is what the next wizard offers, edits in the review included. The output path is
+    # not kept (each run gets a new one); an Entra run leaves the password-quality default alone.
+    $keep = @{}
+    foreach ($k in 'Snapshot', 'OutJson', 'ExceptionsFile', 'CompareTo', 'AiMode', 'Model', 'AiAttempts') { if ($cfg.Contains($k)) { $keep[$k] = "$($cfg[$k])" } }
+    if ($usePq) { $keep['PasswordQualityFile'] = "$($cfg.PasswordQualityFile)" }
+    Save-IDWolfState -Section analyzer -Values $keep
 
     # Back into the script parameters.
     $script:Snapshot = $cfg.Snapshot
@@ -409,6 +470,7 @@ if ("$($snap.meta.kind)" -eq 'entra') {
     if ($eScore.Reliable) { Write-Host ("Findings: {0} ({1})  score: {2}/100 (grade {3})" -f $eActive.Count, ($sevs -join ', '), $eScore.Score, $eScore.Grade) }
     else { Write-Host ("Findings: {0} ({1})  score: n/a, only {2}% of the checks could be evaluated" -f $eActive.Count, ($sevs -join ', '), $eScore.Coverage) -ForegroundColor Yellow }
     if ($eNotEval.Count -gt 0) { Write-Host "$($eNotEval.Count) check(s) not evaluated (collection gaps): see report." -ForegroundColor Yellow }
+    Complete-WizardRun $htmlFull
     return
 }
 
@@ -487,48 +549,54 @@ Write-Host "Processing time: $elapsedText"
 # --------------------------------------------------------------------------
 # Optional AI step. The report is already on disk by now.
 # --------------------------------------------------------------------------
-if ($SkipLLM) { return }
-if ($active.Count -eq 0) { Write-Host 'No findings: AI step skipped (nothing to ground a summary on).'; return }
+# A function, so that each early return (skipped, declined, no key, failed) still reaches the
+# end-of-run step below.
+function Invoke-AdAiStep {
+    if ($SkipLLM) { return }
+    if ($active.Count -eq 0) { Write-Host 'No findings: AI step skipped (nothing to ground a summary on).'; return }
 
-$pz = New-Pseudonymizer -Snapshot $snap -Index $index
-$userPrompt = New-AiPrompt -Findings $active -Pz $pz -Snapshot $snap -Score $score -Comparison $comparison
-$leaks = @(Test-AiLeak -Pz $pz -Text $userPrompt)
-if ($leaks.Count -gt 0) {
-    Write-Host "AI step aborted: identifiers still present after pseudonymization: $($leaks -join ', '). Nothing was sent. Please report this as a bug." -ForegroundColor Red
-    return
+    $pz = New-Pseudonymizer -Snapshot $snap -Index $index
+    $userPrompt = New-AiPrompt -Findings $active -Pz $pz -Snapshot $snap -Score $score -Comparison $comparison
+    $leaks = @(Test-AiLeak -Pz $pz -Text $userPrompt)
+    if ($leaks.Count -gt 0) {
+        Write-Host "AI step aborted: identifiers still present after pseudonymization: $($leaks -join ', '). Nothing was sent. Please report this as a bug." -ForegroundColor Red
+        return
+    }
+
+    if ($AiDryRun) {
+        Write-AiPromptFile -Path $AiDryRun -UserPrompt $userPrompt
+        Write-Host "AI dry run: prompt written to $AiDryRun ($($userPrompt.Length) chars, $($pz.Reverse.Count) identifiers pseudonymized). Nothing sent." -ForegroundColor Cyan
+        return
+    }
+
+    # Written before asking, so it can be read before saying yes.
+    $promptFile = Get-AiSidecarPath $htmlFull '_ai_prompt.txt'
+    Write-AiPromptFile -Path $promptFile -UserPrompt $userPrompt
+    if (-not $SendToAI) {
+        Write-Host ''
+        Write-Host "Optional AI step (Gemini, model $Model):" -ForegroundColor Cyan
+        Write-Host "  Sent: $($active.Count) findings grouped by check (max 12 objects per check), score, counts, comparison if any."
+        Write-Host "  Pseudonymized: $($pz.Reverse.Count) identifiers (accounts, hosts, groups, DNs, SIDs, domain/trust names, paths). The map never leaves this machine."
+        Write-Host "  Not sent: the snapshot, ACL dumps, descriptions, group memberships beyond what the finding text states."
+        Write-Host "  Exactly what would be sent: $promptFile" -ForegroundColor Cyan
+        $answer = Read-Host 'Open that file if you want, then: send to Gemini for an executive summary and remediation plan? (y/N)'
+        if ($answer -notmatch '^[Yy]') { Write-Host "Nothing sent. Deterministic report saved to $OutHtml."; return }
+    }
+    else { Write-Host "AI prompt kept at $promptFile" }
+    if (-not $ApiKey) { $ApiKey = Request-GeminiApiKey }
+    if (-not $ApiKey) { Write-Host 'No API key given (-ApiKey or GEMINI_API_KEY), nothing sent. Deterministic report kept as is.' -ForegroundColor Yellow; return }
+
+    $raw = Invoke-GeminiAnalysis -UserPrompt $userPrompt -ApiKey $ApiKey -Model $Model -MaxAttempts $AiMaxAttempts
+    if (-not $raw) { Write-Host "AI step failed; deterministic report kept at $OutHtml." -ForegroundColor Yellow; return }
+    $responseFile = Get-AiSidecarPath $htmlFull '_ai_response.json'
+    Write-AiResponseFile -Path $responseFile -Raw $raw
+    Write-Host "Gemini reply (still pseudonymized) kept at $responseFile"
+    $aiResult = ConvertFrom-AiResponse -Raw $raw -Pz $pz -Findings $active -Model $Model
+
+    $html = ConvertTo-ReportHtml -Snapshot $snap -Index $index -PrivMap $privMap -Split $split -Score $score `
+        -NotEvaluated $notEvaluated -Comparison $comparison -Config $config -ToolVersion $script:IDWolfVersion -ElapsedText $elapsedText -AiResult $aiResult
+    [System.IO.File]::WriteAllText($htmlFull, $html, (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host "AI section added to $OutHtml ($(@($aiResult.RemediationPlan).Count) remediation items)." -ForegroundColor Green
 }
-
-if ($AiDryRun) {
-    Write-AiPromptFile -Path $AiDryRun -UserPrompt $userPrompt
-    Write-Host "AI dry run: prompt written to $AiDryRun ($($userPrompt.Length) chars, $($pz.Reverse.Count) identifiers pseudonymized). Nothing sent." -ForegroundColor Cyan
-    return
-}
-
-# Written before asking, so it can be read before saying yes.
-$promptFile = Get-AiSidecarPath $htmlFull '_ai_prompt.txt'
-Write-AiPromptFile -Path $promptFile -UserPrompt $userPrompt
-if (-not $SendToAI) {
-    Write-Host ''
-    Write-Host "Optional AI step (Gemini, model $Model):" -ForegroundColor Cyan
-    Write-Host "  Sent: $($active.Count) findings grouped by check (max 12 objects per check), score, counts, comparison if any."
-    Write-Host "  Pseudonymized: $($pz.Reverse.Count) identifiers (accounts, hosts, groups, DNs, SIDs, domain/trust names, paths). The map never leaves this machine."
-    Write-Host "  Not sent: the snapshot, ACL dumps, descriptions, group memberships beyond what the finding text states."
-    Write-Host "  Exactly what would be sent: $promptFile" -ForegroundColor Cyan
-    $answer = Read-Host 'Open that file if you want, then: send to Gemini for an executive summary and remediation plan? (y/N)'
-    if ($answer -notmatch '^[Yy]') { Write-Host "Nothing sent. Deterministic report saved to $OutHtml."; return }
-}
-else { Write-Host "AI prompt kept at $promptFile" }
-if (-not $ApiKey) { $ApiKey = Request-GeminiApiKey }
-if (-not $ApiKey) { Write-Host 'No API key given (-ApiKey or GEMINI_API_KEY), nothing sent. Deterministic report kept as is.' -ForegroundColor Yellow; return }
-
-$raw = Invoke-GeminiAnalysis -UserPrompt $userPrompt -ApiKey $ApiKey -Model $Model -MaxAttempts $AiMaxAttempts
-if (-not $raw) { Write-Host "AI step failed; deterministic report kept at $OutHtml." -ForegroundColor Yellow; return }
-$responseFile = Get-AiSidecarPath $htmlFull '_ai_response.json'
-Write-AiResponseFile -Path $responseFile -Raw $raw
-Write-Host "Gemini reply (still pseudonymized) kept at $responseFile"
-$aiResult = ConvertFrom-AiResponse -Raw $raw -Pz $pz -Findings $active -Model $Model
-
-$html = ConvertTo-ReportHtml -Snapshot $snap -Index $index -PrivMap $privMap -Split $split -Score $score `
-    -NotEvaluated $notEvaluated -Comparison $comparison -Config $config -ToolVersion $script:IDWolfVersion -ElapsedText $elapsedText -AiResult $aiResult
-[System.IO.File]::WriteAllText($htmlFull, $html, (New-Object System.Text.UTF8Encoding($false)))
-Write-Host "AI section added to $OutHtml ($(@($aiResult.RemediationPlan).Count) remediation items)." -ForegroundColor Green
+Invoke-AdAiStep
+Complete-WizardRun $htmlFull

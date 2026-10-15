@@ -33,7 +33,9 @@ real directory data in the report.
   `Invoke-Expression`, no Base64, no encoded commands, nothing downloaded and
   run, no services, scheduled tasks or registry changes.
 - **Writes only its own output**: the snapshot JSON, the report files, the
-  zip (or, with a password, the AES-256 encrypted `.idwolf` package; the password is read hidden and never stored) for analysis elsewhere if you ask for it, and temporary folders for the
+  zip (or, with a password, the AES-256 encrypted `.idwolf` package; the password is read hidden and never stored) for analysis elsewhere if you ask for it, the wizard's
+  remembered answers (`%LOCALAPPDATA%\IDWolf\wizard.json`: choices and paths from a fixed list of
+  keys, never a password, key or directory data; not used by `-Snapshot` or scheduled runs), and temporary folders for the
   BloodHound zip and for reading that zip (deleted right after). The scheduled-run script also
   deletes its own old run folders (only names like `ad_20261006_020000`
   inside the output folder you give it).
@@ -86,8 +88,11 @@ real directory data in the report.
    command nobody reviewed, run-time code tricks (`iex`, Base64, encoded
    commands, downloads, `Start-Process`, scheduled tasks), Graph requests that
    aren't GET, and web addresses other than Microsoft Graph, Gemini and the
-   MITRE links in the report. The regression suite checks that it really
-   catches these, on a deliberately tampered copy.
+   MITRE links in the report. The one command that opens a file with its
+   default program, `Invoke-Item`, is allowed only in `lib\Wizard.ps1`, which
+   uses it to open the `.html` report the run has just written, after asking.
+   The regression suite checks that it really catches these, on a
+   deliberately tampered copy.
 
 2. **Run it from a copy you got from the repository, and review that copy.**
    IDWolf itself is **not code-signed**, and there are no published hashes or

