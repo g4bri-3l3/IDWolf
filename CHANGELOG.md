@@ -13,6 +13,8 @@
 - Analyzer wizard: choosing `[G] send` no longer acts like `-SendToAI`. It skipped the step that
   shows the `_ai_prompt.txt` path and asks before sending; now the text can be checked first, as
   from the menu. `-SendToAI` on the command line still sends without asking.
+- Launcher: the splash screen of `Start-IDWolf.ps1` shows the version next to the name. It is
+  read from `$script:IDWolfVersion` in `IDWolf.ps1`, so there is still only one place to bump it.
 - Banner: the box is closed on the right and shows the repository link.
 - `examples\lab_report.html` and `lab_report.gif` rebuilt from a `-Deep` collection of the lab
   (BadSuccessor evaluated) with a fresh Gemini reply: the AI section shows the least access

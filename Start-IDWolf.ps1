@@ -35,12 +35,18 @@ $root = $PSScriptRoot
 . (Join-Path $root 'lib\Bundle.ps1')
 
 function Show-Banner {
+    # The version lives in IDWolf.ps1 only; read it from there so the two never drift.
+    $ver = ''
+    try {
+        $m = Select-String -LiteralPath (Join-Path $root 'IDWolf.ps1') -Pattern '^\s*\$script:IDWolfVersion\s*=\s*"([^"]+)"' | Select-Object -First 1
+        if ($m) { $ver = 'v' + $m.Matches[0].Groups[1].Value }
+    } catch { }
     $b = @'
 ######################################################################
 #                      .
 #                     / V\
 #                   / `  /
-#                  <<   |                I D W o l f
+#                  <<   |                I D W o l f   {VERSION}
 #                  /    |                AD / Entra hygiene
 #                /      |
 #              /        |
@@ -52,6 +58,7 @@ function Show-Banner {
 #                https://github.com/g4bri-3l3/IDWolf
 ######################################################################
 '@
+    $b = $b.Replace('{VERSION}', $ver)
     # Close the box on the right: pad every inner line to the border width.
     $b = (($b -split "`r?`n") | ForEach-Object { if ($_ -match '^#' -and $_ -notmatch '^#{10,}$') { $_.PadRight(69) + '#' } else { $_ } }) -join "`n"
     Write-Host $b -ForegroundColor DarkYellow
