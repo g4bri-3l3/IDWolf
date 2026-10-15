@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3 - 2026-10-15
 
 - AI step: the reply text is now joined from every part Gemini returns (thinking models can split
   it over several parts, and only the first was read, so the JSON came out cut short). When the

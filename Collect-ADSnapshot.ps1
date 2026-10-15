@@ -63,7 +63,7 @@ Param(
 # account with broad read rights. Without it those checks show up as
 # "not evaluated".
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.2"
+$script:CollectorVersion = "1.3"
 $script:Errors = New-Object System.Collections.Generic.List[object]
 
 function Add-CollectionError {
