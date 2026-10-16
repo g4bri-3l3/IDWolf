@@ -103,7 +103,7 @@ Param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:IDWolfVersion = "1.3"
+$script:IDWolfVersion = "1.4"
 
 $libDir = Join-Path $PSScriptRoot 'lib'
 foreach ($f in @('Common.ps1', 'Checks.ps1', 'ChecksHost.ps1', 'Reporting.ps1', 'Graph.ps1', 'AI.ps1', 'ChecksEntra.ps1', 'Compliance.ps1', 'Bundle.ps1', 'Wizard.ps1')) {
@@ -221,19 +221,31 @@ function Invoke-AnalyzerSetup {
     $lastCsv = ''
     if ($mem.LastReport) { $c = [System.IO.Path]::ChangeExtension($mem.LastReport, '.csv'); if (Test-Path -LiteralPath $c) { $lastCsv = $c } }
 
+    # The snapshots found in this folder and in .\output.
+    $candFiles = @(Get-ChildItem -Path '.', 'output' -Filter *.json -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)snapshot|adsnap|entra' })
+    if ($candFiles.Count -eq 0) { $candFiles = @(Get-ChildItem -Path '.', 'output' -Filter *.json -File -ErrorAction SilentlyContinue) }
+    $candFiles = @($candFiles) + @(Get-ChildItem -Path '.', 'output' -Filter *.zip -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)idwolf|snap|entra' })
+    $candFiles = @($candFiles) + @(Get-ChildItem -Path '.', 'output' -Filter *.idwolf -File -ErrorAction SilentlyContinue)
+    $cands = @($candFiles | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
+
     # The last analysis, if its snapshot is still there: same settings, straight to the review below.
+    # A snapshot collected since then (option 3 of the launcher, say) is offered in its place.
     $snap = ""; $reuse = $false
     if ($mem.Snapshot -and (Test-Path -LiteralPath $mem.Snapshot)) {
+        $lastFull = (Resolve-Path -LiteralPath $mem.Snapshot).ProviderPath
+        $lastTime = [System.IO.File]::GetLastWriteTimeUtc($lastFull)
+        # Only files named like a snapshot or a package: any other JSON here is not a candidate.
+        $newer = @($candFiles | Where-Object { $_.Name -match '(?i)snapshot|adsnap|entra|idwolf' -and $_.FullName -ne $lastFull -and $_.LastWriteTimeUtc -gt $lastTime } | Sort-Object LastWriteTimeUtc, FullName -Descending | Select-Object -First 1)
         Write-Host "`nLast analysis: $($mem.Snapshot) (AI step: $(if ($mem.AiMode) { $mem.AiMode } else { 'skip' }))" -ForegroundColor Cyan
-        if (Read-YesNo "Same settings again?" $true) { $snap = $mem.Snapshot; $reuse = $true }
+        if ($newer.Count -gt 0) {
+            $newerRel = Resolve-Path -Relative -LiteralPath $newer[0].FullName
+            Write-Host "A newer snapshot is here: $newerRel ($($newer[0].LastWriteTime.ToString('yyyy-MM-dd HH:mm')))." -ForegroundColor Cyan
+            if (Read-YesNo "Analyze $newerRel with the same settings?" $true) { $snap = $newerRel; $reuse = $true }
+        }
+        elseif (Read-YesNo "Same settings again?" $true) { $snap = $mem.Snapshot; $reuse = $true }
     }
 
     if (-not $snap) {
-        # Offer the snapshots found in this folder and in .\output.
-        $cands = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)snapshot|adsnap|entra' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
-        if ($cands.Count -eq 0) { $cands = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName }) }
-        $cands = @($cands) + @(Get-ChildItem -Path '.', 'output' -Filter *.zip -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)idwolf|snap|entra' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
-        $cands = @($cands) + @(Get-ChildItem -Path '.', 'output' -Filter *.idwolf -ErrorAction SilentlyContinue | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
         $lastSnap = if ($mem.Snapshot -and (Test-Path -LiteralPath $mem.Snapshot)) { $mem.Snapshot } else { '' }
         if ($cands.Count -gt 0) {
             Write-Host "`nSnapshot files found here:" -ForegroundColor Cyan
@@ -250,16 +262,18 @@ function Invoke-AnalyzerSetup {
     & $remember 'Snapshot' $snap
 
     # AD or Entra decides which questions make sense.
-    $kind = 'ad'; $zipHasPq = $false
+    $kind = 'ad'; $zipHasPq = $false; $snapDomain = ''
     try {
         if (Test-IDWolfBundleFile $snap) {
             if ((Test-IDWolfEncryptedBundle $snap) -and -not $BundlePassword) { $BundlePassword = Read-Host 'Bundle password (hidden)' -AsSecureString }
             $b = Expand-IDWolfBundle -Path $snap -Password $BundlePassword
-            try { $peek = ([System.IO.File]::ReadAllText($b.Snapshot) | ConvertFrom-Json).meta; $zipHasPq = [bool]$b.PasswordQuality }
+            try { $peek = [System.IO.File]::ReadAllText($b.Snapshot) | ConvertFrom-Json; $zipHasPq = [bool]$b.PasswordQuality }
             finally { Remove-IDWolfBundle $b }
         }
-        else { $peek = (Get-Content -Raw -LiteralPath $snap | ConvertFrom-Json).meta }
-        if ("$($peek.kind)" -eq 'entra') { $kind = 'entra' }
+        else { $peek = Get-Content -Raw -LiteralPath $snap | ConvertFrom-Json }
+        if ("$($peek.meta.kind)" -eq 'entra') { $kind = 'entra' }
+        $snapDomain = "$($peek.domain.dnsRoot)"
+        $peek = $null
     }
     catch { }
     Write-Host ("Detected snapshot type: {0}" -f $(if ($kind -eq 'entra') { 'Microsoft Entra ID' } else { 'on-prem Active Directory' })) -ForegroundColor Green
@@ -276,12 +290,18 @@ function Invoke-AnalyzerSetup {
     }
     $usePq = ($kind -eq 'ad' -and -not $zipHasPq)
     if ($kind -eq 'ad' -and $zipHasPq) { Write-Host "The zip carries a password-quality report: it will be used." -ForegroundColor Green }
+    # Only reports of this snapshot's domain, newest first.
+    $pqFound = @(if ($usePq) { Get-PasswordQualityCandidates -Domain $snapDomain })
     if ($reuse) {
-        # Same choices; a comparison goes against the report of that last run.
+        # Same choices; a comparison goes against the report of that last run, and a password-quality
+        # report is the newest one of this snapshot's domain.
         $cfg.OutJson = "$($mem.OutJson)"
         $cfg.ExceptionsFile = "$($mem.ExceptionsFile)"
         $cfg.CompareTo = if ($mem.CompareTo -and $lastCsv) { $lastCsv } else { "$($mem.CompareTo)" }
-        if ($usePq) { $cfg.PasswordQualityFile = "$($mem.PasswordQualityFile)" }
+        if ($usePq -and $mem.PasswordQualityFile) {
+            if ($pqFound.Count -gt 0) { $cfg.PasswordQualityFile = $pqFound[0] }
+            else { Write-Host "No password-quality report of $snapDomain here: running without one." -ForegroundColor Yellow }
+        }
         if (@('skip', 'dryrun', 'send') -contains $mem.AiMode) { $cfg.AiMode = $mem.AiMode }
     }
     else {
@@ -295,12 +315,10 @@ function Invoke-AnalyzerSetup {
         if (Read-YesNo $cmpPrompt ([bool]$mem.CompareTo)) { $cfg.CompareTo = Read-Path "  Previous report CSV path" $cmpDefault }
         & $remember 'CompareTo' $cfg.CompareTo
         if ($usePq) {
-            # The last report used, or one found in the folder, becomes the default.
-            $pqFound = @(Get-ChildItem -Path '.', 'output' -Filter '*.json' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)pwq|passwordquality' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
-            $pqLast = if ($mem.PasswordQualityFile -and (Test-Path -LiteralPath $mem.PasswordQualityFile)) { $mem.PasswordQualityFile } else { '' }
-            $pqDefault = if ($pqLast) { $pqLast } elseif ($pqFound.Count -gt 0) { $pqFound[0] } else { 'pwq.json' }
-            $pqPrompt = if ($pqLast -or $pqFound.Count -gt 0) { "Add the hashless password-quality report ($pqDefault found)?" } else { "Add a hashless password-quality report (from Export-PasswordQuality.ps1)?" }
-            if (Read-YesNo $pqPrompt ([bool]($pqLast -or $pqFound.Count -gt 0))) {
+            # The newest report of this snapshot's domain becomes the default.
+            $pqDefault = if ($pqFound.Count -gt 0) { $pqFound[0] } else { 'pwq.json' }
+            $pqPrompt = if ($pqFound.Count -gt 0) { "Add the hashless password-quality report of $snapDomain ($pqDefault)?" } else { "Add a hashless password-quality report (from Export-PasswordQuality.ps1)?" }
+            if (Read-YesNo $pqPrompt ($pqFound.Count -gt 0)) {
                 $cfg.PasswordQualityFile = Read-Path "  Password-quality JSON path" $pqDefault
             }
             & $remember 'PasswordQualityFile' $cfg.PasswordQualityFile
@@ -500,6 +518,14 @@ elseif ($bundlePqText) { $pqText = $bundlePqText }
 if ($pqText) {
     # Old PS 5.1 reports hold {} for empty lists: read them as null.
     $pqRaw = [regex]::Replace($pqText, '(?<=[^\\]"):\s*\{\s*\}', ': null') | ConvertFrom-Json
+    # A report of another domain would put its accounts in this report. 'domain' is what
+    # Export-PasswordQuality.ps1 writes when it could not tell (-FromDatabase on a machine that
+    # can't reach the domain): allowed, with a warning.
+    $pqDomain = "$($pqRaw.domain)"; $snapDomain = "$($snap.domain.dnsRoot)"
+    if ($pqDomain -and $pqDomain -ne 'domain' -and $snapDomain -and $pqDomain -ne $snapDomain) {
+        throw "The password-quality report is for $pqDomain, the snapshot for $snapDomain. Use the report of $snapDomain, or run without one."
+    }
+    if (-not $pqDomain -or $pqDomain -eq 'domain') { Write-Warning "The password-quality report does not say its domain: make sure it is the one of $snapDomain." }
     $snap | Add-Member -NotePropertyName passwordQuality -NotePropertyValue $pqRaw -Force
     Write-Host "Password-quality report loaded (hashless)."
 }

@@ -31,6 +31,8 @@ Check (@(@($snap.acls | Where-Object target -eq 'DomainRoot').aces | Where-Objec
 $staff = @($snap.ouAcls | Where-Object { $_.distinguishedName -eq 'OU=Staff,DC=mock,DC=local' })
 Check (@($snap.ouAcls).Count -eq 2 -and $staff.Count -eq 1) "OU and top-level container ACLs collected (got $(@($snap.ouAcls).Count))"
 Check ((@($staff[0].aces | ForEach-Object { "$($_.sid)|$($_.rights)|$($_.objectType)" }) -join ';') -match '^S-1-5-21-[\d-]+-512\|GenericAll\|00000000-0000-0000-0000-000000000000;S-1-5-21-[\d-]+-1301\|CreateChild\|0feb936f-47b3-49f2-9386-1dedc2c23765$') "OU ACL keeps explicit create/control ACEs only (got $(@($staff[0].aces | ForEach-Object { "$($_.sid)|$($_.rights)" }) -join ';'))"
+# SCCM: the System Management container's ACL and the published management point.
+Check ($snap.sccm.present -and $snap.sccm.acl.target -eq 'SystemManagement' -and @($snap.sccm.acl.aces).Count -eq 4 -and (@($snap.sccm.managementPoints | ForEach-Object { "$($_.host)/$($_.siteCode)" }) -join ',') -eq 'pc1.mock.local/MCK') 'SCCM System Management container and management points collected'
 # RODC policy: DN-String values of msDS-RevealedList come out as plain DNs.
 $rodcPol = @($snap.domainControllers | Where-Object { $_.isReadOnly })[0].rodcPolicy
 Check ((@($rodcPol.revealed) -join '|') -eq 'CN=Administrator,CN=Users,DC=mock,DC=local|CN=mario,CN=Users,DC=mock,DC=local|CN=RODC1,OU=Domain Controllers,DC=mock,DC=local') "msDS-RevealedList parsed to DNs (got $(@($rodcPol.revealed) -join '|'))"
@@ -57,6 +59,9 @@ $rows = @(Import-Csv $csv)
 $spnObjs = @($rows | Where-Object { $_.Type -in 'kerberoastable_user', 'privileged_kerberoastable', 'spn_account_rc4' } | ForEach-Object { $_.Object } | Select-Object -Unique)
 Check (($spnObjs -join ',') -eq 'svc_sql') "SPN findings only on svc_sql (got: $($spnObjs -join ','))"
 Check (@($rows | Where-Object { $_.Type -in 'constrained_delegation', 'rbcd_configured' }).Count -eq 0) 'no phantom delegation / RBCD findings'
+$sccmRows = @($rows | Where-Object { $_.Type -eq 'sccm_system_management_writable' })
+# The mock resolves no SID to a name: mario is RID 1301, the site server PC1 RID 1100.
+Check ($sccmRows.Count -eq 1 -and $sccmRows[0].Object -match '-1301$' -and $sccmRows[0].Detail -match 'Site servers with rights there: S-1-5-21-[\d-]+-1100\. Management points published: pc1\.mock\.local \(site MCK\)') "SCCM: mario flagged, the site server PC1 listed as expected (got $($sccmRows.Object -join ', '))"
 Check (-not ([System.IO.File]::ReadAllText($snapPath) -match '":\s*\{\s*\}')) 'snapshot JSON holds no empty-object values'
 foreach ($t in 'krbtgt_password_old', 'privileged_kerberoastable', 'password_in_description', 'dcsync_rights', 'dc_obsolete_os', 'single_dc', 'password_policy_short', 'dns_insecure_updates', 'dns_dangerous_record', 'adcs_esc5', 'rodc_prp_too_broad', 'rodc_tier0_revealed') {
     Check ($types -contains $t) "mock analysis produced $t"

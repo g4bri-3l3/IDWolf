@@ -592,17 +592,36 @@ function Invoke-GpoChecks {
             -Detail "Autologon password in $($alGpos[$gid] -join ' and ')$(if ($auto -eq 1) { '; AutoAdminLogon = 1' }). Value not collected. GPO $(if ($g) { & $linkText $g } else { 'not found among the GPO templates' }).$(if ($alFiles.ContainsKey($gid)) { " File: $($alFiles[$gid])" })"
     }
 
+    $wsusHttps = New-Object System.Collections.Generic.List[string]
     foreach ($g in $allGpos) {
         $wu = "$(& $regOf $g 'MACHINE\Software\Policies\Microsoft\Windows\WindowsUpdate\WUServer')"
         $wuUrl = ($wu -split ',', 2)[-1]
         if ($wuUrl -match '^(?i)\s*http://') {
             Add-Finding -Type wsus_http -Object "$($g.displayName)" -ObjectType 'gpo' -ObjectDn $g.guid -Detail "WUServer = $($wuUrl.Trim()). GPO $(& $linkText $g)."
         }
+        elseif ($wuUrl -match '^(?i)\s*https://') { $wsusHttps.Add("$($wuUrl.Trim()) (GPO $($g.displayName))") }
         if ((Get-RegInt (& $regOf $g 'MACHINE\Software\Policies\Microsoft\Windows NT\Terminal Services\UserAuthentication')) -eq 0) {
             Add-Finding -Type rdp_nla_disabled -Object "$($g.displayName)" -ObjectType 'gpo' -ObjectDn $g.guid -Detail "Terminal Services UserAuthentication = 0 (NLA not required). GPO $(& $linkText $g)."
         }
         if ((Get-RegInt (& $regOf $g 'MACHINE\System\CurrentControlSet\Control\Lsa\DisableRestrictedAdmin')) -eq 0) {
             Add-Finding -Type rdp_restricted_admin -Object "$($g.displayName)" -ObjectType 'gpo' -ObjectDn $g.guid -Detail "Lsa DisableRestrictedAdmin = 0 (Restricted Admin allowed). GPO $(& $linkText $g)."
+        }
+    }
+
+    # ESC17: WSUS over HTTPS is only as safe as the certificates a low-privileged user can get
+    # for its name: a published template with a supplied subject, for server authentication (or
+    # any purpose), no approval and no enrollment-agent signature.
+    if ($wsusHttps.Count -and $Snapshot.adcs -and $Snapshot.adcs.collected) {
+        $lowPriv = Get-LowPrivEnrollSids $Index.DomainSid
+        foreach ($t in @($Snapshot.adcs.templates | Where-Object { $_ -and $_.published })) {
+            $enroller = Test-TemplateLowPrivEnroll -Template $t -LowPrivSids $lowPriv
+            if (-not $enroller) { continue }
+            if ((([int64]$t.nameFlag -band $script:CT_ENROLLEE_SUPPLIES_SUBJECT) -eq 0) -or (([int64]$t.enrollmentFlag -band $script:CT_PEND_ALL_REQUESTS) -ne 0) -or [int]$t.raSignature -gt 0) { continue }
+            $ekus = @($t.ekus | Where-Object { $_ })
+            if ($ekus.Count -and $ekus -notcontains '1.3.6.1.5.5.7.3.1' -and $ekus -notcontains $script:EkuAnyPurpose) { continue }
+            $label = if ($t.displayName) { "$($t.displayName)" } else { "$($t.name)" }
+            Add-Finding -Type adcs_esc17 -Object $label -ObjectType 'certtemplate' `
+                -Detail "Enrollable by $enroller with a supplied subject, $(if ($ekus.Count -eq 0) { 'no EKU' } elseif ($ekus -contains '1.3.6.1.5.5.7.3.1') { 'server authentication EKU' } else { 'Any Purpose EKU' }), no approval. WSUS over HTTPS: $($wsusHttps.ToArray() -join '; ')."
         }
     }
 

@@ -35,6 +35,9 @@ function Get-ADObject {
     if ($LDAPFilter -like '*foreignSecurityPrincipal*') { return @() }
     # One OU and one top-level container for the OU ACL read (BadSuccessor).
     if ($LDAPFilter -eq '(objectClass=organizationalUnit)') { return [PSCustomObject]@{ DistinguishedName = "OU=Staff,$script:DN"; ObjectClass = 'organizationalUnit' } }
+    # SCCM: the System Management container with one management point (PC1); mario may write to it.
+    if ($LDAPFilter -eq '(&(objectClass=container)(cn=System Management))') { return [PSCustomObject]@{ DistinguishedName = "CN=System Management,CN=System,$script:DN" } }
+    if ($LDAPFilter -eq '(objectClass=mSSMSManagementPoint)') { return [PSCustomObject]@{ dNSHostName = 'pc1.mock.local'; mSSMSSiteCode = 'MCK' } }
     if ($LDAPFilter -eq '(objectClass=container)' -and $SearchScope -eq 'OneLevel') { return [PSCustomObject]@{ DistinguishedName = "CN=Users,$script:DN"; ObjectClass = 'container' } }
     if ($Identity -eq $script:DN -and $Properties -contains 'ms-DS-MachineAccountQuota') { return [PSCustomObject]@{ 'ms-DS-MachineAccountQuota' = 10 } }
     if ($Identity -like 'CN=Directory Service*') { return [PSCustomObject]@{ dSHeuristics = $null } }
@@ -55,7 +58,7 @@ function Get-ADObject {
     if ($LDAPFilter -like '*pKICertificateTemplate*' -or $LDAPFilter -like '*msPKI-Enterprise-Oid*') { return @() }
     if ($Properties -contains 'nTSecurityDescriptor') {
         if ($Identity -like 'OU=Domain Controllers*') { throw 'Access is denied (mock)' }
-        $sd = [PSCustomObject]@{ Owner = "$script:Dom-512"; Pki = ("$Identity" -like '*Public Key Services*'); Dns = ("$Identity" -like '*CN=MicrosoftDNS*'); Ou = ("$Identity" -like 'OU=Staff,*') }
+        $sd = [PSCustomObject]@{ Owner = "$script:Dom-512"; Pki = ("$Identity" -like '*Public Key Services*'); Dns = ("$Identity" -like '*CN=MicrosoftDNS*'); Ou = ("$Identity" -like 'OU=Staff,*'); Sccm = ("$Identity" -like 'CN=System Management,*') }
         $sd | Add-Member -MemberType ScriptMethod -Name GetOwner -Value { param($t) Sid $this.Owner }
         $sd | Add-Member -MemberType ScriptMethod -Name GetAccessRules -Value {
             param($a, $b, $t)
@@ -68,6 +71,9 @@ function Get-ADObject {
                 # mario may create dMSAs in OU=Staff; the collector must drop the inherited ACE.
                 if ($this.Ou) { [PSCustomObject]@{ IdentityReference = (Sid "$script:Dom-1301"); ActiveDirectoryRights = 'CreateChild'; AccessControlType = 'Allow'; ObjectType = [guid]'0feb936f-47b3-49f2-9386-1dedc2c23765'; InheritedObjectType = [guid]::Empty; InheritanceType = 'None'; IsInherited = $false } }
                 if ($this.Ou) { [PSCustomObject]@{ IdentityReference = (Sid "$script:Dom-1300"); ActiveDirectoryRights = 'GenericAll'; AccessControlType = 'Allow'; ObjectType = [guid]::Empty; InheritedObjectType = [guid]::Empty; InheritanceType = 'All'; IsInherited = $true } }
+                # SCCM: the site server PC1 has Full Control (expected), mario can write too (finding).
+                if ($this.Sccm) { [PSCustomObject]@{ IdentityReference = (Sid "$script:Dom-1100"); ActiveDirectoryRights = 'GenericAll'; AccessControlType = 'Allow'; ObjectType = [guid]::Empty; InheritedObjectType = [guid]::Empty; InheritanceType = 'All'; IsInherited = $false } }
+                if ($this.Sccm) { [PSCustomObject]@{ IdentityReference = (Sid "$script:Dom-1301"); ActiveDirectoryRights = 'CreateChild, WriteProperty'; AccessControlType = 'Allow'; ObjectType = [guid]::Empty; InheritedObjectType = [guid]::Empty; InheritanceType = 'All'; IsInherited = $false } }
                 if ($this.Pki) { [PSCustomObject]@{ IdentityReference = (Sid "$script:Dom-1301"); ActiveDirectoryRights = 'GenericWrite'; AccessControlType = 'Allow'; ObjectType = [guid]::Empty; InheritedObjectType = [guid]::Empty; InheritanceType = 'None'; IsInherited = $false } }
             )
         }

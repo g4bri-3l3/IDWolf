@@ -2,7 +2,7 @@
 
 How IDWolf's checks line up against the references people actually use to
 judge an AD or Entra audit. One place, kept in sync with the code: every check
-named here exists in the catalog (167 AD, 88 Entra).
+named here exists in the catalog (169 AD, 90 Entra).
 
 **Legend**
 - **Yes**: detected directly.
@@ -244,7 +244,7 @@ Netwrix announced, not rule by rule.
 | Workload identities | Yes `entra_no_workload_identity_ca` |
 | Intune RBAC: roles that push scripts, apps or configuration to devices, or change Intune roles | Yes `entra_intune_role_weak_group` (given through a group that is not role-assignable or is dynamic). Not yet verified on a real tenant: the action names are matched from documentation |
 | Intune Multi Admin Approval for device wipes and scripts | Yes `entra_intune_no_multi_admin_approval`. Not yet verified on a real tenant: the policy types are matched from documentation |
-| Indirect paths to admin roles: owners, exclusions, scoped admins, look-alikes | Yes `entra_privileged_group_owner`, `entra_privileged_app_sp_owner`, `entra_privileged_app_inactive`, `entra_app_instance_lock_off`, `entra_connect_app_extra_credentials`, `entra_sp_lookalike_name`, `entra_ca_excluded_group_weak`, `entra_scoped_admin_outside_ca`, `entra_app_scoped_admin_privileged`, `entra_pim_role_settings_weak`, `entra_access_package_grants_admin` |
+| Indirect paths to admin roles: owners, exclusions, scoped admins, look-alikes | Yes `entra_privileged_group_owner`, `entra_privileged_app_sp_owner`, `entra_privileged_app_inactive`, `entra_app_instance_lock_off`, `entra_connect_app_extra_credentials`, `entra_sp_lookalike_name`, `entra_ca_excluded_group_weak`, `entra_scoped_admin_outside_ca`, `entra_app_scoped_admin_privileged`, `entra_pim_role_settings_weak`, `entra_access_package_grants_admin`, `entra_catalog_role_privileged_group` |
 | Guest access restriction (public rule) | Yes `entra_guest_access_not_restricted` |
 | Entra Connect version (public rule) | Not available through Graph; `entra_sync_stale` covers a stopped sync instead |
 | AI agent identities | Planned (the Graph API for Entra agent identities is still in preview) |
@@ -269,7 +269,7 @@ Source: Microsoft Learn "Best practices to secure with Microsoft Entra ID".
 | Banned passwords, smart lockout | Yes `entra_banned_passwords_off`, `entra_smart_lockout_weak` |
 | External collaboration hardening | Yes `entra_guest_invite_open`, `entra_guest_access_not_restricted`, `entra_cross_tenant_mfa_trust`, `entra_b2b_direct_connect_open` (the guest domain allow list stays manual, see 5.1.6.1) |
 | Access reviews | Yes `entra_no_guest_access_review`, `entra_no_admin_access_review` |
-| Entitlement management | Yes `entra_access_package_external_no_approval`, `entra_access_package_no_expiry` |
+| Entitlement management | Yes `entra_access_package_external_no_approval`, `entra_access_package_no_expiry`, `entra_access_package_grants_admin`, `entra_catalog_role_privileged_group` (catalog owners and managers over a catalog that holds an admin group) |
 | Workload identity Conditional Access | Yes `entra_no_workload_identity_ca` (apps registered in this tenant only: Conditional Access can't target others) |
 | Sign-in / audit log retention, SIEM streaming, alerts | Out (operations, and Azure diagnostic settings need Azure RBAC rather than Graph) |
 
@@ -296,15 +296,15 @@ October 2026.
 | Adversary-in-the-middle phishing and token theft | ongoing | Yes `entra_no_phishing_resistant_admins`, `entra_admin_no_phishing_resistant_method`, `entra_token_protection_off`, `entra_admin_sign_in_frequency` |
 | OAuth consent phishing and over-privileged apps (Midnight Blizzard, 2024) | 2024-26 | Yes `entra_users_can_consent`, `entra_user_consent_allowed`, `entra_risky_delegated_grant`, `entra_app_high_privilege`, `entra_first_party_sp_credentials` |
 | Escalation through service principal ownership (Entra Agent ID flaw, Silverfort) | 2026 | Yes `entra_privileged_app_sp_owner`, `entra_privileged_app_owner`, `entra_sp_in_admin_role` |
+| SCCM / MECM: a rogue management point published in AD (Misconfiguration Manager) | 2023-26 | Yes `sccm_system_management_writable` (who can write to the System Management container, with the site servers and management points listed); network access account, PXE and site takeover by relay need the site server: Out |
+| AD CS ESC17: WSUS over HTTPS with a certificate from a weak template (TROOPERS26) | 2026 | GPO `adcs_esc17` (WSUS over HTTPS from a GPO and a template that issues server certificates for a supplied name); `wsus_http` covers plain HTTP |
 | Mass device wipe from a compromised Intune admin (Stryker, reported) | 2026 | Yes `entra_intune_no_multi_admin_approval`, `entra_intune_role_weak_group`. Neither has been verified on a real tenant yet |
+| Apps still on Azure AD Graph (behind the Actor token flaw, CVE-2025-55241) | 2025 | Yes `entra_app_azure_ad_graph` (permissions requested or granted on the retired API); the flaw itself was fixed by Microsoft |
 
 Not covered yet:
 
 | Attack | When | Why |
 |---|---|---|
-| SCCM / MECM misconfigurations (network access account, PXE, site takeover by relay) | 2023-26 | Planned for what AD shows (the System Management container and who can write to it); the rest needs the site server |
-| AD CS ESC17: WSUS over HTTPS with a certificate from a weak template (TROOPERS26) | 2026 | Partial `wsus_http` covers WSUS over plain HTTP only |
-| Apps still on Azure AD Graph (behind the Actor token flaw, CVE-2025-55241) | 2025 | Planned; the flaw itself was fixed by Microsoft |
 | Storm-0558 key theft, CVE-2026-69836, OAuth client ID spoofing, help desk social engineering | 2023-26 | Out: flaws on Microsoft's side, detection rather than configuration, or a process problem |
 
 ## Regulations

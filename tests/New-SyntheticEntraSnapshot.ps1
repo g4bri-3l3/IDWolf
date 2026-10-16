@@ -55,6 +55,10 @@ $apps = @(
     [ordered]@{ id = (Guid5 303); displayName = 'ConnectSyncProvisioning_SYNC01_8f3a2c'; appId = (Guid5 3061); passwordCred = @(); keyCred = @($ref.AddDays(200).ToString('o'), $ref.AddDays(700).ToString('o')); secrets = @(); redirectUris = @(); signInAudience = 'AzureADMyOrg'; instanceLock = $false }
     [ordered]@{ id = (Guid5 302); displayName = 'Healthy App'; appId = (Guid5 3021); passwordCred = @($ref.AddDays(150).ToString('o')); keyCred = @(); secrets = @([ordered]@{ start = (Iso 20); end = $ref.AddDays(150).ToString('o') }); redirectUris = @('https://app.moosebank-cloud.example/signin', 'http://localhost:8080'); signInAudience = 'AzureADMyOrg'; instanceLock = $false }
 )
+# Legacy Sync App still asks for Azure AD Graph, and its service principal (Backup Automation)
+# was granted an application permission there: one entra_app_azure_ad_graph finding.
+$apps[0]['aadGraphScopes'] = 1; $apps[0]['aadGraphRoles'] = 1
+foreach ($a in $apps[1..3]) { $a['aadGraphScopes'] = 0; $a['aadGraphRoles'] = 0 }
 $servicePrincipals = @(
     [ordered]@{ id = (Guid5 400); displayName = 'Backup Automation'; appId = (Guid5 3001); appOwnerTenant = ''; appRoleIds = @('9e3f62cf-ca93-4989-b6ce-bf83c28f9fe8'); passwordCred = @(); keyCred = @(); owners = @((Guid5 12), (Guid5 405)); ownerTypes = [ordered]@{ (Guid5 12) = 'user'; (Guid5 405) = 'servicePrincipal' } }  # RoleManagement.ReadWrite.Directory
     [ordered]@{ id = (Guid5 401); displayName = 'Monitoring SP'; appId = (Guid5 3011); appOwnerTenant = ''; appRoleIds = @('b0afded3-3588-46d8-8b3d-9842eff778da'); passwordCred = @(); keyCred = @() }  # AuditLog.Read.All
@@ -65,7 +69,11 @@ $servicePrincipals = @(
     # "Microsoft" spelled with a Cyrillic o: entra_sp_lookalike_name.
     [ordered]@{ id = (Guid5 406); displayName = ('Micr' + [char]0x043E + 'soft Teams Connector'); appId = (Guid5 3071); appOwnerTenant = '88888888-8888-8888-8888-888888888888'; appRoleIds = @(); passwordCred = @(); keyCred = @() }
     [ordered]@{ id = (Guid5 402); displayName = 'Benign SP'; appId = (Guid5 3021); appOwnerTenant = ''; appRoleIds = @('df021288-bdef-4463-88db-98f22de89214'); passwordCred = @(); keyCred = @() }  # User.Read.All
+    # Azure AD Graph itself (a Microsoft app): never a finding.
+    [ordered]@{ id = (Guid5 407); displayName = 'Windows Azure Active Directory'; appId = '00000002-0000-0000-c000-000000000000'; appOwnerTenant = 'f8cdef31-a31e-4b4a-93e4-5f571e91255a'; appRoleIds = @(); passwordCred = @(); keyCred = @() }
 )
+foreach ($sp in $servicePrincipals) { $sp['aadGraphRoles'] = 0 }
+$servicePrincipals[0]['aadGraphRoles'] = 1
 
 # Four principals with permanent admin roles, one eligible assignment.
 function Assign { param($P, $R, $T = 'Assigned') [ordered]@{ principalId = (Guid5 $P); roleDefinitionId = $R; assignmentType = $T; endDateTime = $null } }
@@ -128,7 +136,7 @@ $intuneRoles = @(
 $intuneApprovalPolicies = @([ordered]@{ id = (Guid5 950); policyType = 'app'; policyPlatform = 'notApplicable'; approverGroupCount = 1 })
 $snapshot = [ordered]@{
     meta = [ordered]@{
-        tool = 'IDWolf'; kind = 'entra'; schemaVersion = 9; collectorVersion = 'synthetic'
+        tool = 'IDWolf'; kind = 'entra'; schemaVersion = 10; collectorVersion = 'synthetic'
         collectedAtUtc = $ref.ToString('o'); tenantId = '11111111-2222-3333-4444-555555555555'; account = 'auditor@moosebank.onmicrosoft.com'
         collectionErrors = @(); synthetic = $true
     }
@@ -166,7 +174,21 @@ $snapshot = [ordered]@{
     # Two users consented a third-party app to read their mail; an admin consented a harmless one.
     oauthGrants = @([ordered]@{ clientId = (Guid5 404); consentType = 'Principal'; principalId = (Guid5 9); scope = 'Mail.Read offline_access' }
         [ordered]@{ clientId = (Guid5 404); consentType = 'Principal'; principalId = (Guid5 11); scope = 'Mail.Read offline_access' }
-        [ordered]@{ clientId = (Guid5 401); consentType = 'AllPrincipals'; principalId = ''; scope = 'User.Read openid' })
+        [ordered]@{ clientId = (Guid5 401); consentType = 'AllPrincipals'; principalId = ''; scope = 'User.Read openid' }
+        # A user consented the third-party app on Azure AD Graph: entra_app_azure_ad_graph.
+        [ordered]@{ clientId = (Guid5 404); consentType = 'Principal'; principalId = (Guid5 9); scope = 'User.Read'; resourceId = (Guid5 407) })
+    aadGraphSpId = (Guid5 407)
+    # The IT catalog holds the Security Administrator group (702) and the IT on-call package that
+    # grants it: user12 (owner) and user14 (assignment manager) are findings; Alice (an admin),
+    # the reader user15 and user13 on a catalog without admin groups are not.
+    entitlementCatalogs = @([ordered]@{ id = (Guid5 660); displayName = 'IT resources'; resources = @([ordered]@{ originSystem = 'AadGroup'; originId = (Guid5 702) }, [ordered]@{ originSystem = 'AadGroup'; originId = (Guid5 704) }); accessPackageIds = @((Guid5 650)) }
+        [ordered]@{ id = (Guid5 661); displayName = 'Collaboration'; resources = @([ordered]@{ originSystem = 'AadGroup'; originId = (Guid5 700) }); accessPackageIds = @() })
+    catalogRoles = @(
+        [ordered]@{ roleDefinitionId = 'ae79f266-94d4-4dab-b730-feca7e132178'; principalId = (Guid5 12); principalType = 'user'; appScopeId = "/AccessPackageCatalog/$(Guid5 660)" }
+        [ordered]@{ roleDefinitionId = 'ae79f266-94d4-4dab-b730-feca7e132178'; principalId = (Guid5 1); principalType = 'user'; appScopeId = "/AccessPackageCatalog/$(Guid5 660)" }
+        [ordered]@{ roleDefinitionId = 'e2182095-804a-4656-ae11-64734e9b7ae5'; principalId = (Guid5 14); principalType = 'user'; appScopeId = "/AccessPackageCatalog/$(Guid5 660)" }
+        [ordered]@{ roleDefinitionId = '44272f93-9762-48e8-af59-1b5351b1d6b3'; principalId = (Guid5 15); principalType = 'user'; appScopeId = "/AccessPackageCatalog/$(Guid5 660)" }
+        [ordered]@{ roleDefinitionId = 'ae79f266-94d4-4dab-b730-feca7e132178'; principalId = (Guid5 13); principalType = 'user'; appScopeId = "/AccessPackageCatalog/$(Guid5 661)" })
     # Direct connect opened inbound only.
     crossTenant = [ordered]@{ mfaAccepted = $true; compliantDeviceAccepted = $false; hybridJoinAccepted = $false; directConnectInbound = 'allowed'; directConnectOutbound = 'blocked' }
     # One package open to any external user without approval, one internal that

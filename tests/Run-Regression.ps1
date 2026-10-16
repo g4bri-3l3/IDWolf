@@ -50,8 +50,8 @@ $demo = Import-ADSnapshot (Join-Path $tmp 'demo.json')
 $r = Invoke-Analysis $demo
 $bySev = @{}; foreach ($s in 'Critical', 'High', 'Medium', 'Low') { $bySev[$s] = @($r.Findings | Where-Object { $_.Severity -eq $s }).Count }
 Write-Host ("  {0} findings (C {1} / H {2} / M {3} / L {4}), {5} Tier 0 principals" -f $r.Findings.Count, $bySev.Critical, $bySev.High, $bySev.Medium, $bySev.Low, $r.PrivMap.Principals.Count)
-Assert-True ($r.Findings.Count -eq 193) "demo total findings: expected 193, got $($r.Findings.Count)"
-Assert-True ($bySev.Critical -eq 25 -and $bySev.High -eq 75 -and $bySev.Medium -eq 67 -and $bySev.Low -eq 26) "demo severity split: expected 25/75/67/26 (got $($bySev.Critical)/$($bySev.High)/$($bySev.Medium)/$($bySev.Low))"
+Assert-True ($r.Findings.Count -eq 195) "demo total findings: expected 195, got $($r.Findings.Count)"
+Assert-True ($bySev.Critical -eq 25 -and $bySev.High -eq 77 -and $bySev.Medium -eq 67 -and $bySev.Low -eq 26) "demo severity split: expected 25/77/67/26 (got $($bySev.Critical)/$($bySev.High)/$($bySev.Medium)/$($bySev.Low))"
 Assert-True ($r.PrivMap.Principals.Count -eq 17) "demo Tier 0 principals: expected 17, got $($r.PrivMap.Principals.Count)"
 $demoNE = @($r.NotEvaluated | ForEach-Object { $_.Type })
 Assert-True (($demoNE -contains 'dangerous_ace_anywhere') -and ($demoNE -contains 'laps_readers') -and ($demoNE -contains 'kds_root_key_readable') -and ($demoNE -contains 'pwq_empty_password') -and ($demoNE.Count -eq 8)) "demo (non-deep): dangerous_ace_anywhere + kds_root_key_readable + laps_readers + 5 pwq not evaluated (got $($demoNE -join ','))"
@@ -179,6 +179,29 @@ $sBsO = New-Dc2025Snapshot -Ubr 4652
 $sBsO.PSObject.Properties.Remove('ouAcls')
 $rBsO = Invoke-Analysis $sBsO
 Assert-True (@($rBsO.Findings | Where-Object { $_.Type -eq 'badsuccessor_dmsa_create' }).Count -eq 0 -and @($rBsO.NotEvaluated | Where-Object { $_.Type -eq 'badsuccessor_dmsa_create' -and $_.Reason -match 'older collector' }).Count -eq 1) 'BadSuccessor: older snapshot without OU ACLs is not evaluated, not clean'
+# SCCM: Helpdesk can create objects in System Management; the site server SRV-APP01 is expected.
+$sccmF = @($r.Findings | Where-Object { $_.Type -eq 'sccm_system_management_writable' })
+Assert-True ($sccmF.Count -eq 1 -and (Has $r 'sccm_system_management_writable' 'MOOSEBANK\Helpdesk' 'High') -and $sccmF[0].Detail -match '^CreateChild on CN=System Management\. Site servers with rights there: MOOSEBANK\\SRV-APP01\$\. Management points published: srv-app01\.moosebank\.local \(site MB1\)\.$') "SCCM: a non-site-server writer flagged, the site server and management point listed (got $($sccmF.Detail -join ' | '))"
+$sSccm = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$sccmGroupSid = "$($rBs.Index.DomainSid)-1190"
+$sSccm.groups = @($sSccm.groups) + @([PSCustomObject]@{ name = 'SCCM Site Servers'; samAccountName = 'SCCM Site Servers'; distinguishedName = "CN=SCCM Site Servers,CN=Users,DC=moosebank,DC=local"; sid = $sccmGroupSid; groupScope = 'Global'; groupCategory = 'Security'; adminCount = 0; members = @("CN=SRV-APP01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local") })
+$sSccm.sccm.acl.aces = @($sSccm.sccm.acl.aces) + @(
+    [PSCustomObject]@{ sid = $sccmGroupSid; name = 'MOOSEBANK\SCCM Site Servers'; rights = 'GenericAll'; accessType = 'Allow'; objectType = '00000000-0000-0000-0000-000000000000'; inheritedObjectType = '00000000-0000-0000-0000-000000000000'; inheritanceType = 'All'; isInherited = $false }
+    [PSCustomObject]@{ sid = "$($rBs.Index.DomainSid)-515"; name = 'MOOSEBANK\Domain Computers'; rights = 'GenericWrite'; accessType = 'Allow'; objectType = '00000000-0000-0000-0000-000000000000'; inheritedObjectType = '00000000-0000-0000-0000-000000000000'; inheritanceType = 'All'; isInherited = $false })
+$rSccm = Invoke-Analysis $sSccm
+Assert-True ((Has $rSccm 'sccm_system_management_writable' 'MOOSEBANK\Domain Computers' 'Critical') -and -not (Has $rSccm 'sccm_system_management_writable' 'MOOSEBANK\SCCM Site Servers') -and @($rSccm.Findings | Where-Object { $_.Type -eq 'sccm_system_management_writable' })[0].Detail -match 'SCCM Site Servers') 'SCCM: a group of site servers only is expected, Domain Computers is not (Critical)'
+$sSccmN = Import-ADSnapshot (Join-Path $tmp 'demo.json'); $sSccmN.sccm = [PSCustomObject]@{ present = $false }
+$rSccmN = Invoke-Analysis $sSccmN
+Assert-True (@($rSccmN.Findings | Where-Object { $_.Type -eq 'sccm_system_management_writable' }).Count -eq 0 -and @($rSccmN.NotEvaluated | Where-Object { $_.Type -eq 'sccm_system_management_writable' }).Count -eq 0) 'SCCM: no System Management container is no SCCM, evaluated and clean'
+$sSccmO = Import-ADSnapshot (Join-Path $tmp 'demo.json'); $sSccmO.PSObject.Properties.Remove('sccm')
+$rSccmO = Invoke-Analysis $sSccmO
+Assert-True (@($rSccmO.Findings | Where-Object { $_.Type -eq 'sccm_system_management_writable' }).Count -eq 0 -and @($rSccmO.NotEvaluated | Where-Object { $_.Type -eq 'sccm_system_management_writable' -and $_.Reason -match 'older collector' }).Count -eq 1) 'SCCM: older snapshot without the container is not evaluated, not clean'
+# ESC17: WSUS over HTTPS (DC GPO) and MooseESC15 (supplied subject, server authentication, Domain Users).
+$e17 = @($r.Findings | Where-Object { $_.Type -eq 'adcs_esc17' })
+Assert-True ($e17.Count -eq 1 -and $e17[0].Object -eq 'Moose ESC15 SchemaV1' -and $e17[0].Detail -match 'server authentication EKU' -and $e17[0].Detail -match 'https://wsus02\.moosebank\.local:8531 \(GPO MooseBank DC Extra\)') "ESC17: template issuing server certificates for any name with WSUS over HTTPS (got $($e17.Object -join ', '))"
+$sE17 = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+foreach ($g in @($sE17.gpo.gpos)) { if ($g.registryValues.PSObject.Properties['MACHINE\Software\Policies\Microsoft\Windows\WindowsUpdate\WUServer'] -and "$($g.registryValues.'MACHINE\Software\Policies\Microsoft\Windows\WindowsUpdate\WUServer')" -match 'https') { $g.registryValues.PSObject.Properties.Remove('MACHINE\Software\Policies\Microsoft\Windows\WindowsUpdate\WUServer') } }
+Assert-True (@((Invoke-Analysis $sE17).Findings | Where-Object { $_.Type -eq 'adcs_esc17' }).Count -eq 0) 'ESC17: no WSUS over HTTPS, no finding'
 $sw = @($r.Findings | Where-Object { $_.Type -eq 'sysvol_writable' })
 Assert-True ($sw.Count -eq 1 -and $sw[0].Object -eq 'NETLOGON (scripts)' -and $sw[0].Severity -eq 'Critical' -and $sw[0].Detail -match 'MOOSEBANK\\Domain Users \(Modify' -and $sw[0].Detail -notmatch 'Server Operators|Authenticated') "SYSVOL: NETLOGON writable by Domain Users, defaults and GPCO ignored (got $($sw.Detail))"
 $snapSw = Import-ADSnapshot (Join-Path $tmp 'demo.json')
@@ -395,7 +418,7 @@ $deep = Import-ADSnapshot (Join-Path $tmp 'deep.json')
 $rd = Invoke-Analysis $deep
 Assert-True (@($rd.NotEvaluated | Where-Object { $_.Type -eq 'dangerous_ace_anywhere' }).Count -eq 0) 'deep run evaluates dangerous_ace_anywhere'
 Assert-True (Has $rd 'dangerous_ace_anywhere' 'MOOSEBANK\Helpdesk' 'High') 'deep: non-priv GenericAll over a DA'
-Assert-True ($rd.Findings.Count -eq 198) "deep total findings: expected 198, got $($rd.Findings.Count)"
+Assert-True ($rd.Findings.Count -eq 200) "deep total findings: expected 200, got $($rd.Findings.Count)"
 Assert-True (Has $rd 'kds_root_key_readable' 'MOOSEBANK\Helpdesk' 'High') 'deep: Helpdesk can read the KDS root key (Golden gMSA)'
 Assert-True (-not (Has $rd 'kds_root_key_readable' 'MOOSEBANK\Domain Admins')) 'deep: Domain Admins on the KDS root key is the default'
 Assert-True (@($r.NotEvaluated | Where-Object { $_.Type -eq 'kds_root_key_readable' }).Count -eq 1) 'kds_root_key_readable not evaluated without -Deep'
@@ -447,7 +470,7 @@ Write-Host "[partial]"
 $partial = Import-ADSnapshot (Join-Path $tmp 'partial.json')
 $rp = Invoke-Analysis $partial
 $ne = @($rp.NotEvaluated | ForEach-Object { $_.Type })
-Assert-True ($rp.Findings.Count -eq 183) "partial total findings: expected 183, got $($rp.Findings.Count)"
+Assert-True ($rp.Findings.Count -eq 185) "partial total findings: expected 185, got $($rp.Findings.Count)"
 Assert-True (($ne -join ',') -eq 'fgpp_weak,dcsync_rights,sync_laps_rights,dangerous_ace_tier0,nonstandard_owner_tier0,gpp_cpassword,sysvol_writable,sysvol_script_secrets,dangerous_ace_anywhere,kds_root_key_readable,badsuccessor_dmsa_create,laps_readers,gpo_autologon_password,pwq_duplicate_passwords,pwq_default_password,pwq_empty_password,pwq_breached_password,pwq_cleartext_stored') "partial not-evaluated set: got $($ne -join ',')"
 
 # ------------------------------------------------------------- mutations
@@ -833,7 +856,7 @@ $ef = @(Invoke-EntraChecks -Snapshot $entra -Config $ecfg)
 function EHas { param([string]$Type, [string]$Object = '', [string]$Sev = '') @($ef | Where-Object { $_.Type -eq $Type -and (-not $Object -or $_.Object -eq $Object) -and (-not $Sev -or $_.Severity -eq $Sev) }).Count -gt 0 }
 Assert-True (EHas 'entra_security_defaults_off') 'entra: security defaults off + no CA MFA'
 $eSev = @{}; foreach ($x in $ef) { $eSev[$x.Severity] = 1 + [int]$eSev[$x.Severity] }
-Assert-True ($ef.Count -eq 89 -and $eSev['Critical'] -eq 4 -and $eSev['High'] -eq 19 -and $eSev['Medium'] -eq 27 -and $eSev['Low'] -eq 39) "entra total findings: expected 89 (4/19/27/39), got $($ef.Count) ($($eSev['Critical'])/$($eSev['High'])/$($eSev['Medium'])/$($eSev['Low']))"
+Assert-True ($ef.Count -eq 93 -and $eSev['Critical'] -eq 4 -and $eSev['High'] -eq 21 -and $eSev['Medium'] -eq 27 -and $eSev['Low'] -eq 41) "entra total findings: expected 93 (4/21/27/41), got $($ef.Count) ($($eSev['Critical'])/$($eSev['High'])/$($eSev['Medium'])/$($eSev['Low']))"
 # EntraFalcon gaps: groups behind CA exclusions and admin roles, Entra Connect app, look-alike names.
 $eg = @($ef | Where-Object { $_.Type -eq 'entra_ca_excluded_group_weak' })
 Assert-True ($eg.Count -eq 1 -and $eg[0].Object -eq 'Project Elk team' -and $eg[0].Detail -match 'public Microsoft 365 group' -and $eg[0].Detail -match 'non-admin user12@') "entra: public, user-owned group excluded from CA flagged; the admin-owned emergency group is not (got $($eg.Object -join ', '))"
@@ -872,6 +895,22 @@ Assert-True (@(Invoke-EntraChecks -Snapshot $entraMa -Config $ecfg | Where-Objec
 $entraS9 = Import-ADSnapshot (Join-Path $tmp 'entra.json'); $entraS9.meta.schemaVersion = 8; $entraS9.PSObject.Properties.Remove('intuneApprovalPolicies')
 $efS9 = @(Invoke-EntraChecks -Snapshot $entraS9 -Config $ecfg); $neS9 = @(Get-EntraNotEvaluated -Snapshot $entraS9 | ForEach-Object { $_.Type })
 Assert-True (@($efS9 | Where-Object { $_.Type -eq 'entra_intune_no_multi_admin_approval' }).Count -eq 0 -and ($neS9 -contains 'entra_intune_no_multi_admin_approval') -and ($neS9 -notcontains 'entra_intune_role_weak_group')) 'entra: schema 8 snapshot: Multi Admin Approval not evaluated and silent, the Intune role check still runs'
+# Schema 10: Azure AD Graph and entitlement catalog roles.
+$eag = @($ef | Where-Object { $_.Type -eq 'entra_app_azure_ad_graph' })
+Assert-True ($eag.Count -eq 2 -and @($eag | Where-Object { $_.Object -eq 'Legacy Sync App' -and $_.Severity -eq 'Low' -and $_.Detail -match 'requests 1 application and 1 delegated' -and $_.Detail -match '1 application permission\(s\) granted' }).Count -eq 1 -and @($eag | Where-Object { $_.Object -eq 'Mail Helper Pro' -and $_.Detail -match 'delegated User\.Read \(consent by 1 user' }).Count -eq 1) "entra: Azure AD Graph permissions, one finding per app (registration and its service principal together), Microsoft's own service principal left out (got $($eag.Object -join ', '))"
+$ecr = @($ef | Where-Object { $_.Type -eq 'entra_catalog_role_privileged_group' })
+Assert-True ($ecr.Count -eq 2 -and (EHas 'entra_catalog_role_privileged_group' 'IT resources: user12@moosebank.onmicrosoft.com' 'High') -and @($ecr | Where-Object { $_.Object -match 'user14@' -and $_.Detail -match '^Access package assignment manager' -and $_.Detail -match 'Tier 2 security operators' }).Count -eq 1) "entra: non-admin catalog owner and assignment manager over a catalog holding an admin group flagged; an admin owner, a reader and a catalog without admin groups are not (got $($ecr.Object -join ', '))"
+$entraNoPkg = Import-ADSnapshot (Join-Path $tmp 'entra.json'); @($entraNoPkg.entitlementCatalogs)[0].accessPackageIds = @()
+$ecrNoPkg = @(Invoke-EntraChecks -Snapshot $entraNoPkg -Config $ecfg | Where-Object { $_.Type -eq 'entra_catalog_role_privileged_group' })
+Assert-True ($ecrNoPkg.Count -eq 1 -and $ecrNoPkg[0].Object -match 'user12@') 'entra: an assignment manager is flagged only when a package of the catalog grants the admin group'
+$entraS10 = Import-ADSnapshot (Join-Path $tmp 'entra.json'); $entraS10.meta.schemaVersion = 9
+foreach ($p in 'entitlementCatalogs', 'catalogRoles', 'aadGraphSpId') { $entraS10.PSObject.Properties.Remove($p) }
+$efS10 = @(Invoke-EntraChecks -Snapshot $entraS10 -Config $ecfg); $neS10 = @(Get-EntraNotEvaluated -Snapshot $entraS10 | ForEach-Object { $_.Type })
+Assert-True (@($efS10 | Where-Object { $_.Type -in 'entra_app_azure_ad_graph', 'entra_catalog_role_privileged_group' }).Count -eq 0 -and ($neS10 -contains 'entra_app_azure_ad_graph') -and ($neS10 -contains 'entra_catalog_role_privileged_group') -and ($neS10 -notcontains 'entra_intune_no_multi_admin_approval')) 'entra: schema 9 snapshot: the schema 10 checks are not evaluated and silent, the others still run'
+$entraCF = Import-ADSnapshot (Join-Path $tmp 'entra.json'); $entraCF.meta.collectionErrors = @([PSCustomObject]@{ section = 'catalogRoles'; message = 'Forbidden' }); $entraCF.catalogRoles = $null
+Assert-True (@(Invoke-EntraChecks -Snapshot $entraCF -Config $ecfg | Where-Object { $_.Type -eq 'entra_catalog_role_privileged_group' }).Count -eq 0 -and (@(Get-EntraNotEvaluated -Snapshot $entraCF | ForEach-Object { $_.Type }) -contains 'entra_catalog_role_privileged_group')) 'entra: catalog roles not readable: not evaluated, no finding'
+$epzC = New-EntraPseudonymizer -Snapshot $entra
+Assert-True ((Protect-EntraText $epzC 'IT resources: user12@moosebank.onmicrosoft.com') -notmatch 'IT resources|user12') 'entra: catalog names are pseudonymized'
 $entraS = Import-ADSnapshot (Join-Path $tmp 'entra.json')
 $entraS.conditionalAccess = @($entraS.conditionalAccess) + @([PSCustomObject]@{ id = 'ca-admins'; displayName = 'MFA for admin roles'; state = 'enabled'; includeUsers = @(); excludeUsers = @(); excludeGroups = @(); includeGroups = @(); includeRoles = @('62e90394-69f5-4237-9190-012177145e10', '9b895d92-2cd3-44c7-9d02-a6ac2d5ea5c3'); includeApplications = @('All'); includeUserActions = @(); includeLocations = @(); excludeLocations = @(); clientAppTypes = @('all'); userRiskLevels = @(); signInRiskLevels = @(); transferMethods = ''; grantControls = @('mfa'); authStrengthId = ''; signInFrequency = $false; signInFrequencyInterval = ''; persistentBrowser = ''; tokenProtection = $false; includeServicePrincipals = @() })
 $efS = @(Invoke-EntraChecks -Snapshot $entraS -Config $ecfg)
@@ -1177,7 +1216,7 @@ $tempBefore = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Di
 $bz = New-IDWolfBundle -Snapshot (Join-Path $tmp 'demo.json') -PasswordQuality (Join-Path $root 'examples\passwordquality.example.json') -OutFile (Join-Path $tmp 'bundle.zip')
 $bzCsv = Join-Path $tmp 'bundle.csv'
 & (Join-Path $root 'IDWolf.ps1') -Snapshot $bz -OutHtml (Join-Path $tmp 'bundle.html') -OutCsv $bzCsv -SkipLLM 6>&1 2>&1 | Out-Null
-Assert-True ((Test-Path $bzCsv) -and @(Import-Csv $bzCsv).Count -eq 201) "zip with snapshot + password quality analyzes like the two files (201 findings, got $(if (Test-Path $bzCsv) { @(Import-Csv $bzCsv).Count }))"
+Assert-True ((Test-Path $bzCsv) -and @(Import-Csv $bzCsv).Count -eq 203) "zip with snapshot + password quality analyzes like the two files (203 findings, got $(if (Test-Path $bzCsv) { @(Import-Csv $bzCsv).Count }))"
 $tempAfter = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Directory -Filter 'idwolf_bundle_*' -ErrorAction SilentlyContinue).Count
 Assert-True ($tempAfter -eq $tempBefore) 'extracted bundle removed from TEMP after the analysis'
 # A file changed inside the zip no longer matches the manifest.
@@ -1203,7 +1242,7 @@ $encRaw = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes(
 Assert-True ($encHead -eq 'IDWOLFENC1' -and $encZipMsg -and $encRaw -notmatch 'moosebank|snapshot\.json') 'encrypted bundle: IDWolf header, not readable as a zip, no plain names inside'
 $encCsv = Join-Path $tmp 'bundle_enc.csv'
 & (Join-Path $root 'IDWolf.ps1') -Snapshot $encBz -BundlePassword $encPw -OutHtml (Join-Path $tmp 'bundle_enc.html') -OutCsv $encCsv -SkipLLM 6>&1 2>&1 | Out-Null
-Assert-True ((Test-Path $encCsv) -and @(Import-Csv $encCsv).Count -eq 201) "encrypted bundle analyzes like the plain one with the right password (got $(if (Test-Path $encCsv) { @(Import-Csv $encCsv).Count }))"
+Assert-True ((Test-Path $encCsv) -and @(Import-Csv $encCsv).Count -eq 203) "encrypted bundle analyzes like the plain one with the right password (got $(if (Test-Path $encCsv) { @(Import-Csv $encCsv).Count }))"
 $wrongMsg = ''; try { Expand-IDWolfBundle -Path $encBz -Password (ConvertTo-SecureString 'wrong password here' -AsPlainText -Force) | Out-Null } catch { $wrongMsg = $_.Exception.Message }
 $tamper2 = Join-Path $tmp 'tampered.idwolf'; $tb = [System.IO.File]::ReadAllBytes($encBz); $tb[100] = $tb[100] -bxor 1; [System.IO.File]::WriteAllBytes($tamper2, $tb)
 $tamperMsg = ''; try { Expand-IDWolfBundle -Path $tamper2 -Password $encPw | Out-Null } catch { $tamperMsg = $_.Exception.Message }
@@ -1221,8 +1260,8 @@ $jl = Join-Path $tmp 'demo.jsonl'
 $jlRows = @([System.IO.File]::ReadAllLines($jl) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
 $jlFind = @($jlRows | Where-Object { $_.event_type -eq 'finding' })
 $jlSum = @($jlRows | Where-Object { $_.event_type -eq 'summary' })
-Assert-True ($jlFind.Count -eq 193 -and $jlSum.Count -eq 1) "jsonl: 193 findings + 1 summary (got $($jlFind.Count) + $($jlSum.Count))"
-Assert-True ($jlSum[0].critical -eq 25 -and $jlSum[0].findings -eq 193 -and $jlSum[0].score -ge 0 -and $jlSum[0].domain -eq 'moosebank.local') 'jsonl summary: counts, score, domain'
+Assert-True ($jlFind.Count -eq 195 -and $jlSum.Count -eq 1) "jsonl: 195 findings + 1 summary (got $($jlFind.Count) + $($jlSum.Count))"
+Assert-True ($jlSum[0].critical -eq 25 -and $jlSum[0].findings -eq 195 -and $jlSum[0].score -ge 0 -and $jlSum[0].domain -eq 'moosebank.local') 'jsonl summary: counts, score, domain'
 Assert-True (@($jlFind | Where-Object { $_.finding_id -notmatch '^[0-9a-f]{16}$' -or $_.severity_score -lt 1 }).Count -eq 0) 'jsonl: every finding has a finding_id and a severity_score'
 Assert-True (@($jlFind | ForEach-Object { $_.finding_id } | Select-Object -Unique).Count -eq $jlFind.Count) 'jsonl: finding_id unique within a run'
 Assert-True ((Get-FindingId 'x_check' 'Bob') -eq (Get-FindingId 'X_CHECK' 'bob')) 'finding_id ignores case, so it survives renames in case only'
@@ -1316,12 +1355,45 @@ try {
     Assert-True ($set.Deep -eq 'y' -and $set.Next -eq 'Z' -and $set.Tenant -eq '' -and $set.OutHtml -eq 'r.html' -and $answers.Count -eq 0) "settings screen edits by number, normalizes y/n and A/Z/S, clears with '-', hides what doesn't apply (got $(($set.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))"
     Assert-True (($changed -join ';') -eq 'Deep=y;Next=Z;Tenant=') "settings screen reports each change once, a refused value not at all (got $($changed -join ';'))"
 
+    # Rights check before a collection: no domain controller answering is a reason, never an error.
+    $rights = Get-CollectorRights -Server '127.0.0.1:1'
+    Assert-True ($rights.Error -and $null -eq $rights.DomainAdmin -and $null -eq $rights.Replication) "rights check: an unreachable DC comes back as unknown with a reason, no exception (got: $($rights.Error))"
+
+    $sess = Get-SessionStatus
+    Assert-True ($null -ne $sess -and @($sess.PSObject.Properties.Name) -join ',' -eq 'Elevated,OnDc,Rsat') 'session status: elevated, on a DC, RSAT, without throwing'
+    # What the rights leave out, named from the catalog's Needs.
+    $uacDa = [PSCustomObject]@{ DomainAdmin = $false; EnterpriseAdmin = $false; Replication = $false; FilteredByUac = $true; Error = '' }
+    $gapTypes = @(Get-RightsGaps -Rights $uacDa -Deep $true | ForEach-Object { Get-ChecksNeeding -Catalog $script:CheckCatalog -Sections $_.Sections })
+    Assert-True ($gapTypes.Count -eq 21 -and $gapTypes -contains 'fgpp_weak' -and $gapTypes -contains 'adcs_esc7' -and $gapTypes -contains 'laps_readers' -and $gapTypes -contains 'pwq_empty_password' -and @(Get-RightsGaps -Rights $uacDa)[0].Reason -match 'filtered by UAC') "rights gaps: a UAC-filtered admin with -Deep misses 21 checks, named by reason (got $($gapTypes.Count))"
+    $fullDa = [PSCustomObject]@{ DomainAdmin = $true; EnterpriseAdmin = $false; Replication = $true; FilteredByUac = $false; Error = '' }
+    Assert-True (@(Get-RightsGaps -Rights $fullDa -Deep $true).Count -eq 0 -and @(Get-RightsGaps -Rights $rights).Count -eq 0) 'rights gaps: none for a Domain Admin with replication rights, none claimed when the rights could not be read'
+
+    # Password-quality reports: only the snapshot's domain, newest first; the analyzer refuses
+    # a report of another domain.
+    $pqDir = Join-Path $tmp 'pqpick'; New-Item -ItemType Directory -Force $pqDir | Out-Null
+    $pqEx = [System.IO.File]::ReadAllText((Join-Path $root 'examples\passwordquality.example.json'))
+    [System.IO.File]::WriteAllText((Join-Path $pqDir 'pwq_a_old.json'), $pqEx)
+    [System.IO.File]::WriteAllText((Join-Path $pqDir 'pwq_z_other.json'), $pqEx.Replace('"moosebank.local"', '"other.example"'))
+    [System.IO.File]::WriteAllText((Join-Path $pqDir 'passwordquality_new.json'), $pqEx)
+    (Get-Item (Join-Path $pqDir 'pwq_a_old.json')).LastWriteTime = (Get-Date).AddDays(-2)
+    (Get-Item (Join-Path $pqDir 'pwq_z_other.json')).LastWriteTime = (Get-Date).AddDays(1)
+    $pqPick = @(Get-PasswordQualityCandidates -Domain 'moosebank.local' -Dirs @($pqDir) | ForEach-Object { Split-Path -Leaf $_ })
+    Assert-True (($pqPick -join ',') -eq 'passwordquality_new.json,pwq_a_old.json' -and @(Get-PasswordQualityCandidates -Domain '' -Dirs @($pqDir)).Count -eq 0) "password-quality reports offered: the snapshot's domain only, newest first (got $($pqPick -join ','))"
+    Assert-True ((Get-SnapshotDomainName (Join-Path $tmp 'demo.json')) -eq 'moosebank.local' -and (Get-SnapshotDomainName (Join-Path $tmp 'entra.json')) -eq '') 'snapshot domain read from a plain AD snapshot, empty for Entra'
+    $pqRefused = ''
+    try { & (Join-Path $root 'IDWolf.ps1') -Snapshot (Join-Path $tmp 'demo.json') -PasswordQualityFile (Join-Path $pqDir 'pwq_z_other.json') -OutHtml (Join-Path $pqDir 'r.html') -SkipLLM *>$null }
+    catch { $pqRefused = $_.Exception.Message }
+    Assert-True ($pqRefused -match 'is for other\.example, the snapshot for moosebank\.local' -and -not (Test-Path -LiteralPath (Join-Path $pqDir 'r.html'))) "analyzer refuses a password-quality report of another domain (got: $pqRefused)"
+
     # The analyzer wizard end to end, answers piped in (Read-Host reads them; no browser is
     # offered because input is redirected). Run 1 answers everything, run 2 reuses it.
     $wizExe = (Get-Process -Id $PID).Path
     $wizDemo = Join-Path $tmp 'demo.json'
     $wizHtml = Join-Path $tmp 'wiz1.html'
-    Push-Location $tmp
+    # A folder of its own: the wizard offers the snapshots and packages it finds in the current
+    # folder, and the encrypted bundle written above would ask for its password.
+    $wizDir = Join-Path $tmp 'wizcwd'; New-Item -ItemType Directory -Force $wizDir | Out-Null
+    Push-Location $wizDir
     try {
         $in1 = @($wizDemo, $wizHtml, 'n', 'n', 'n', 'n', 'S', '') -join "`n"
         $o1 = $in1 | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'IDWolf.ps1') 2>&1 | Out-String
@@ -1334,22 +1406,41 @@ try {
         $o3 = $in3 | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'IDWolf.ps1') 2>&1 | Out-String
         Assert-True ((Read-IDWolfState).analyzer.AiMode -eq 'send' -and [System.IO.File]::ReadAllText($statePath) -notmatch 'AIzaFAKEKEY') "wizard remembers AI mode 'send' but never the pasted key"
 
-        # Launcher: a snapshot collected but never analyzed is offered on the next start.
+        # A newer snapshot than the last analyzed one is offered in its place, same settings.
+        $wizNewer = Join-Path $wizDir 'adsnapshot_newer.json'
+        Copy-Item -LiteralPath $wizDemo -Destination $wizNewer
+        (Get-Item -LiteralPath $wizNewer).LastWriteTime = (Get-Date).AddMinutes(1)
+        $o4 = (@('', '') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'IDWolf.ps1') 2>&1 | Out-String
+        Assert-True ($o4 -match 'A newer snapshot is here: .*adsnapshot_newer\.json' -and $o4 -match 'Report written to ' -and (Read-IDWolfState).analyzer.Snapshot -like '*adsnapshot_newer.json') "wizard offers a snapshot newer than the last analyzed one: $(if ($o4 -notmatch 'A newer snapshot') { $o4 })"
+        Remove-Item -LiteralPath $wizNewer
+
+        # Launcher: a snapshot collected but never analyzed is offered on the next start. The AI
+        # step is asked too: skip runs the analyzer with -SkipLLM, so it never asks at the end.
         Save-IDWolfState -Section pending -Values @{ Kind = 'ad'; Snapshot = $wizDemo; CollectedAt = '2026-10-15 10:00' } -Replace
         $lHtml = Join-Path $tmp 'launch1.html'
-        $inL = @('', 'A', $lHtml, '', '', 'n', 'Q') -join "`n"
+        $inL = @('', 'A', $lHtml, 'S', 'Q') -join "`n"
         $oL = $inL | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
         $st = Read-IDWolfState
-        Assert-True ($oL -match 'was never analyzed or packaged' -and (Test-Path -LiteralPath $lHtml) -and -not $st.pending.Snapshot -and $st.launcher.Next -eq 'A') "launcher picks up a pending snapshot, analyzes it and clears it: $(if (-not (Test-Path -LiteralPath $lHtml)) { $oL })"
+        Assert-True ($oL -match 'was never analyzed or packaged' -and (Test-Path -LiteralPath $lHtml) -and -not $st.pending.Snapshot -and $st.launcher.Ai -eq 'S' -and $oL -notmatch 'send to Gemini') "launcher picks up a pending snapshot, analyzes it with the AI step skipped and clears it: $(if (-not (Test-Path -LiteralPath $lHtml) -or $oL -match 'send to Gemini') { $oL })"
         # Full Entra run: the questions, then the settings screen; a change there is remembered,
         # Q cancels before anything is collected. The next start offers the same run again and
         # shows the screen without asking the questions.
-        $in8 = @('8', '', '', 'n', 'Z', '2', 'contoso.example', 'Q', 'Q') -join "`n"
+        $in8 = @('2', '', '', 'n', 'Z', '2', 'contoso.example', 'Q', 'Q') -join "`n"
         $o8 = $in8 | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
         $st = Read-IDWolfState
-        Assert-True ($o8 -match 'Settings:' -and $o8 -match 'Tenant \(empty = sign-in default\)\s+contoso\.example' -and $o8 -match 'Cancelled: nothing collected' -and $o8 -notmatch 'Collect-EntraSnapshot\.ps1 ---' -and $st.launcher.Tenant -eq 'contoso.example' -and $st.launcher.LastRun -eq '8') "full run shows the settings screen, remembers an edit, Q collects nothing: $(if ($o8 -notmatch 'Cancelled: nothing collected') { $o8 })"
+        Assert-True ($o8 -match 'Settings:' -and $o8 -match 'Tenant \(empty = sign-in default\)\s+contoso\.example' -and $o8 -match 'Cancelled: nothing collected' -and $o8 -notmatch 'Collect-EntraSnapshot\.ps1 ---' -and $st.launcher.Tenant -eq 'contoso.example' -and $st.launcher.LastRun -eq '2') "full run shows the settings screen, remembers an edit, Q collects nothing: $(if ($o8 -notmatch 'Cancelled: nothing collected') { $o8 })"
         $oR = (@('', 'Q', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
         Assert-True ($oR -match 'Last time: full Entra run, tenant contoso\.example' -and $oR -match 'as last time' -and $oR -match 'Settings:' -and $oR -match 'Cancelled: nothing collected') "repeating the last run goes straight to the settings screen: $(if ($oR -notmatch 'Settings:') { $oR })"
+        # Single Entra collection (5): same screen, "Then" starts at S whatever the full run
+        # remembers, and is not saved; switching it to A shows the AI step.
+        $in5 = @('n', '5', '', '', 'n', '4', 'A', 'Q', 'Q') -join "`n"
+        $o5 = $in5 | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
+        $st = Read-IDWolfState
+        Assert-True ($o5 -match 'Then \(A analyze, Z zip, S stop\)\s+S' -and $o5 -match 'AI summary \(S skip, A ask, D dry-run\)' -and $o5 -match 'Cancelled: nothing collected' -and $st.launcher.Next -eq 'Z' -and $st.launcher.LastRun -eq '2') "single collection: settings screen, Then = S, not remembered, AI step once Then = A: $(if ($o5 -notmatch 'Cancelled: nothing collected') { $o5 })"
+        # A state file from before the renumbering remembers the full AD run as 5.
+        Save-IDWolfState -Section launcher -Values @{ LastRun = '5' }
+        $oM = (@('n', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
+        Assert-True ($oM -match 'Last time: full AD run' -and (Read-IDWolfState).launcher.LastRun -eq '1') "an old LastRun 5 reads as the full AD run, now 1: $(if ($oM -notmatch 'full AD run') { $oM })"
         $oC = (@('n', 'C', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
         Assert-True ($oC -match 'Remembered choices deleted' -and -not (Test-Path -LiteralPath $statePath)) 'launcher [C] deletes the remembered choices'
     }

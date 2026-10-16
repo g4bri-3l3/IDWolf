@@ -63,7 +63,7 @@ Param(
 # account with broad read rights. Without it those checks show up as
 # "not evaluated".
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.3"
+$script:CollectorVersion = "1.4"
 $script:Errors = New-Object System.Collections.Generic.List[object]
 
 function Add-CollectionError {
@@ -805,6 +805,27 @@ if (-not $SkipAcl) {
         Write-Host "  $($ouAcls.Count) OU and container security descriptors read"
     }
     catch { Add-CollectionError 'ouAcls' $_.Exception.Message }
+}
+
+# SCCM / MECM: site servers publish themselves in the System Management container, and clients
+# look management points up there. Its permissions and what is published, nothing else; no
+# container means no SCCM in this domain (present = false), not a gap.
+$sccm = $null
+if (-not $SkipAcl) {
+    try {
+        $smDn = "CN=System Management,CN=System,$domainDN"
+        $sm = @(Get-ADObject -SearchBase "CN=System,$domainDN" -SearchScope OneLevel -LDAPFilter '(&(objectClass=container)(cn=System Management))' @common | Where-Object { $_ })
+        if ($sm.Count -eq 0) { $sccm = [ordered]@{ present = $false } }
+        else {
+            $rec = Read-ObjectSecurity -Dn $smDn -Target 'SystemManagement' -ErrorSection 'sccm'
+            if ($rec) {
+                $mps = @(Get-ADObject -SearchBase $smDn -LDAPFilter '(objectClass=mSSMSManagementPoint)' -Properties dNSHostName, mSSMSSiteCode @common | Where-Object { $_ } | ForEach-Object { [ordered]@{ host = "$($_.dNSHostName)"; siteCode = "$($_.mSSMSSiteCode)" } })
+                $sccm = [ordered]@{ present = $true; acl = $rec; managementPoints = $mps }
+                Write-Host "  SCCM System Management container read ($($mps.Count) management point(s))"
+            }
+        }
+    }
+    catch { Add-CollectionError 'sccm' $_.Exception.Message; $sccm = $null }
 }
 
 # --------------------------------------------------------------------------
@@ -1722,6 +1743,7 @@ $snapshot = [ordered]@{
     foreignPrincipals = $fsps
     acls              = $acls
     ouAcls            = $ouAcls
+    sccm              = $sccm
     deepAcls          = $deepAcls
     kdsRootKeyAcls    = $kdsRootKeyAcls
     preWin2000        = $preWin2000

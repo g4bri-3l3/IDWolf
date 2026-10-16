@@ -1,15 +1,75 @@
 # Changelog
 
-## Unreleased
+## 1.4 - 2026-10-16
 
+- Launcher, AD collections (1 and 3): before the settings screen it shows what the collecting
+  account (or `-Credential`) can do: elevated session, Domain Admins / Enterprise Admins (token
+  groups), replication (DCSync) rights on the domain head, and the checks those rights will leave
+  "not evaluated", named from the catalog's `Needs` and grouped by reason. Read-only LDAP through
+  .NET (`Get-CollectorRights`, `lib\Wizard.ps1`), no RSAT needed; an unreachable domain is shown
+  as "not read" with LDAP's own message. Admin groups that UAC keeps as deny-only in a window that
+  is not elevated count as filtered, not as rights.
+- Launcher, on start: on a domain controller in a window that is not elevated it says that even
+  a Domain Admin collects like a standard user there, how to start it as administrator, and
+  offers to quit (it never restarts itself: the safety review forbids starting processes). Not
+  elevated without RSAT, it notes that an AD collection can't install RSAT from that window.
+- New check `sccm_system_management_writable` (High; Critical for Authenticated Users, Domain
+  Users or Domain Computers): a principal that is neither Tier 0 nor a site server (a computer
+  account, or a group of computer accounts only) can write to the SCCM / MECM System Management
+  container, so it can publish a rogue management point. The detail lists the site servers with
+  rights there and the published management points. The collector reads that container's ACL
+  and its management points (section `sccm`; no container means no SCCM, not a gap). It is its
+  own read, so a failed domain head ACL no longer hides it; older snapshots list it as "not
+  evaluated".
+- New check `adcs_esc17` (High): a GPO points Windows Update at WSUS over HTTPS and a published
+  template lets low-privileged users enroll with a supplied subject for server authentication
+  (or any purpose), without approval: anyone can get a trusted certificate for the WSUS name.
+  Read from data already collected (GPO templates, AD CS templates).
+- The demo gives 195 findings (25 Critical, 77 High, 67 Medium, 26 Low), 203 with the example
+  password report; `partial` 185, `-Deep` 200; 169 AD checks.
+- New Entra check `entra_app_azure_ad_graph` (Low): an app registration that requests
+  permissions on the retired Azure AD Graph, or a service principal granted some there
+  (application permissions or delegated consents; Microsoft's own apps left out). One finding
+  per app. The collector now reads `requiredResourceAccess` (counts only), the Azure AD Graph
+  grants of each service principal and the resource of each delegated grant.
+- New Entra check `entra_catalog_role_privileged_group` (High): a non-admin, guest or service
+  principal who is catalog owner or access package manager of an entitlement catalog holding a
+  group with an admin role, or its assignment manager while a package of the catalog already
+  grants that group. The collector reads the catalogs (resources, packages) and the catalog role
+  assignments (`EntitlementManagement.Read.All`, already requested). Catalog names are
+  pseudonymized for the AI step.
+- Entra snapshots move to schema 10; older ones list both checks as "not evaluated". The
+  synthetic tenant gives 93 findings (4 Critical, 21 High, 27 Medium, 41 Low), 90 Entra checks.
+- Launcher menu reordered: 1 full AD run, 2 full Entra run, then the single steps (3 AD
+  collection, 4 password quality, 5 Entra collection, 6 analysis, 7 package). "Add AI summary"
+  is gone: the analysis (6) already asks for the AI step and also opens encrypted `.idwolf`
+  packages, which the old option refused. A remembered last run from before (5 or 8) is read
+  as 1 or 2.
+- Launcher, single collections (3 and 5): the same questions and settings screen as a full run
+  (output path, deep collection / tenant, device code, the DC on a workgroup PC), with "Then"
+  set to stop. The snapshot stays pending, so the next start offers to analyze or package it;
+  "stop" in a full run now does the same. Before, option 3 started the collector's own setup
+  and failed on a workgroup PC, where it never asked for a DC.
+- Launcher, AI step on the settings screen: skip (`-SkipLLM`, so a long run never stops at the
+  end on "send to Gemini?"), ask (the confirmation before sending) or dry-run (the prompt only,
+  `<report>_ai_prompt.txt`). Model and attempts show only for ask.
+- Launcher: clearing the DC with "-" on the settings screen of a workgroup PC cancels the run
+  with a message; before, the old DC was still used.
+- Password-quality reports from another domain: the launcher names reports
+  `pwq_<domain>_<timestamp>.json`, and the wizard and the package option offer only reports of
+  the snapshot's domain (read from the report, not its name), newest first. `IDWolf.ps1` refuses
+  a report whose domain differs from the snapshot's (`-PasswordQualityFile` or inside a
+  package); a report that does not know its domain is accepted with a warning.
+- Analyzer wizard: when a snapshot newer than the last analyzed one is in the folder or in
+  `.\output`, "same settings again?" offers that one instead.
 - Launcher and analyzer wizard: answers are remembered between runs and offered as defaults,
   saved after each answer so a Ctrl+C half way loses nothing. On start the launcher offers to
   pick up a snapshot that was collected but never analyzed or packaged, or to repeat the last
-  full run (option 5 or 8) with the same answers; `[C]` deletes what was remembered. The
+  full run (option 1 or 2) with the same answers; `[C]` deletes what was remembered. The
   analyzer wizard offers the last snapshot with the same settings, and compares against the
   report of the last run. The file (`%LOCALAPPDATA%\IDWolf\wizard.json`, new `lib\Wizard.ps1`)
   takes keys from a fixed list only: never a password, an API key or directory data.
-- Launcher, full runs (5 and 8): every question is asked up front, password quality and what to
+- Launcher, full runs (1 and 2): every question is asked up front, password quality and what to
   do after collecting included, then one settings screen lists all the answers. Change one by
   its number, Q cancels, Enter starts; nothing is collected before that. Repeating the last run
   goes straight to that screen.

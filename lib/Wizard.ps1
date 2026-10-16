@@ -9,8 +9,30 @@
 
 $script:WizardStateKeys = @{
     analyzer = @('Snapshot', 'OutJson', 'ExceptionsFile', 'CompareTo', 'PasswordQualityFile', 'AiMode', 'Model', 'AiAttempts', 'LastReport')
-    launcher = @('LastRun', 'Server', 'Deep', 'Pq', 'WeakList', 'Next', 'Tenant', 'DeviceCode', 'Model', 'AiAttempts')
+    launcher = @('LastRun', 'Server', 'Deep', 'Pq', 'WeakList', 'Next', 'Ai', 'Tenant', 'DeviceCode', 'Model', 'AiAttempts')
     pending  = @('Kind', 'Snapshot', 'PasswordQuality', 'CollectedAt')
+}
+
+# The DNS name of the domain a plain JSON snapshot describes ('' for an Entra snapshot, a zip,
+# or a file that can't be read).
+function Get-SnapshotDomainName {
+    param([string]$Path)
+    if (-not $Path -or $Path -notmatch '(?i)\.json$' -or -not (Test-Path -LiteralPath $Path -PathType Leaf)) { return '' }
+    try { return "$(([System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $Path).ProviderPath) | ConvertFrom-Json).domain.dnsRoot)" }
+    catch { return '' }
+}
+
+# Password-quality reports (Export-PasswordQuality.ps1) in this folder and .\output for one
+# domain, newest first. Matched on the domain written inside the report, never on the file
+# name: a report of another domain is never offered for a snapshot.
+function Get-PasswordQualityCandidates {
+    param([string]$Domain, [string[]]$Dirs = @('.', 'output'))
+    if (-not $Domain) { return }
+    $files = @(Get-ChildItem -Path $Dirs -Filter '*.json' -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)pwq|passwordquality' } | Sort-Object LastWriteTimeUtc, FullName -Descending)
+    foreach ($f in $files) {
+        try { $d = "$(([System.IO.File]::ReadAllText($f.FullName) | ConvertFrom-Json).domain)" } catch { continue }
+        if ($d -and $d -eq $Domain) { Resolve-Path -Relative -LiteralPath $f.FullName }
+    }
 }
 
 function Get-IDWolfStatePath {
@@ -117,6 +139,114 @@ function Edit-RunSettings {
         $Settings[$k] = $v
         & $OnChange $k $v
     }
+}
+
+# What the account that will collect can do, read before anything runs (launcher, AD
+# collections): elevated session, Domain Admins / Enterprise Admins through its token groups,
+# replication (DCSync) rights on the domain head. Read-only LDAP through .NET, so no RSAT is
+# needed. Never throws: anything it can't read comes back as $null with the reason in Error.
+function Get-CollectorRights {
+    param([string]$Server = '', [System.Management.Automation.PSCredential]$Credential = $null)
+    $r = [ordered]@{ Account = ''; Elevated = $null; DomainAdmin = $null; EnterpriseAdmin = $null; Replication = $null; FilteredByUac = $false; Error = '' }
+    try {
+        $me = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $r.Elevated = (New-Object Security.Principal.WindowsPrincipal($me)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        $r.Account = if ($Credential) { $Credential.UserName } else { $me.Name }
+    }
+    catch { }
+    try {
+        $prefix = if ($Server) { "LDAP://$Server/" } else { 'LDAP://' }
+        $open = {
+            param([string]$Path)
+            if ($Credential) { New-Object System.DirectoryServices.DirectoryEntry($Path, $Credential.UserName, $Credential.GetNetworkCredential().Password) }
+            else { New-Object System.DirectoryServices.DirectoryEntry($Path) }
+        }
+        $rootDse = & $open ($prefix + 'RootDSE')
+        # An explicit bind, so a missing domain or a refused account surfaces as LDAP's own message.
+        try { $rootDse.RefreshCache(@('defaultNamingContext', 'rootDomainNamingContext')) }
+        catch { $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }; throw "no domain controller answered over LDAP$(if ($Server) { " ($Server)" }): $("$($e.Message)".Trim())" }
+        $nc = "$($rootDse.Properties['defaultNamingContext'].Value)"
+        if (-not $nc) { throw 'the domain could not be reached' }
+        $rootNc = "$($rootDse.Properties['rootDomainNamingContext'].Value)"
+        $head = & $open ($prefix + $nc)
+        $domSid = (New-Object Security.Principal.SecurityIdentifier([byte[]]$head.Properties['objectSid'].Value, 0)).Value
+        $rootSid = $domSid
+        if ($rootNc -and $rootNc -ne $nc) { $rootSid = (New-Object Security.Principal.SecurityIdentifier([byte[]](& $open ($prefix + $rootNc)).Properties['objectSid'].Value, 0)).Value }
+
+        # The account's SID and its token groups (nested groups included).
+        $sids = @{}
+        if ($Credential) {
+            $n = "$($Credential.UserName)"
+            $sam = if ($n -match '\\') { ($n -split '\\', 2)[1] } elseif ($n -match '@') { ($n -split '@', 2)[0] } else { $n }
+            $esc = [regex]::Replace($sam, '[\\*()\x00]', { param($m) '\{0:x2}' -f [int][char]$m.Value })
+            $searcher = New-Object System.DirectoryServices.DirectorySearcher($head, "(&(objectCategory=person)(sAMAccountName=$esc))", @('distinguishedName'))
+            $hit = $searcher.FindOne()
+            if (-not $hit) { throw "account $sam not found in $nc" }
+            $u = & $open ($prefix + "$($hit.Properties['distinguishedname'][0])")
+            $u.RefreshCache(@('tokenGroups', 'objectSid'))
+            $sids[(New-Object Security.Principal.SecurityIdentifier([byte[]]$u.Properties['objectSid'].Value, 0)).Value] = $true
+            foreach ($b in @($u.Properties['tokenGroups'])) { $sids[(New-Object Security.Principal.SecurityIdentifier([byte[]]$b, 0)).Value] = $true }
+        }
+        else {
+            # In a session that is not elevated, UAC keeps the admin groups in the token as
+            # deny-only: they grant nothing (on a DC that turns a Domain Admin into a standard user).
+            $deny = @{}
+            foreach ($c in @($me.Claims | Where-Object { "$($_.Type)" -like '*denyonlysid' })) { $deny["$($c.Value)"] = $true }
+            $sids[$me.User.Value] = $true
+            foreach ($g in @($me.Groups)) { if (-not $deny.ContainsKey($g.Value)) { $sids[$g.Value] = $true } }
+            $r.FilteredByUac = $deny.ContainsKey("$domSid-512") -or $deny.ContainsKey("$rootSid-519")
+        }
+        $r.DomainAdmin = $sids.ContainsKey("$domSid-512")
+        $r.EnterpriseAdmin = $sids.ContainsKey("$rootSid-519")
+
+        # Replication needs both extended rights on the domain head, from any of those SIDs.
+        $get = '1131f6aa-9c07-11d1-f79f-00c04fc2dcd2'; $getAll = '1131f6ad-9c07-11d1-f79f-00c04fc2dcd2'
+        $hasGet = $false; $hasAll = $false
+        foreach ($ace in @($head.ObjectSecurity.GetAccessRules($true, $true, [Security.Principal.SecurityIdentifier]))) {
+            if ("$($ace.AccessControlType)" -ne 'Allow' -or -not $sids.ContainsKey($ace.IdentityReference.Value)) { continue }
+            $rights = "$($ace.ActiveDirectoryRights)"; $ot = "$($ace.ObjectType)".ToLower()
+            $any = $rights -match '\bGenericAll\b' -or ($rights -match '\bExtendedRight\b' -and $ot -eq '00000000-0000-0000-0000-000000000000')
+            if ($any -or ($rights -match '\bExtendedRight\b' -and $ot -eq $get)) { $hasGet = $true }
+            if ($any -or ($rights -match '\bExtendedRight\b' -and $ot -eq $getAll)) { $hasAll = $true }
+        }
+        $r.Replication = ($hasGet -and $hasAll)
+    }
+    catch { $r.Error = "$($_.Exception.Message)".Trim() }
+    return [PSCustomObject]$r
+}
+
+# This window: elevated or not, on a domain controller or not, RSAT's ActiveDirectory module
+# present or not. Local reads only, instant; anything unreadable comes back $null.
+function Get-SessionStatus {
+    $s = [ordered]@{ Elevated = $null; OnDc = $null; Rsat = $null }
+    try { $s.Elevated = (New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } catch { }
+    # ProductType 2 = domain controller.
+    try { $s.OnDc = ([int](Get-CimInstance Win32_OperatingSystem -ErrorAction Stop).ProductType -eq 2) } catch { }
+    try { $s.Rsat = [bool](Get-Module -ListAvailable -Name ActiveDirectory -ErrorAction Stop) } catch { }
+    return [PSCustomObject]$s
+}
+
+# What a collection with these rights will not see, as the catalog's Needs sections, by reason.
+# Rights is Get-CollectorRights' result; an unreadable domain gives nothing (unknown, not clean).
+function Get-RightsGaps {
+    param($Rights, [bool]$Deep = $false)
+    $gaps = New-Object System.Collections.Generic.List[object]
+    if (-not $Rights -or $Rights.Error) { return $gaps }
+    $admin = $Rights.DomainAdmin -or $Rights.EnterpriseAdmin
+    $why = if ($Rights.FilteredByUac) { 'admin rights filtered by UAC (window not elevated)' } else { 'not a Domain or Enterprise Admin' }
+    if (-not $admin) {
+        $gaps.Add([PSCustomObject]@{ Reason = "$why`: fine-grained password policies and the DNS zone transfer setting"; Sections = @('domain.fineGrainedPolicies', 'dnsTransfer') })
+        $gaps.Add([PSCustomObject]@{ Reason = "$why`: live state of the DCs and CA settings (admin on those servers)"; Sections = @('health.dcState', 'health.coercion', 'health.netbios', 'health.webClient', 'health.osBuild', 'adcs.caRegistry', 'adcs.caWebEnrollment') })
+        if ($Deep) { $gaps.Add([PSCustomObject]@{ Reason = "$why`: the deep sweep (every object's ACL, KDS root keys)"; Sections = @('deepAcls', 'kdsRootKeys') }) }
+    }
+    if (-not $Rights.Replication) { $gaps.Add([PSCustomObject]@{ Reason = 'no replication (DCSync) rights: password quality'; Sections = @('passwordQuality') }) }
+    return $gaps
+}
+
+# The checks of a catalog ($script:CheckCatalog) that need any of those sections, sorted.
+function Get-ChecksNeeding {
+    param($Catalog, [string[]]$Sections)
+    return @($Catalog.Keys | Where-Object { $k = $_; @(@($Catalog[$k].Needs) | Where-Object { $Sections -contains $_ }).Count } | Sort-Object)
 }
 
 # True only for a person at a console: not a scheduled task, not piped input or output.

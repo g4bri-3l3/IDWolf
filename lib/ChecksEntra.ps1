@@ -387,6 +387,15 @@ $script:EntraCheckCatalog = [ordered]@{
         Title = 'Intune device wipes or scripts need no second admin (Multi Admin Approval)'
         Description = 'No Intune Multi Admin Approval policy covers device wipes or scripts. One compromised Intune or Global Administrator can then factory-reset every managed device, or run code as SYSTEM on all of them, in a single action: in March 2026 the attack on Stryker was reported to have wiped tens of thousands of devices this way. The policy types are matched by name from the documentation and have not yet been verified on a real tenant.'
         Remediation = 'In Intune admin center > Tenant administration > Multi Admin Approval, create access policies for device wipe (and retire/delete), scripts, apps and Intune roles, with an approver group of admins other than the requester. Protect the Multi Admin Approval settings themselves with an access policy as well.' }
+    # ---- Schema 10 ----
+    entra_app_azure_ad_graph = @{ Category = 'Entra Applications'; Severity = 'Low'; Mitre = ''; Needs = @('applications', 'servicePrincipals', 'schema10')
+        Title = 'App still holds permissions on the retired Azure AD Graph'
+        Description = 'An app registration requests permissions on Azure AD Graph (graph.windows.net, resource 00000002-0000-0000-c000-000000000000), or a service principal was granted some. Microsoft has retired that API: the app either already fails or depends on something that is going away, and permission reviews built on Microsoft Graph do not show what it was allowed to do there (Directory.ReadWrite.All on Azure AD Graph is as strong as on Microsoft Graph).'
+        Remediation = 'Ask the owner to move the app to Microsoft Graph. Then remove the Azure AD Graph entries from its API permissions and revoke the grants (application permissions and delegated consents) on the Windows Azure Active Directory service principal; delete the app if nobody claims it.' }
+    entra_catalog_role_privileged_group = @{ Category = 'Entra Identity'; Severity = 'High'; Mitre = 'T1098.003'; Needs = @('entitlementCatalogs', 'catalogRoles', 'accessPackageGrants', 'groups', 'directoryRoles', 'schema10')
+        Title = 'Non-admin manages an entitlement catalog that holds an admin group'
+        Description = 'An entitlement management catalog holds a group that has a privileged Entra role (active or eligible), and someone who is not an admin is its catalog owner or access package manager (they can put the group in an access package and assign it, to themselves too), or its access package assignment manager while a package of the catalog already hands out the group. Through the catalog they can make themselves a member of the group and take the role.'
+        Remediation = 'Keep groups that hold admin roles out of catalogs managed by non-admins: move them to a catalog whose owners and managers are admins of the same tier, or remove those catalog roles. Treat catalog roles on such a catalog as Tier 0.' }
     entra_no_workload_identity_ca = @{ Category = 'Entra Access Policy'; Severity = 'Medium'; Mitre = 'T1078.004'; Needs = @('conditionalAccess', 'servicePrincipals', 'directoryRoles', 'schema5')
         Title = 'Privileged apps without workload identity Conditional Access'
         Description = 'Apps registered in this tenant hold admin roles or tenant-wide permissions, and no Conditional Access policy covers service principals. A stolen secret or certificate for those apps works from anywhere on the internet.'
@@ -427,6 +436,7 @@ function Get-EntraNotEvaluated {
     if ($sv -lt 7) { $absent['pimForGroups'] = "$reCollect (no PIM for Groups eligibility)" }
     if ($sv -lt 8) { $absent['schema8'] = "$reCollect (no Intune roles)" }
     if ($sv -lt 9) { $absent['schema9'] = "$reCollect (no Intune Multi Admin Approval policies)" }
+    if ($sv -lt 10) { $absent['schema10'] = "$reCollect (no Azure AD Graph permissions, entitlement catalogs or catalog roles)" }
     foreach ($s in 'authenticationMethods', 'passwordSettings', 'pim', 'pimPolicies', 'authenticatorSettings', 'groupCreation', 'deviceRegistration',
         'appManagementPolicy', 'domains', 'idleTimeout', 'branding', 'onPremSync', 'accessReviews', 'namedLocations', 'licenses', 'perUserMfa', 'oauthGrants', 'crossTenant', 'accessPackages', 'intuneRoles', 'intuneApprovalPolicies') {
         if (-not $Snapshot.PSObject.Properties[$s]) { $absent[$s] = "'$s' not in this snapshot ($reCollect)" }
@@ -1157,6 +1167,88 @@ function Invoke-EntraChecks {
         }
     }
 
+    # ---- Schema 10 ----
+    if ($sv -ge 10) {
+        # Azure AD Graph: requested by an app registration, or granted to a service principal of
+        # this tenant or a third party (application permissions, or delegated consents on the
+        # Azure AD Graph service principal). Microsoft's own apps are left out. One finding per app.
+        $aadg = [ordered]@{}
+        $note = {
+            param([string]$Key, [string]$Name, [string]$Id, [string]$Text)
+            if (-not $aadg.Contains($Key)) { $aadg[$Key] = [PSCustomObject]@{ Name = $Name; Id = $Id; What = New-Object System.Collections.Generic.List[string] } }
+            $aadg[$Key].What.Add($Text)
+        }
+        if (& $have 'applications') {
+            foreach ($app in @($Snapshot.applications | Where-Object { $_ -and $_.PSObject.Properties['aadGraphScopes'] })) {
+                $nr = [int]"0$($app.aadGraphRoles)"; $ns = [int]"0$($app.aadGraphScopes)"
+                if ($nr -or $ns) { & $note "$($app.appId)" "$($app.displayName)" "$($app.id)" "the app registration requests $nr application and $ns delegated permission(s)" }
+            }
+        }
+        if (& $have 'servicePrincipals') {
+            $gsp = "$($Snapshot.aadGraphSpId)"
+            $delegated = @{}
+            if ($gsp -and (& $have 'oauthGrants')) {
+                foreach ($g in @($Snapshot.oauthGrants | Where-Object { $_ -and "$($_.resourceId)" -eq $gsp })) {
+                    if (-not $delegated.ContainsKey("$($g.clientId)")) { $delegated["$($g.clientId)"] = New-Object System.Collections.Generic.List[object] }
+                    $delegated["$($g.clientId)"].Add($g)
+                }
+            }
+            foreach ($sp in @($Snapshot.servicePrincipals | Where-Object { $_ -and "$($_.id)" -ne $gsp -and $msTenants -notcontains "$($_.appOwnerTenant)" })) {
+                $parts = @()
+                $nr = [int]"0$($sp.aadGraphRoles)"
+                if ($nr) { $parts += "$nr application permission(s) granted" }
+                if ($delegated.ContainsKey("$($sp.id)")) {
+                    $dg = $delegated["$($sp.id)"]
+                    $scopes = @($dg | ForEach-Object { "$($_.scope)" -split '\s+' } | Where-Object { $_ } | Select-Object -Unique)
+                    $who = if (@($dg | Where-Object { "$($_.consentType)" -eq 'AllPrincipals' }).Count) { 'admin consent for every user' } else { "consent by $($dg.Count) user(s)" }
+                    $parts += "delegated $($scopes -join ', ') ($who)"
+                }
+                if ($parts.Count) { & $note "$($sp.appId)" "$($sp.displayName)" "$($sp.id)" "the service principal has $($parts -join ' and ')" }
+            }
+        }
+        foreach ($k in $aadg.Keys) {
+            $x = $aadg[$k]
+            Add-EntraFinding -Type entra_app_azure_ad_graph -Object $x.Name -ObjectType 'application' -ObjectDn $x.Id -Detail "Azure AD Graph: $($x.What.ToArray() -join '; ')."
+        }
+
+        # Catalog roles over a catalog that holds a group with an admin role. Owners and access
+        # package managers can package any resource of the catalog; assignment managers only hand
+        # out existing packages, so they count when a package of the catalog grants the group.
+        if ((& $have 'entitlementCatalogs') -and (& $have 'catalogRoles') -and (& $have 'groups') -and $Snapshot.entitlementCatalogs) {
+            $catRoleNames = @{ 'ae79f266-94d4-4dab-b730-feca7e132178' = 'Catalog owner'; '7f480852-ebdc-47d4-87de-0d8498384a83' = 'Access package manager'; 'e2182095-804a-4656-ae11-64734e9b7ae5' = 'Access package assignment manager' }
+            $privGroupIds = @{}
+            foreach ($r in @($Snapshot.directoryRoles | Where-Object { $_ -and $_.memberTypes -and $script:EntraPrivRoleTemplates.ContainsKey("$($_.roleTemplateId)") })) {
+                foreach ($m in @($r.memberTypes.PSObject.Properties | Where-Object { "$($_.Value)" -eq 'group' })) { $privGroupIds["$($m.Name)"] = $true }
+            }
+            foreach ($a in @($Snapshot.pim.active) + @($Snapshot.pim.eligible) | Where-Object { $_ -and $script:EntraPrivRoleTemplates.ContainsKey("$($_.roleDefinitionId)") }) { $privGroupIds["$($a.principalId)"] = $true }
+            $grpName = @{}; foreach ($g in @($Snapshot.groups | Where-Object { $_ })) { $grpName["$($g.id)"] = "$($g.displayName)" }
+            foreach ($cat in @($Snapshot.entitlementCatalogs | Where-Object { $_ })) {
+                $held = @(@($cat.resources) | Where-Object { $_ -and "$($_.originSystem)" -eq 'AadGroup' -and $privGroupIds.ContainsKey("$($_.originId)") } | ForEach-Object { "$($_.originId)" } | Select-Object -Unique)
+                if (-not $held.Count) { continue }
+                $handedOut = @{}
+                foreach ($apid in @($cat.accessPackageIds | Where-Object { $_ })) {
+                    if (-not $Snapshot.accessPackageGrants -or -not $Snapshot.accessPackageGrants.PSObject.Properties["$apid"]) { continue }
+                    foreach ($gr in @($Snapshot.accessPackageGrants."$apid" | Where-Object { $_ -and "$($_.originSystem)" -eq 'AadGroup' })) { $handedOut["$($gr.scopeOriginId)"] = $true }
+                }
+                foreach ($ra in @($Snapshot.catalogRoles | Where-Object { $_ -and "$($_.appScopeId)" -eq "/AccessPackageCatalog/$($cat.id)" })) {
+                    $rn = $catRoleNames["$($ra.roleDefinitionId)"]
+                    if (-not $rn) { continue }
+                    $reach = if ($rn -eq 'Access package assignment manager') { @($held | Where-Object { $handedOut.ContainsKey($_) }) } else { $held }
+                    if (-not @($reach).Count) { continue }
+                    $pid2 = "$($ra.principalId)"; $pt = "$($ra.principalType)"
+                    $u = $usersById[$pid2]
+                    if ($pt -eq 'servicePrincipal') { $name = if ($spById[$pid2]) { "$($spById[$pid2].displayName)" } else { $pid2 }; $kind = 'service principal' }
+                    elseif ($pt -eq 'group') { if ($adminIds.ContainsKey($pid2)) { continue }; $name = if ($grpName[$pid2]) { $grpName[$pid2] } else { $pid2 }; $kind = 'group' }
+                    elseif ($u -and $u.userType -eq 'Guest') { $name = "$($u.upn)"; $kind = 'guest' }
+                    else { if ($adminIds.ContainsKey($pid2)) { continue }; $name = if ($u) { "$($u.upn)" } else { $pid2 }; $kind = 'non-admin' }
+                    $groupsText = @($reach | ForEach-Object { if ($grpName[$_]) { $grpName[$_] } else { $_ } }) -join ', '
+                    Add-EntraFinding -Type entra_catalog_role_privileged_group -Object "$($cat.displayName): $name" -ObjectType 'catalog' -ObjectDn "$($cat.id)" `
+                        -Detail "$rn ($kind $name) on catalog $($cat.displayName), which holds $groupsText (admin role). $(if ($rn -eq 'Access package assignment manager') { 'A package of the catalog already grants it: they can assign it to themselves.' } else { 'They can put it in an access package and assign it, to themselves too.' })"
+                }
+            }
+        }
+    }
+
     # Entra Connect's provisioning app: one self-managed certificate, never a secret.
     foreach ($app in @($Snapshot.applications | Where-Object { $_ -and "$($_.displayName)" -match '^ConnectSyncProvisioning_' })) {
         $nk = @($app.keyCred | Where-Object { $_ }).Count; $np = @($app.passwordCred | Where-Object { $_ }).Count
@@ -1523,6 +1615,7 @@ function New-EntraPseudonymizer {
     foreach ($l in @($Snapshot.namedLocations | Where-Object { $_ })) { & $add $l.displayName 'LOCATION' }
     foreach ($r in @($Snapshot.accessReviews | Where-Object { $_ })) { & $add $r.displayName 'REVIEW' }
     foreach ($p in @($Snapshot.accessPackages | Where-Object { $_ })) { & $add $p.accessPackage 'PACKAGE'; & $add $p.displayName 'PACKAGEPOLICY' }
+    foreach ($c in @($Snapshot.entitlementCatalogs | Where-Object { $_ })) { & $add $c.displayName 'CATALOG' }
     # Intune assignment names and custom role names are chosen by the tenant; built-in role names stay.
     foreach ($ia in @($Snapshot.intuneRoles | Where-Object { $_ })) { & $add $ia.displayName 'INTUNEASSIGNMENT'; if (-not $ia.isBuiltIn) { & $add $ia.roleName 'INTUNEROLE' } }
     # Hosts in app redirect URIs end up in findings too.

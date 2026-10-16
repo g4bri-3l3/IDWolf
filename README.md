@@ -32,12 +32,12 @@ nothing but the native ActiveDirectory module, then analyzes that snapshot
 **offline** and gives you an HTML report, a findings CSV and, if you want, JSON
 Lines for your SIEM.
 
-On the AD side it runs **167 checks**: Kerberos, privileged access, account
+On the AD side it runs **169 checks**: Kerberos, privileged access, account
 hygiene, domain configuration, permissions, DNS, AD CS (ESC1-5, 9, 10, 13, 15),
 operational health (replication, DHCP, backups), host hardening read from the
 GPOs (SMB and LDAP signing, NTLM, LM hash, user rights) and password quality,
 all without ever handling a password hash. A separate collector covers
-**Microsoft Entra ID** with **88 checks**, mapped to the CIS Microsoft 365
+**Microsoft Entra ID** with **90 checks**, mapped to the CIS Microsoft 365
 benchmark.
 
 If you like, a Gemini step can write an executive summary and a remediation
@@ -88,12 +88,12 @@ works that out by itself.
 | Privileged access | 18 | Tier 0 membership by SID through nesting and primary group, dormant / foreign / computer admins, operator groups, DnsAdmins, RID 500, silos, GPOs making everyone local admin, RODC password replication policy and Tier 0 credentials cached on RODCs |
 | Account hygiene | 19 | inactive and never-used accounts, passwords not required / never expiring / in descriptions, sIDHistory, LAPS deployment and rotation, obsolete OS |
 | Domain configuration | 28 | password policies and FGPPs, functional level, Recycle Bin, anonymous LDAP, trusts, DNS zones and WPAD records, DC hygiene |
-| Permissions | 16 | DCSync rights, dangerous ACEs on Tier 0 (or anywhere with `-Deep`: including write access to logon script, profile path, certificate mapping, account flags and account restrictions, the RBCD attribute), owners, DirSync readers of confidential attributes (SyncLAPSPassword), GPP passwords, script secrets, gMSA and LAPS readers, Shadow Credentials, dMSA creation rights (BadSuccessor), GPO takeover, GPO scripts and tasks run from shares |
-| Certificate services | 18 | ESC1-5, 9, 10, 13, 15, weak CA keys, expiring CAs; ESC6, 7, 8, 11 and 16 read on the CA itself (admin rights on the CA host), with a manual-look note for any CA that could not be read |
+| Permissions | 17 | DCSync rights, dangerous ACEs on Tier 0 (or anywhere with `-Deep`: including write access to logon script, profile path, certificate mapping, account flags and account restrictions, the RBCD attribute), owners, DirSync readers of confidential attributes (SyncLAPSPassword), GPP passwords, script secrets, gMSA and LAPS readers, Shadow Credentials, dMSA creation rights (BadSuccessor), write access to the SCCM System Management container, GPO takeover, GPO scripts and tasks run from shares |
+| Certificate services | 19 | ESC1-5, 9, 10, 13, 15, 17 (WSUS over HTTPS), weak CA keys, expiring CAs; ESC6, 7, 8, 11 and 16 read on the CA itself (admin rights on the CA host), with a manual-look note for any CA that could not be read |
 | Host hardening (GPO) | 40 | SMB/LDAP signing and channel binding, NTLM/LM, WDigest, LSA protection, audit policy, logging, ZeroLogon, LLMNR, mDNS, NBT-NS (live on DCs), null sessions, Spooler, WebClient (GPO and live on DCs), noPac patch level and coercion interfaces (live on DCs), Point and Print (PrintNightmare), cached logons, AlwaysInstallElevated, autologon passwords in GPOs, WSUS over HTTP, RDP (NLA, Restricted Admin), Credential Guard, application control, IPv6 / mitm6, WPAD auto-discovery, Windows Script Host, force logoff |
 | Password quality | 5 | duplicate, empty, default, breached and reversible passwords, without ever handling a hash |
 | Operational health | 9 | replication, backups, DHCP on a DC, FSMO holders, unreachable DCs, clock skew between DCs, disk space and stopped services on DCs |
-| **Entra ID** | 88 | MFA (registration, strength, Authenticator settings), Conditional Access (legacy auth, device code, risk, managed devices, locations, token protection, session limits), PIM (standing access, approval, activation and assignment settings, PIM for Groups owners), admins (cloud-only, licences, inactive, emergency access), devices (join, local admins, LAPS, BitLocker), guests, apps (consent, permissions, credential policy), password settings, risky app consents, app owners, groups behind Conditional Access exclusions and admin roles, the Entra Connect app, look-alike app names, credentials on Microsoft apps, sync health, federation, B2B direct connect, access packages, workload identity Conditional Access, Intune roles that can run code on devices and Multi Admin Approval for device wipes and scripts (not yet verified on a real tenant); every CIS Microsoft 365 v7 control that Graph can read |
+| **Entra ID** | 90 | MFA (registration, strength, Authenticator settings), Conditional Access (legacy auth, device code, risk, managed devices, locations, token protection, session limits), PIM (standing access, approval, activation and assignment settings, PIM for Groups owners), admins (cloud-only, licences, inactive, emergency access), devices (join, local admins, LAPS, BitLocker), guests, apps (consent, permissions, credential policy), password settings, risky app consents, app owners, groups behind Conditional Access exclusions and admin roles, the Entra Connect app, look-alike app names, credentials on Microsoft apps, sync health, federation, B2B direct connect, access packages and the roles on their catalogs, apps still on the retired Azure AD Graph, workload identity Conditional Access, Intune roles that can run code on devices and Multi Admin Approval for device wipes and scripts (not yet verified on a real tenant); every CIS Microsoft 365 v7 control that Graph can read |
 
 The full list of checks is further down. How they map to CIS, PingCastle, the
 InfosecMatter Top 16 and common attack techniques is in [`COVERAGE.md`](COVERAGE.md).
@@ -102,7 +102,7 @@ InfosecMatter Top 16 and common attack techniques is in [`COVERAGE.md`](COVERAGE
 
 The vectors behind the most cited incidents and research of 2023-2026, and the
 checks that look for the condition each one needs. The full table, including
-what isn't covered yet (SCCM, ESC17, apps on Azure AD Graph), is in
+what isn't covered (flaws on Microsoft's side, detection rather than configuration), is in
 [`COVERAGE.md`](COVERAGE.md#recent-attacks-2023-2026).
 
 | Attack | When | Checks |
@@ -112,6 +112,8 @@ what isn't covered yet (SCCM, ESC17, apps on Azure AD Graph), is in
 | Coercion + NTLM relay to LDAP or AD CS (CVE-2025-24054) | 2025-26 | `coercion_unfiltered_dc`, `adcs_esc8`, `adcs_esc11`, `ldap_signing_not_required`, `ldap_channel_binding_off`, `webclient_on_dc` |
 | NTLM reflection over SMB (CVE-2025-33073) | 2025 | `smb_signing_not_required`, `smb_client_signing_not_required` (the mitigation) |
 | AD CS ESC15 (EKUwu) and ESC16 | 2024-25 | `adcs_esc15`, `adcs_esc16` |
+| AD CS ESC17: WSUS over HTTPS with a certificate anyone can request | 2026 | `adcs_esc17`, `wsus_http` |
+| SCCM / MECM: rogue management point published in AD | 2023-26 | `sccm_system_management_writable` |
 | Kerberoasting in ransomware intrusions | 2026 | `kerberoastable_user`, `privileged_kerberoastable`, `spn_account_rc4` |
 | Entra Connect and SyncJacking | 2025-26 | `entra_admin_synced_from_onprem`, `entra_connect_app_extra_credentials`, `dcsync_rights` (partial) |
 | Password spraying (over 99% of cloud initial access, Microsoft 2026) | 2025-26 | `entra_smart_lockout_weak`, `entra_banned_passwords_off`, `entra_legacy_auth_allowed`, `entra_admins_without_mfa` |
@@ -120,6 +122,7 @@ what isn't covered yet (SCCM, ESC17, apps on Azure AD Graph), is in
 | OAuth consent phishing, over-privileged apps (Midnight Blizzard) | 2024-26 | `entra_users_can_consent`, `entra_risky_delegated_grant`, `entra_app_high_privilege` |
 | Escalation through service principal ownership (Entra Agent ID) | 2026 | `entra_privileged_app_sp_owner`, `entra_privileged_app_owner` |
 | Mass device wipe from a compromised Intune admin (Stryker, reported) | 2026 | `entra_intune_no_multi_admin_approval`, `entra_intune_role_weak_group` (not yet verified on a real tenant) |
+| Apps still on Azure AD Graph (Actor token flaw, CVE-2025-55241) | 2025 | `entra_app_azure_ad_graph` |
 
 ### Regulations
 
@@ -155,12 +158,12 @@ October 2026. If something here is out of date or wrong, please say so.
 | Proves it can't write to the directory (built-in code review) | **Yes** | – | – | – | – (has a fix mode) | – | – (attacks by design, after operator confirmation) |
 | Collect once, analyze later on another machine, offline | **Yes** | partial (re-renders its XML report) | – | yes (import into the server) | – | – | – |
 | AI summary, remediation plan, attack-path story, fix scripts, exploitability ranking | **Yes** (names tokenized first, nothing sent without consent) | – | – | – | – | – | – |
-| AD hygiene checklist | 167 checks | yes | yes | – (paths, not a checklist) | – | – | – (104 attack techniques, tried rather than audited) |
+| AD hygiene checklist | 169 checks | yes | yes | – (paths, not a checklist) | – | – | – (104 attack techniques, tried rather than audited) |
 | AD CS (ESC) | ESC1-5, 9, 10, 13, 15; 6, 7, 8, 11, 16 read on the CA | some | some | yes, as graph edges | **broadest**, with fixes | – | template enumeration; ESC1-16 exploitation in PRO |
 | Password quality (duplicates, breached) | yes, hashless | – | – | – | – | – | spraying and cracking (an attack, not an audit) |
 | Host hardening read from GPOs | yes | yes | yes | – | – | – | – (some preconditions probed live) |
 | DC health | replication, backup age, FSMO holders, reachability, clock skew, disk space, stopped services | backup age, DC registration, DCs not updated | ? | – | – | – | – |
-| Entra ID | 88 checks, CIS M365 v7 + non-human identities | **102 checks** (4.0; the list isn't public, so the overlap with IDWolf is unknown) | yes | yes (AzureHound) | – | **broadest** (CIS, CISA, EIDSCA) | – |
+| Entra ID | 90 checks, CIS M365 v7 + non-human identities | **102 checks** (4.0; the list isn't public, so the overlap with IDWolf is unknown) | yes | yes (AzureHound) | – | **broadest** (CIS, CISA, EIDSCA) | – |
 | Attack-path view | map in the report + BloodHound export | control-path map | – | **the reference** | – | – | BloodHound CE-compatible collection; attack graph and exploitation chains in PRO |
 | Report | **one self-contained HTML** (charts, attack-path and trust maps, compliance view, no CDN), CSV, JSONL | HTML | ? | web UI | console, CSV | HTML | TXT / JSON; PDF (with NIS2 / ISO 27001 mapping) in PRO |
 
@@ -199,7 +202,7 @@ documentation as of October 2026; pricing and details change often.
 | Response / auto-remediation | – (gives a plan and scripts to review) | partial (via XDR) | **Yes**, plus forest recovery | partial |
 | SIEM / XDR integration | JSON Lines | **Yes** (Defender XDR, Sentinel) | yes | yes |
 | Attack-path view | yes (report + BloodHound export) | yes (Exposure Management) | yes | **yes**, a strong point |
-| Hygiene / posture checklist | 167 AD + 88 Entra, with CIS/MITRE/NIS2… | via Secure Score | yes (indicators) | yes (indicators) |
+| Hygiene / posture checklist | 169 AD + 90 Entra, with CIS/MITRE/NIS2… | via Secure Score | yes (indicators) | yes (indicators) |
 | AI review with chaining and a compromise verdict | **Yes** (names tokenized first) | – | – | – |
 | Support | community | vendor, SLA | vendor, SLA | vendor, SLA |
 
@@ -217,7 +220,7 @@ Secure Score are the closest free point-in-time comparisons.
 ## Quick start
 
 ```powershell
-.\Start-IDWolf.ps1                              # menu: collect, analyze, add AI (5 = full AD run, 8 = full Entra run)
+.\Start-IDWolf.ps1                              # menu: 1 = full AD run, 2 = full Entra run, then the single steps
 .\Start-IDWolf.ps1 -Credential (Get-Credential) # same, with a delegated / admin account
 ```
 
@@ -225,14 +228,27 @@ Snapshots, reports and packages go to an `output` folder under the current
 directory unless you give a path yourself. The menu and the analyzer also look
 there for snapshots to offer.
 
-A full run (5 or 8) asks all its questions first, then shows every answer on one
-screen: change one by its number, Q to cancel, Enter to start. Nothing is collected
-before that. The launcher and the analyzer wizard remember your answers and offer them as
-defaults next time. If a run was interrupted (Ctrl+C, a closed window), the next
-launch offers to pick up a snapshot that was collected but never analyzed, or to
-repeat the last full run with the same answers. The analyzer wizard offers the
-last snapshot with the same settings, and compares against the report of the last
-run if you compared last time. Everything is saved after each answer, in
+Every collection (a full run, 1 or 2, or a single one, 3 or 5) asks all its
+questions first, then shows every answer on one screen: change one by its number,
+Q to cancel, Enter to start. Nothing is collected before that. A full run also asks
+what comes after collecting and how to handle the AI step: skip it (the run never
+stops at the end on a question), ask before sending, or a dry run that only writes
+the prompt. A single collection stops after collecting unless you change "Then" on
+that screen. Before that screen, an AD collection shows what the account can do
+(elevated session, Domain Admins / Enterprise Admins, replication rights for
+password quality) and names the checks those rights will leave "not evaluated",
+read over LDAP without changing anything, so a missing right shows up before the
+run rather than after it. On a domain controller, start the launcher as
+administrator: in a window that is not elevated UAC filters the admin groups out,
+so even a Domain Admin collects like a standard user. The launcher says so on
+start and offers to quit; it does not restart itself. The launcher and the analyzer wizard remember your answers and offer them as
+defaults next time. A snapshot that was collected but not analyzed or packaged (a
+single collection, "stop", Ctrl+C, a closed window) is offered on the next launch;
+otherwise the launcher offers to repeat the last full run with the same answers. The
+analyzer wizard offers the last snapshot with the same settings, or a newer snapshot
+if one was collected since, and compares against the report of the last run if you
+compared last time. Only password-quality reports of the snapshot's domain are
+offered, newest first, and the analyzer refuses a report of another domain. Everything is saved after each answer, in
 `%LOCALAPPDATA%\IDWolf\wizard.json`: choices and file paths only, never a
 password, an API key or anything read from the directory. `[C]` in the menu
 deletes it. At the end of an interactive analysis you're asked whether to open
@@ -251,7 +267,7 @@ scripts with your own code-signing certificate. IDWolf itself isn't signed.
 
 The usual split is to collect on a server or a DC, which needs no internet and
 nothing extra installed, then analyze and ask Gemini from your workstation. In
-the launcher, option 5 ends with *"Analyze here, or package a zip?"*, and
+the launcher, a full run (option 1 or 2) asks *"Analyze here, or package a zip?"*, and
 option 7 packages files you already have. You get one zip:
 
 ```
@@ -321,13 +337,13 @@ collector what a joined machine would find by itself:
   drive mapped with the same account.
 - The PC needs RSAT, DNS that resolves the domain (often: point its DNS at the
   DC), and the ports listed under *Network requirements*.
-- `Start-IDWolf.ps1` detects a workgroup PC and asks once for the DC and the
-  account (option 5; option 1 asks inside the collector's own setup). It then
-  keeps both for the session.
-- Password quality (`Export-PasswordQuality.ps1`, launcher option 2) needs to
+- `Start-IDWolf.ps1` detects a workgroup PC and asks for the DC (options 1 and 3,
+  shown on the settings screen; clearing it there cancels the run) and once for the
+  account, which it keeps for the session.
+- Password quality (`Export-PasswordQuality.ps1`, launcher option 4) needs to
   find the PDC, so it does not work from a workgroup PC. Run it on a
   domain-joined machine or the DC, or use `-FromDatabase`. The launcher skips
-  that step in option 5 and says why.
+  that step in option 1 and says why.
 - Analysis (`IDWolf.ps1`) and packaging never touch the domain, so they behave
   the same anywhere.
 
@@ -371,6 +387,7 @@ you need more.
 | Password policy, dsHeuristics, trusts, DCs, MAQ, Recycle Bin, functional level | most domain configuration | standard user |
 | Tier 0 ACLs, SYSVOL scan (including the NETLOGON and Policies folder permissions), GPO ACLs | `dcsync_rights`, `dangerous_ace_tier0`, `gpp_cpassword`, `sysvol_writable`, `gpo_dangerous_acl`... | standard user |
 | ACLs of every OU and top-level container (create and control rights only) | `badsuccessor_dmsa_create` | standard user |
+| ACL of the SCCM System Management container and the management points published there | `sccm_system_management_writable` | standard user |
 | AD CS templates, CAs, issuance policies | `adcs_*` | standard user |
 | CA registry and installed roles (CIM on each CA host) | `adcs_esc6`, `adcs_esc7`, `adcs_esc8`, `adcs_esc11`, `adcs_esc16` | local admin on the CA host (CA servers are Tier 0, so usually Domain Admins). Otherwise *not evaluated* and `adcs_manual_checks` |
 | GPO templates in SYSVOL (GptTmpl.inf, machine and user registry.pol, audit.csv) | host hardening, `adcs_esc10` | standard user |
@@ -708,6 +725,7 @@ particular object.
 | `dangerous_ace_anywhere` | High | T1098 | Dangerous permission held by a non-privileged principal |
 | `kds_root_key_readable` | High | T1003 | Non-Tier 0 principal can read a KDS root key (Golden gMSA) |
 | `badsuccessor_dmsa_create` | High | T1098 | Non-Tier 0 principal can create dMSAs (BadSuccessor) |
+| `sccm_system_management_writable` | High | T1072 | Non-site-server principal can write to the SCCM System Management container |
 | `laps_readers` | High | T1098 | Non-Tier 0 principal can read LAPS passwords |
 | `pre_win2000_anonymous` | High | T1087 | Pre-Windows 2000 Compatible Access includes Anonymous/Everyone |
 | `gmsa_password_readable` | High | T1649 | gMSA password readable by a non-Tier 0 principal |
@@ -725,6 +743,7 @@ particular object.
 | `adcs_esc4` | High | T1649 | Certificate template with a dangerous ACL (ESC4) |
 | `adcs_esc9` | High | T1649 | Template without the SID security extension (ESC9) |
 | `adcs_esc15` | High | T1649 | Schema v1 template with requester-supplied subject (ESC15 / EKUwu, CVE-2024-49019) |
+| `adcs_esc17` | High | T1557 | WSUS over HTTPS and a template that issues server certificates for any name (ESC17) |
 | `adcs_esc13` | High | T1649 | Template with an issuance policy linked to a group (ESC13) |
 | `adcs_esc5` | High | T1649 | Non-privileged principal controls an AD CS object (ESC5) |
 | `adcs_low_priv_enroll` | Medium | T1649 | Client-auth template enrollable by all users |
@@ -883,6 +902,7 @@ Two permanent Global Admins are fine: those are the emergency access accounts.
 | `entra_sync_stale` | Medium |  | Directory sync has stopped |
 | `entra_access_package_external_no_approval` | High | T1098 | External users can get an access package without approval |
 | `entra_access_package_no_expiry` | Low | T1078.004 | Access package assignments never expire and are never reviewed |
+| `entra_catalog_role_privileged_group` | High | T1098.003 | Non-admin manages an entitlement catalog that holds an admin group |
 
 **Entra Applications**
 
@@ -910,6 +930,7 @@ Two permanent Global Admins are fine: those are the emergency access accounts.
 | `entra_first_party_sp_credentials` | High | T1098.001 | Credential added to a Microsoft first-party app |
 | `entra_app_insecure_redirect` | Low | T1528 | App with an insecure redirect URI |
 | `entra_app_secret_long_lived` | Low | T1552.001 | Application secret valid for too long |
+| `entra_app_azure_ad_graph` | Low |  | App still holds permissions on the retired Azure AD Graph |
 
 ## The AI step (Gemini)
 
@@ -1143,10 +1164,10 @@ collections run there, and some bugs only show up there.
   fake Graph.
 - The AI layer is tested offline: no real name in the prompt, the token round
   trip, and invented check IDs being dropped.
-- Reference results: the AD `demo` gives **193 findings** (25 Critical, 75 High,
-  67 Medium, 26 Low) and 17 Tier 0 principals, and 201 with the example
-  password report. `-Deep` gives 198. `partial` gives 183. The Entra tenant
-  gives 89. In total there are **534 assertions**.
+- Reference results: the AD `demo` gives **195 findings** (25 Critical, 77 High,
+  67 Medium, 26 Low) and 17 Tier 0 principals, and 203 with the example
+  password report. `-Deep` gives 200. `partial` gives 185. The Entra tenant
+  gives 93. In total there are **587 assertions**.
 - `tests/lab/` is for a throw-away lab domain, never for production.
   `New-LabAttackPaths.ps1` plants a four-step ACL chain and a few delegation
   findings. It **writes to AD**, asks you to type the domain name first, and has

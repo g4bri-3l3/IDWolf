@@ -55,7 +55,7 @@ Param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.3"
+$script:CollectorVersion = "1.4"
 $script:Errors = New-Object System.Collections.Generic.List[object]
 function Add-CollectionError {
     param([string]$Section, [string]$Message)
@@ -132,6 +132,8 @@ function Get-Graph {
     } while ($All -and $full)
     return $items
 }
+# Azure AD Graph, the API Microsoft retired in favour of Microsoft Graph.
+$script:AadGraphAppId = '00000002-0000-0000-c000-000000000000'
 
 # --------------------------------------------------------------------------
 $org = $null
@@ -566,7 +568,9 @@ catch { Add-CollectionError 'groups' $_.Exception.Message }
 
 $apps = @()
 try {
-    $apps = @(Get-Graph 'applications?$select=id,displayName,appId,passwordCredentials,keyCredentials,web,spa,publicClient,signInAudience,servicePrincipalLockConfiguration' -All | ForEach-Object {
+    $apps = @(Get-Graph 'applications?$select=id,displayName,appId,passwordCredentials,keyCredentials,web,spa,publicClient,signInAudience,servicePrincipalLockConfiguration,requiredResourceAccess' -All | ForEach-Object {
+            # Permissions requested on the retired Azure AD Graph: counts only.
+            $aadg = @(@($_.requiredResourceAccess) | Where-Object { "$($_.resourceAppId)" -eq $script:AadGraphAppId } | ForEach-Object { @($_.resourceAccess) })
             [ordered]@{
                 id           = $_.id
                 displayName  = $_.displayName
@@ -577,6 +581,8 @@ try {
                 redirectUris = @(@($_.web.redirectUris) + @($_.spa.redirectUris) + @($_.publicClient.redirectUris) | Where-Object { $_ } | ForEach-Object { "$_" })
                 signInAudience = "$($_.signInAudience)"
                 instanceLock = [bool]($_.servicePrincipalLockConfiguration.isEnabled -and $_.servicePrincipalLockConfiguration.allProperties)
+                aadGraphScopes = @($aadg | Where-Object { "$($_.type)" -eq 'Scope' }).Count
+                aadGraphRoles  = @($aadg | Where-Object { "$($_.type)" -eq 'Role' }).Count
             }
         })
 }
@@ -585,11 +591,16 @@ catch { Add-CollectionError 'applications' $_.Exception.Message }
 # Service principals and the application permissions granted to them.
 $servicePrincipals = @()
 $grantErrors = 0
+# The Azure AD Graph service principal of this tenant: grants on it are counted per app.
+$aadGraphSpId = ''
+try { $aadGraphSpId = "$(@(Get-Graph "servicePrincipals?`$filter=appId eq '$script:AadGraphAppId'&`$select=id")[0].id)" } catch { }
 try {
     $servicePrincipals = @(Get-Graph 'servicePrincipals' -All | ForEach-Object {
-            $spId = $_.id; $grants = @()
+            $spId = $_.id; $grants = @(); $aadGraphGrants = 0
             try {
-                $grants = @(Get-Graph "servicePrincipals/$spId/appRoleAssignments" -All | ForEach-Object { $_.appRoleId })
+                $assigned = @(Get-Graph "servicePrincipals/$spId/appRoleAssignments" -All)
+                $grants = @($assigned | ForEach-Object { $_.appRoleId })
+                if ($aadGraphSpId) { $aadGraphGrants = @($assigned | Where-Object { "$($_.resourceId)" -eq $aadGraphSpId }).Count }
             }
             catch { $grantErrors++ }
             [ordered]@{
@@ -600,6 +611,7 @@ try {
                 type           = "$($_.servicePrincipalType)"
                 appOwnerTenant = "$($_.appOwnerOrganizationId)"
                 appRoleIds     = $grants
+                aadGraphRoles  = $aadGraphGrants
                 passwordCred   = @($_.passwordCredentials | ForEach-Object { IsoUtc $_.endDateTime })
                 keyCred        = @($_.keyCredentials | ForEach-Object { IsoUtc $_.endDateTime })
             }
@@ -641,7 +653,7 @@ catch { Add-CollectionError 'spSignIns' $_.Exception.Message; $spSignIns = $null
 $oauthGrants = $null
 try {
     $oauthGrants = @(Get-Graph 'oauth2PermissionGrants' -All | ForEach-Object {
-            [ordered]@{ clientId = "$($_.clientId)"; consentType = "$($_.consentType)"; principalId = "$($_.principalId)"; scope = "$($_.scope)".Trim() }
+            [ordered]@{ clientId = "$($_.clientId)"; consentType = "$($_.consentType)"; principalId = "$($_.principalId)"; scope = "$($_.scope)".Trim(); resourceId = "$($_.resourceId)" }
         })
 }
 catch { Add-CollectionError 'oauthGrants' $_.Exception.Message }
@@ -688,11 +700,39 @@ if ($accessPackages) {
     }
     catch { Add-CollectionError 'accessPackageGrants' $_.Exception.Message; $accessPackageGrants = $null }
 }
+# Catalogs: the groups (and other resources) each one holds and its access packages. A catalog
+# owner or access package manager can put any of those resources in a package; an assignment
+# manager can hand out the existing packages, to themselves too.
+$entitlementCatalogs = $null
+try {
+    $entitlementCatalogs = @(Get-Graph 'identityGovernance/entitlementManagement/catalogs?$select=id,displayName' -All | ForEach-Object {
+            $cid = "$($_.id)"
+            [ordered]@{
+                id = $cid; displayName = "$($_.displayName)"
+                resources = @(Get-Graph "identityGovernance/entitlementManagement/catalogs/$cid/resources?`$select=originId,originSystem" -All | ForEach-Object { [ordered]@{ originSystem = "$($_.originSystem)"; originId = "$($_.originId)" } })
+                accessPackageIds = @(Get-Graph "identityGovernance/entitlementManagement/catalogs/$cid/accessPackages?`$select=id" -All | ForEach-Object { "$($_.id)" })
+            }
+        })
+}
+catch { Add-CollectionError 'entitlementCatalogs' $_.Exception.Message; $entitlementCatalogs = $null }
+# Who holds a role on a catalog: owner, access package manager, assignment manager (readers
+# can't change anything). The API wants one filter per role definition.
+$catalogRoles = $null
+if ($null -ne $entitlementCatalogs) {
+    try {
+        $catalogRoles = @(foreach ($rd in 'ae79f266-94d4-4dab-b730-feca7e132178', '7f480852-ebdc-47d4-87de-0d8498384a83', 'e2182095-804a-4656-ae11-64734e9b7ae5') {
+                Get-Graph "roleManagement/entitlementManagement/roleAssignments?`$filter=roleDefinitionId eq '$rd'&`$expand=principal" -All | ForEach-Object {
+                    [ordered]@{ roleDefinitionId = $rd; principalId = "$($_.principalId)"; principalType = ("$($_.principal.'@odata.type')" -replace '^#microsoft\.graph\.', ''); appScopeId = "$($_.appScopeId)" }
+                }
+            })
+    }
+    catch { Add-CollectionError 'catalogRoles' $_.Exception.Message; $catalogRoles = $null }
+}
 
 # --------------------------------------------------------------------------
 $snapshot = [ordered]@{
     meta = [ordered]@{
-        tool = 'IDWolf'; kind = 'entra'; schemaVersion = 9; collectorVersion = $script:CollectorVersion
+        tool = 'IDWolf'; kind = 'entra'; schemaVersion = 10; collectorVersion = $script:CollectorVersion
         collectedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
         tenantId = $ctx.TenantId; account = $ctx.Account
         collectionErrors = $script:Errors.ToArray(); synthetic = $false
@@ -726,6 +766,9 @@ $snapshot = [ordered]@{
     roleAssignments   = $roleAssignments
     spSignIns         = $spSignIns
     accessPackageGrants = $accessPackageGrants
+    entitlementCatalogs = $entitlementCatalogs
+    catalogRoles      = $catalogRoles
+    aadGraphSpId      = $aadGraphSpId
     intuneRoles       = $intuneRoles
     intuneApprovalPolicies = $intuneApprovalPolicies
     directoryRoles    = $roles

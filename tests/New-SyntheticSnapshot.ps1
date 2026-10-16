@@ -376,6 +376,14 @@ $ouAcls = @(
     [ordered]@{ target = "ou:CN=Users,$dn"; distinguishedName = "CN=Users,$dn"; objectClass = 'container'; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; aces = @() }
 )
 
+# ------------------------------------------------------ SCCM System Management
+# SRV-APP01 is the site server (Full Control, expected); Helpdesk can create objects there:
+# sccm_system_management_writable.
+$sccm = [ordered]@{ present = $true
+    acl = [ordered]@{ target = 'SystemManagement'; distinguishedName = "CN=System Management,CN=System,$dn"; objectClass = ''; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'
+        aces = @((Ace $c.app.sid 'MOOSEBANK\SRV-APP01$' 'GenericAll'), (Ace "$dom-1103" 'MOOSEBANK\Helpdesk' 'CreateChild, DeleteChild'), (Ace 'S-1-5-11' 'NT AUTHORITY\Authenticated Users' 'ReadProperty, ListChildren')) }
+    managementPoints = @([ordered]@{ host = 'srv-app01.moosebank.local'; siteCode = 'MB1' }) }
+
 # ------------------------------------------------------------------- GPO
 # DC policy at Microsoft defaults (SMB signing on, LDAP signing and channel
 # binding off) plus a sloppy GPO handing SeDebugPrivilege to a non-Tier 0 group.
@@ -414,7 +422,9 @@ $gpo = [ordered]@{
         [ordered]@{ guid = $gpoBad; displayName = 'MooseBank DC Extra'
             # RDP without NLA and with Restricted Admin: rdp_nla_disabled, rdp_restricted_admin.
             registryValues = [ordered]@{ 'MACHINE\Software\Policies\Microsoft\Windows NT\Terminal Services\UserAuthentication' = '4,0'
-                'MACHINE\System\CurrentControlSet\Control\Lsa\DisableRestrictedAdmin' = '4,0' }
+                'MACHINE\System\CurrentControlSet\Control\Lsa\DisableRestrictedAdmin' = '4,0'
+                # The DCs take updates over HTTPS; MooseESC15 issues server certificates for any name: adcs_esc17.
+                'MACHINE\Software\Policies\Microsoft\Windows\WindowsUpdate\WUServer' = '1,https://wsus02.moosebank.local:8531' }
             privilegeRights = [ordered]@{ 'SeDebugPrivilege' = @("$dom-1103") }  # Helpdesk (non Tier 0) can debug on DCs
             systemAccess = [ordered]@{}; serviceStart = [ordered]@{}; userPolicyRead = $true
             # Non-Tier 0 principal (Helpdesk) can edit this DC-OU-linked GPO.
@@ -510,6 +520,7 @@ $snapshot = [ordered]@{
     foreignPrincipals = @([ordered]@{ distinguishedName = $fspDn; sid = 'S-1-5-21-999999999-999999999-999999999-1105'; name = 'PARTNER\ext.admin' })
     acls = $acls
     ouAcls = $ouAcls
+    sccm = $sccm
     deepAcls = $deepAcls
     kdsRootKeyAcls = $kdsRootKeyAcls
     preWin2000 = $preWin2000

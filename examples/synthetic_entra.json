@@ -2,7 +2,7 @@
   "meta": {
     "tool": "IDWolf",
     "kind": "entra",
-    "schemaVersion": 9,
+    "schemaVersion": 10,
     "collectorVersion": "synthetic",
     "collectedAtUtc": "2026-09-30T08:00:00.0000000Z",
     "tenantId": "11111111-2222-3333-4444-555555555555",
@@ -214,6 +214,76 @@
       "consentType": "AllPrincipals",
       "principalId": "",
       "scope": "User.Read openid"
+    },
+    {
+      "clientId": "00000404-0000-0000-0000-000000000000",
+      "consentType": "Principal",
+      "principalId": "00000009-0000-0000-0000-000000000000",
+      "scope": "User.Read",
+      "resourceId": "00000407-0000-0000-0000-000000000000"
+    }
+  ],
+  "aadGraphSpId": "00000407-0000-0000-0000-000000000000",
+  "entitlementCatalogs": [
+    {
+      "id": "00000660-0000-0000-0000-000000000000",
+      "displayName": "IT resources",
+      "resources": [
+        {
+          "originSystem": "AadGroup",
+          "originId": "00000702-0000-0000-0000-000000000000"
+        },
+        {
+          "originSystem": "AadGroup",
+          "originId": "00000704-0000-0000-0000-000000000000"
+        }
+      ],
+      "accessPackageIds": [
+        "00000650-0000-0000-0000-000000000000"
+      ]
+    },
+    {
+      "id": "00000661-0000-0000-0000-000000000000",
+      "displayName": "Collaboration",
+      "resources": [
+        {
+          "originSystem": "AadGroup",
+          "originId": "00000700-0000-0000-0000-000000000000"
+        }
+      ],
+      "accessPackageIds": []
+    }
+  ],
+  "catalogRoles": [
+    {
+      "roleDefinitionId": "ae79f266-94d4-4dab-b730-feca7e132178",
+      "principalId": "00000012-0000-0000-0000-000000000000",
+      "principalType": "user",
+      "appScopeId": "/AccessPackageCatalog/00000660-0000-0000-0000-000000000000"
+    },
+    {
+      "roleDefinitionId": "ae79f266-94d4-4dab-b730-feca7e132178",
+      "principalId": "00000001-0000-0000-0000-000000000000",
+      "principalType": "user",
+      "appScopeId": "/AccessPackageCatalog/00000660-0000-0000-0000-000000000000"
+    },
+    {
+      "roleDefinitionId": "e2182095-804a-4656-ae11-64734e9b7ae5",
+      "principalId": "00000014-0000-0000-0000-000000000000",
+      "principalType": "user",
+      "appScopeId": "/AccessPackageCatalog/00000660-0000-0000-0000-000000000000"
+    },
+    {
+      "roleDefinitionId": "44272f93-9762-48e8-af59-1b5351b1d6b3",
+      "principalId": "00000015-0000-0000-0000-000000000000",
+      "principalType": "user",
+      "appScopeId": "/AccessPackageCatalog/00000660-0000-0000-0000-000000000000"
+    },
+    {
+      "roleDefinitionId": "ae79f266-94d4-4dab-b730-feca7e132178",
+      "principalId": "00000013-0000-0000-0000-000000000000",
+      "principalType": "user",
+      "appScopeId": "/AccessPackageCatalog/00000661-0000-0000-0000-000000000000"
     }
   ],
   "crossTenant": {
@@ -1032,7 +1102,9 @@
         "http://sync.moosebank-cloud.example/callback"
       ],
       "signInAudience": "AzureADMultipleOrgs",
-      "instanceLock": false
+      "instanceLock": false,
+      "aadGraphScopes": 1,
+      "aadGraphRoles": 1
     },
     {
       "id": "00000301-0000-0000-0000-000000000000",
@@ -1050,7 +1122,9 @@
       ],
       "redirectUris": [],
       "signInAudience": "AzureADMyOrg",
-      "instanceLock": false
+      "instanceLock": false,
+      "aadGraphScopes": 0,
+      "aadGraphRoles": 0
     },
     {
       "id": "00000303-0000-0000-0000-000000000000",
@@ -1064,7 +1138,9 @@
       "secrets": [],
       "redirectUris": [],
       "signInAudience": "AzureADMyOrg",
-      "instanceLock": false
+      "instanceLock": false,
+      "aadGraphScopes": 0,
+      "aadGraphRoles": 0
     },
     {
       "id": "00000302-0000-0000-0000-000000000000",
@@ -1085,7 +1161,9 @@
         "http://localhost:8080"
       ],
       "signInAudience": "AzureADMyOrg",
-      "instanceLock": false
+      "instanceLock": false,
+      "aadGraphScopes": 0,
+      "aadGraphRoles": 0
     }
   ],
   "servicePrincipals": [
@@ -1106,7 +1184,8 @@
       "ownerTypes": {
         "00000012-0000-0000-0000-000000000000": "user",
         "00000405-0000-0000-0000-000000000000": "servicePrincipal"
-      }
+      },
+      "aadGraphRoles": 1
     },
     {
       "id": "00000401-0000-0000-0000-000000000000",
@@ -1117,7 +1196,8 @@
         "b0afded3-3588-46d8-8b3d-9842eff778da"
       ],
       "passwordCred": [],
-      "keyCred": []
+      "keyCred": [],
+      "aadGraphRoles": 0
     },
     {
       "id": "00000403-0000-0000-0000-000000000000",
@@ -1128,7 +1208,8 @@
       "passwordCred": [
         "2027-07-27T08:00:00.0000000Z"
       ],
-      "keyCred": []
+      "keyCred": [],
+      "aadGraphRoles": 0
     },
     {
       "id": "00000404-0000-0000-0000-000000000000",
@@ -1137,7 +1218,8 @@
       "appOwnerTenant": "99999999-9999-9999-9999-999999999999",
       "appRoleIds": [],
       "passwordCred": [],
-      "keyCred": []
+      "keyCred": [],
+      "aadGraphRoles": 0
     },
     {
       "id": "00000405-0000-0000-0000-000000000000",
@@ -1149,7 +1231,8 @@
         "9e3f62cf-ca93-4989-b6ce-bf83c28f9fe8"
       ],
       "passwordCred": [],
-      "keyCred": []
+      "keyCred": [],
+      "aadGraphRoles": 0
     },
     {
       "id": "00000406-0000-0000-0000-000000000000",
@@ -1158,7 +1241,8 @@
       "appOwnerTenant": "88888888-8888-8888-8888-888888888888",
       "appRoleIds": [],
       "passwordCred": [],
-      "keyCred": []
+      "keyCred": [],
+      "aadGraphRoles": 0
     },
     {
       "id": "00000402-0000-0000-0000-000000000000",
@@ -1169,7 +1253,18 @@
         "df021288-bdef-4463-88db-98f22de89214"
       ],
       "passwordCred": [],
-      "keyCred": []
+      "keyCred": [],
+      "aadGraphRoles": 0
+    },
+    {
+      "id": "00000407-0000-0000-0000-000000000000",
+      "displayName": "Windows Azure Active Directory",
+      "appId": "00000002-0000-0000-c000-000000000000",
+      "appOwnerTenant": "f8cdef31-a31e-4b4a-93e4-5f571e91255a",
+      "appRoleIds": [],
+      "passwordCred": [],
+      "keyCred": [],
+      "aadGraphRoles": 0
     }
   ]
 }

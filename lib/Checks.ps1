@@ -408,6 +408,10 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Non-Tier 0 principal can create dMSAs (BadSuccessor)'
         Description = 'A principal outside Tier 0 can create objects in an OU or container (CreateChild for all classes or for msDS-DelegatedManagedServiceAccount, GenericAll, WriteDacl, WriteOwner, or ownership). With a Windows Server 2025 DC in the domain it can create a delegated managed service account, mark it as the successor of any account (a Domain Admin, krbtgt) and authenticate with that account''s privileges and keys (BadSuccessor). The August 2025 update (CVE-2025-53779, build 26100.4946) requires a two-sided link, which closes the direct takeover, but the right to create dMSAs should still belong to Tier 0 only. Reported only when a Windows Server 2025 DC is present: High while one is unpatched or its patch level could not be read, Medium once all are patched.'
         Remediation = 'Install the August 2025 cumulative update (or later) on every Windows Server 2025 DC. Remove CreateChild (all classes or dMSA), GenericAll, WriteDacl and WriteOwner from non-Tier 0 principals on OUs and containers, scope delegations to the object classes really needed (user, group, computer), and give ownership of OUs back to Domain Admins. Akamai''s Get-BadSuccessorOUPermissions.ps1 lists the same rights.' }
+    sccm_system_management_writable = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1072'; Needs = @('sccm')
+        Title = 'Non-site-server principal can write to the SCCM System Management container'
+        Description = 'SCCM / MECM site servers publish their sites and management points in CN=System Management,CN=System, and clients use what is published there to find a management point. A principal that is neither Tier 0 nor a site server (a computer account, or a group of computer accounts only) can create or change objects there: it can publish a rogue management point that clients will contact, and collect their authentication or the network access account. Site servers themselves hold Full Control by design, so the detail lists them: they control every client of the site and belong in Tier 0 when DCs or admin workstations are among those clients.'
+        Remediation = 'Remove the write, create, WriteDacl and WriteOwner rights of everyone but the site server computer accounts (or a group that contains only them) and Tier 0 from the System Management container; give each site server Full Control as Microsoft documents, nothing more. Protect the site servers and the SCCM admins at the tier of the most sensitive client they manage.' }
     laps_readers = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1098'; Needs = @('deepAcls')
         Title = 'Non-Tier 0 principal can read LAPS passwords'
         Description = 'A principal that is not Tier 0 holds rights to read the local administrator password (ms-Mcs-AdmPwd or msLAPS-Password) on one or more computers, via GenericAll, All Extended Rights, or a read delegation on the LAPS attribute. Reading a LAPS password gives local admin on that machine, a lateral-movement step. Found only with a deep ACL sweep.'
@@ -447,6 +451,10 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Template without the SID security extension (ESC9)'
         Description = 'The template sets CT_FLAG_NO_SECURITY_EXTENSION (msPKI-Enrollment-Flag 0x80000), so the issued certificate omits the szOID_NTDS_CA_SECURITY_EXT SID binding. Combined with an account whose UPN or mapping can be changed, an attacker can obtain a certificate that authenticates as another user even with strong certificate mapping enforced. The template is published, enrollable by low-privileged users and requires no manager approval.'
         Remediation = 'Clear CT_FLAG_NO_SECURITY_EXTENSION on the template unless a documented interoperability need exists, enforce strong certificate mapping (KB5014754 Full enforcement) and restrict enrollment.' }
+    adcs_esc17 = @{ Category = 'Certificate Services'; Severity = 'High'; Mitre = 'T1557'; Needs = @('adcs', 'gpo')
+        Title = 'WSUS over HTTPS and a template that issues server certificates for any name (ESC17)'
+        Description = 'A GPO points Windows Update at a WSUS server over HTTPS, and a published certificate template lets low-privileged users enroll with a subject they supply, for server authentication (or any purpose), without approval. Anyone in that population can get a certificate for the WSUS host name that every client trusts, put themselves in the path (an ADIDNS record, ARP or DHCP spoofing) and serve updates that run as SYSTEM: HTTPS no longer protects WSUS (ESC17, TROOPERS26).'
+        Remediation = 'Remove ENROLLEE_SUPPLIES_SUBJECT from the template, or restrict its enrollment to the servers that need it, or require manager approval. Issue the WSUS certificate from a template that builds the subject from AD. Keep ADIDNS record creation restricted so the WSUS name cannot be taken over.' }
     adcs_esc15 = @{ Category = 'Certificate Services'; Severity = 'High'; Mitre = 'T1649'; Needs = @('adcs')
         Title = 'Schema v1 template with requester-supplied subject (ESC15 / EKUwu, CVE-2024-49019)'
         Description = 'A schema version 1 certificate template published and enrollable by low-privileged users allows the requester to supply the subject. On v1 templates the application policies are not fixed, so a requester can inject an arbitrary application policy (for example Client Authentication) into the request and obtain a certificate usable for authentication, even when the template EKUs do not grant it.'
@@ -630,6 +638,9 @@ function Get-NotEvaluatedChecks {
     if (-not $Snapshot.meta.options.deep) { $absentReasons['deepAcls'] = "requires -Deep collection (privileged, full ACL sweep)" }
     elseif (-not $Snapshot.PSObject.Properties['kdsRootKeyAcls']) { $absentReasons['kdsRootKeys'] = 'snapshot from an older collector (no KDS root key permissions): re-collect with -Deep' }
     if (-not $Snapshot.meta.options.skipAcl -and -not $Snapshot.PSObject.Properties['ouAcls']) { $absentReasons['ouAcls'] = 'snapshot from an older collector (no OU and container permissions): re-collect' }
+    # Its own read, independent of the Tier 0 ACLs: only -SkipAcl or an older collector leave it out.
+    if ($Snapshot.meta.options.skipAcl) { $absentReasons['sccm'] = 'ACL collection skipped (-SkipAcl)' }
+    elseif (-not $Snapshot.PSObject.Properties['sccm']) { $absentReasons['sccm'] = 'snapshot from an older collector (no SCCM System Management container): re-collect' }
     if ($null -eq $Snapshot.preWin2000) { $absentReasons['preWin2000'] = 'Pre-Windows 2000 group could not be read' }
     # No AD CS at all is not a gap; skipping it or failing to read it is.
     if ($Snapshot.meta.options.skipAdcs) { $absentReasons['adcs'] = 'AD CS collection skipped (-SkipAdcs)' }
@@ -1541,6 +1552,7 @@ function Invoke-ADHygieneChecks {
         BadSuccessor  = { Invoke-BadSuccessorCheck -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap }
         AdCs          = { Invoke-AdcsChecks -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap }
         Dns           = { Invoke-DnsChecks -Snapshot $Snapshot }
+        Sccm          = { Invoke-SccmChecks -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap }
         GroupNesting  = { Invoke-GroupNestingCheck -Index $Index }
         Gpo           = { if (Get-Command Invoke-GpoChecks -ErrorAction SilentlyContinue) { Invoke-GpoChecks -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap } }
         PasswordQuality = { if (Get-Command Invoke-PasswordQualityChecks -ErrorAction SilentlyContinue) { Invoke-PasswordQualityChecks -Snapshot $Snapshot } }
@@ -1993,6 +2005,59 @@ function Invoke-BadSuccessorCheck {
         $more = if ($parts.Count -gt 8) { "; and $($parts.Count - 8) more container(s)" } else { '' }
         Add-Finding -Type badsuccessor_dmsa_create -Object $p.Name -ObjectType 'acl' -Severity $sev `
             -Detail "$(@($parts | Select-Object -First 8) -join '; ')$more. $dcText"
+    }
+}
+
+# --------------------------------------------------------------------------
+# SCCM / MECM: who can write to the System Management container. Site servers (computer
+# accounts, or groups whose members are all computer accounts) hold Full Control by design.
+# --------------------------------------------------------------------------
+function Invoke-SccmChecks {
+    param($Snapshot, $Index, $PrivMap)
+    if (-not $Snapshot.PSObject.Properties['sccm'] -or -not $Snapshot.sccm -or -not $Snapshot.sccm.present -or -not $Snapshot.sccm.acl) { return }
+    $acl = $Snapshot.sccm.acl
+    $tier0 = Get-Tier0SidSet $Index $PrivMap
+    $isSiteServer = {
+        param([string]$Sid)
+        $o = $Index.BySid[$Sid]
+        if (-not $o) { return $false }
+        if ($o._type -eq 'computer') { return $true }
+        # Domain Computers is all computer accounts too, but it is every machine, not the site servers.
+        if ($o._type -ne 'group' -or "$($o.sid)" -match '-515$') { return $false }
+        $m = @(Get-EffectiveMembers $Index $o)
+        return ($m.Count -gt 0 -and @($m | Where-Object { $_.Type -ne 'computer' }).Count -eq 0)
+    }
+    $siteServers = New-Object System.Collections.Generic.List[string]
+    $per = [ordered]@{}
+    $add = {
+        param([string]$Sid, [string]$Name, [string]$Right)
+        if (-not $per.Contains($Sid)) { $per[$Sid] = [PSCustomObject]@{ Name = $(if ($Name) { $Name } else { $Sid }); Rights = New-Object System.Collections.Generic.List[string] } }
+        if (-not $per[$Sid].Rights.Contains($Right)) { $per[$Sid].Rights.Add($Right) }
+    }
+    if ($acl.ownerSid -and -not $tier0.ContainsKey("$($acl.ownerSid)") -and -not (& $isSiteServer "$($acl.ownerSid)")) { & $add "$($acl.ownerSid)" "$($acl.ownerName)" 'owner' }
+    foreach ($ace in @($acl.aces | Where-Object { $_ -and "$($_.accessType)" -eq 'Allow' })) {
+        $sid = "$($ace.sid)"
+        if ($tier0.ContainsKey($sid)) { continue }
+        $r = "$($ace.rights)"
+        $labels = @()
+        foreach ($x in 'GenericAll', 'GenericWrite', 'WriteDacl', 'WriteOwner') { if ($r -match "\b$x\b") { $labels += $x } }
+        if ($r -match '\bCreateChild\b') { $labels += 'CreateChild' }
+        if ($r -match '\bWriteProperty\b') { $labels += 'WriteProperty' }
+        if (-not $labels.Count) { continue }
+        if (& $isSiteServer $sid) {
+            $n = if ($ace.name) { "$($ace.name)" } else { $sid }
+            if (-not $siteServers.Contains($n)) { $siteServers.Add($n) }
+            continue
+        }
+        foreach ($l in $labels) { & $add $sid "$($ace.name)" $l }
+    }
+    $mps = @($Snapshot.sccm.managementPoints | Where-Object { $_ })
+    $context = "Site servers with rights there: $(if ($siteServers.Count) { $siteServers.ToArray() -join ', ' } else { 'none found' }). Management points published: $(if ($mps.Count) { @($mps | ForEach-Object { "$($_.host) (site $($_.siteCode))" }) -join ', ' } else { 'none' })."
+    foreach ($sid in $per.Keys) {
+        $p = $per[$sid]
+        $broad = $p.Name -match '(?i)authenticated users|everyone|domain users|domain computers'
+        Add-Finding -Type sccm_system_management_writable -Object $p.Name -ObjectType 'acl' -ObjectDn "$($acl.distinguishedName)" -Severity $(if ($broad) { 'Critical' } else { 'High' }) `
+            -Detail "$($p.Rights.ToArray() -join ', ') on CN=System Management. $context"
     }
 }
 

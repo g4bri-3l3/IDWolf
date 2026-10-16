@@ -3752,6 +3752,54 @@
       "aces": []
     }
   ],
+  "sccm": {
+    "present": true,
+    "acl": {
+      "target": "SystemManagement",
+      "distinguishedName": "CN=System Management,CN=System,DC=moosebank,DC=local",
+      "objectClass": "",
+      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+      "ownerName": "MOOSEBANK\\Domain Admins",
+      "aces": [
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1275",
+          "name": "MOOSEBANK\\SRV-APP01$",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1103",
+          "name": "MOOSEBANK\\Helpdesk",
+          "rights": "CreateChild, DeleteChild",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-11",
+          "name": "NT AUTHORITY\\Authenticated Users",
+          "rights": "ReadProperty, ListChildren",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        }
+      ]
+    },
+    "managementPoints": [
+      {
+        "host": "srv-app01.moosebank.local",
+        "siteCode": "MB1"
+      }
+    ]
+  },
   "deepAcls": [],
   "kdsRootKeyAcls": [],
   "preWin2000": {
@@ -4566,7 +4614,8 @@
         "displayName": "MooseBank DC Extra",
         "registryValues": {
           "MACHINE\\Software\\Policies\\Microsoft\\Windows NT\\Terminal Services\\UserAuthentication": "4,0",
-          "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\DisableRestrictedAdmin": "4,0"
+          "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\DisableRestrictedAdmin": "4,0",
+          "MACHINE\\Software\\Policies\\Microsoft\\Windows\\WindowsUpdate\\WUServer": "1,https://wsus02.moosebank.local:8531"
         },
         "privilegeRights": {
           "SeDebugPrivilege": [

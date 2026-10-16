@@ -5,23 +5,23 @@
 .DESCRIPTION
     A small menu, so nobody has to remember parameters:
 
-      1  Collect an AD snapshot          (Collect-ADSnapshot.ps1, domain-joined machine)
-      2  Collect password quality        (Export-PasswordQuality.ps1, DCSync rights)
-      3  Collect an Entra ID snapshot    (Collect-EntraSnapshot.ps1)
-      4  Analyze a snapshot              (IDWolf.ps1, anywhere)
-      5  Full AD run                     (collect, then analyze)
-      6  Add an AI summary               (from a snapshot JSON or zip)
+      1  Full AD run                     (collect, then analyze or package)
+      2  Full Entra run                  (collect, then analyze or package)
+      3  Collect an AD snapshot          (Collect-ADSnapshot.ps1, RSAT)
+      4  Collect password quality        (Export-PasswordQuality.ps1, DCSync rights)
+      5  Collect an Entra ID snapshot    (Collect-EntraSnapshot.ps1)
+      6  Analyze a snapshot              (IDWolf.ps1, anywhere; the AI summary is a step of it)
       7  Package for another machine     (snapshot + password quality in one zip)
-      8  Full Entra run                  (collect, then analyze)
 
     Nothing here writes to the directory.
 
     Answers are remembered between runs (%LOCALAPPDATA%\IDWolf\wizard.json: choices and paths,
     never a password or a key) and offered as defaults. On start the launcher offers to pick up
     a snapshot that was collected but never analyzed, or to repeat the last full run with the
-    same answers. A full run (5 or 8) asks everything first, then shows all the answers on
-    one screen to change before Enter starts it. [C] in the menu deletes the file. After an analysis it offers to open the
-    report in the default browser.
+    same answers. Every collection (1, 2, 3, 5) asks its questions first, then shows all the
+    answers on one screen to change before Enter starts it; a single collection (3, 5) stops
+    after collecting unless "Then" is changed there. [C] in the menu deletes the file. After an
+    analysis it offers to open the report in the default browser.
 
 .PARAMETER Credential
     Account for the AD collection and the password-quality step. If password
@@ -110,7 +110,18 @@ function Ts { Get-Date -Format 'yyyyMMdd_HHmmss' }
 # default and saves the new one straight away, so a Ctrl+C half way keeps what was answered.
 # While repeating the last run ($script:Replay) it takes the old answer without asking.
 # Passwords, keys and credentials never go through here.
-$script:State = Read-IDWolfState
+# The menu was renumbered in 1.4 (full runs first): a state file written before remembers the
+# full AD run as 5 and the full Entra run as 8. Only full runs are ever saved as LastRun.
+function Read-LauncherState {
+    $st = Read-IDWolfState
+    $old = @{ '5' = '1'; '8' = '2' }
+    if ($old.ContainsKey("$($st.launcher.LastRun)")) {
+        $st.launcher['LastRun'] = $old["$($st.launcher.LastRun)"]
+        Save-IDWolfState -Section launcher -Values @{ LastRun = $st.launcher['LastRun'] }
+    }
+    return $st
+}
+$script:State = Read-LauncherState
 $script:Replay = $false
 function Read-Remembered {
     param([string]$Key, [string]$Prompt, [string]$Default = '', [switch]$Path)
@@ -148,10 +159,11 @@ function Set-PendingSnapshot {
 function Clear-PendingSnapshot { Save-IDWolfState -Section pending -Values @{} -Replace }
 
 function ConvertTo-NextChoice { param($Answer) $a = "$Answer".Trim().ToUpper(); if ($a -eq 'Z' -or $a -eq 'S') { return $a } return 'A' }
+function ConvertTo-AiChoice { param($Answer) $a = "$Answer".Trim().ToUpper(); if ($a -eq 'S' -or $a -eq 'D') { return $a } return 'A' }
 function ConvertTo-YN { param($Answer) if (Test-Yes $Answer) { return 'y' } return 'n' }
 
-# Full runs (5 and 8): the questions first, then every answer on one screen (Edit-RunSettings,
-# lib\Wizard.ps1) to check or change before anything runs. Enter starts.
+# Collections (1, 2, 3, 5): the questions first, then every answer on one screen
+# (Edit-RunSettings, lib\Wizard.ps1) to check or change before anything runs. Enter starts.
 $script:RunLabels = @{
     Server     = 'Domain controller or domain'
     OutFile    = 'Snapshot output path'
@@ -163,43 +175,67 @@ $script:RunLabels = @{
     DeviceCode = 'Device-code sign-in'
     Next       = 'Then (A analyze, Z zip, S stop)'
     OutHtml    = 'Report HTML path'
+    Ai         = 'AI summary (S skip, A ask, D dry-run)'
     Model      = 'Gemini model'
     AiAttempts = 'Gemini attempts (0 = keep trying)'
 }
-# Settings that are remembered for next time; output paths are new on every run.
-$script:RunRemembered = @('Server', 'Deep', 'Pq', 'WeakList', 'Tenant', 'DeviceCode', 'Next', 'Model', 'AiAttempts')
+# Settings that are remembered for next time; output paths are new on every run. A single
+# collection (3, 5) starts from "Then = S" whatever was answered last, and doesn't save it.
+$script:RunRemembered = @('Server', 'Deep', 'Pq', 'WeakList', 'Tenant', 'DeviceCode', 'Next', 'Ai', 'Model', 'AiAttempts')
+$script:SingleStep = $false
 function Save-RunSetting {
     param([string]$Key, $Value)
-    if ($Key -eq 'Server') { $script:Server = "$Value" }
     if ($script:RunRemembered -notcontains $Key) { return }
+    if ($script:SingleStep -and $Key -eq 'Next') { return }
     $script:State.launcher[$Key] = "$Value"
     Save-IDWolfState -Section launcher -Values @{ $Key = "$Value" }
 }
-# What happens after the collection, asked up front. The report, model and attempts get their
-# defaults even when not asked, so switching to [A] on the settings screen has values to show.
-function Add-AfterCollectionSettings {
+# The AI step of an analysis: skip (-SkipLLM, so a long run never stops at the end on a
+# question), ask (the analyzer writes the prompt and asks before sending) or dry-run (the
+# prompt is written next to the report, nothing is sent). Model and attempts only for ask.
+function Read-AiSettings {
     param($S)
-    $L = $script:State.launcher
-    $S.Next = ConvertTo-NextChoice (Read-Remembered 'Next' "After collecting: analyze here [A], package a zip for another machine [Z], or stop [S]?" 'A')
-    $S.OutHtml = "output\report_{0}.html" -f (Ts)
-    $S.Model = if ($L.Model) { $L.Model } else { 'gemini-3.8-flash' }
-    $S.AiAttempts = if ($L.AiAttempts) { $L.AiAttempts } else { '3' }
-    if ($S.Next -eq 'A') {
-        $S.OutHtml = Read-NewPath "Report HTML path" $S.OutHtml
+    $S.Ai = ConvertTo-AiChoice (Read-Remembered 'Ai' "AI summary (Gemini): skip [S], ask before sending [A], or dry-run, writing the prompt only [D]?" 'A')
+    if ($S.Ai -eq 'A') {
         $S.Model = Read-Remembered 'Model' "Gemini model" 'gemini-3.8-flash'
         $S.AiAttempts = Read-Remembered 'AiAttempts' "Gemini attempts on timeout / busy server, 0 = keep trying" '3'
     }
 }
+# What happens after the collection, asked up front unless Next is given (a single collection).
+# The report, AI step, model and attempts get their defaults even when not asked, so switching
+# to [A] on the settings screen has values to show.
+function Add-AfterCollectionSettings {
+    param($S, [string]$Next = '')
+    $L = $script:State.launcher
+    $S.Next = if ($Next) { $Next } else { ConvertTo-NextChoice (Read-Remembered 'Next' "After collecting: analyze here [A], package a zip for another machine [Z], or stop [S]?" 'A') }
+    $S.OutHtml = "output\report_{0}.html" -f (Ts)
+    $S.Ai = if ($L.Ai) { ConvertTo-AiChoice $L.Ai } else { 'A' }
+    $S.Model = if ($L.Model) { $L.Model } else { 'gemini-3.8-flash' }
+    $S.AiAttempts = if ($L.AiAttempts) { $L.AiAttempts } else { '3' }
+    if ($S.Next -eq 'A') {
+        $S.OutHtml = Read-NewPath "Report HTML path" $S.OutHtml
+        Read-AiSettings $S
+    }
+}
 function Confirm-RunSettings {
     param($S, [bool]$Joined = $true)
-    return Edit-RunSettings -Settings $S -Labels $script:RunLabels -YesNo @('Deep', 'Pq', 'DeviceCode') -Choices @{ Next = @('A', 'Z', 'S') } `
+    return Edit-RunSettings -Settings $S -Labels $script:RunLabels -YesNo @('Deep', 'Pq', 'DeviceCode') -Choices @{ Next = @('A', 'Z', 'S'); Ai = @('S', 'A', 'D') } `
         -Visible ({ param($Key, $Set)
             if (@('Pq', 'PqOut', 'WeakList') -contains $Key -and -not $Joined) { return $false }
             if (@('PqOut', 'WeakList') -contains $Key -and $Set.Pq -ne 'y') { return $false }
-            if (@('OutHtml', 'Model', 'AiAttempts') -contains $Key -and $Set.Next -ne 'A') { return $false }
+            if (@('OutHtml', 'Ai', 'Model', 'AiAttempts') -contains $Key -and $Set.Next -ne 'A') { return $false }
+            if (@('Model', 'AiAttempts') -contains $Key -and $Set.Ai -ne 'A') { return $false }
             return $true
         }.GetNewClosure()) `
         -OnChange { param($Key, $Value) Save-RunSetting $Key $Value }
+}
+# The analyzer's parameters for the AI step chosen above.
+function Add-AiParams {
+    param([hashtable]$Params, [string]$Ai, [string]$Model, [string]$Attempts)
+    if ($Ai -eq 'S') { $Params['SkipLLM'] = $true; return }
+    if ($Ai -eq 'D') { $Params['AiDryRun'] = ($Params.OutHtml -replace '\.html?$', '') + '_ai_prompt.txt'; return }
+    if ($Model) { $Params['Model'] = $Model }
+    if ($Attempts -match '^\d+$') { $Params['AiMaxAttempts'] = [int]$Attempts }
 }
 # The default paths offered below are under .\output.
 $od = Join-Path (Get-Location).Path 'output'; if (-not (Test-Path -LiteralPath $od)) { New-Item -ItemType Directory -Path $od | Out-Null }
@@ -253,47 +289,61 @@ function Invoke-PasswordQualityStep {
     return ""
 }
 
-# Workgroup PCs: no domain to find, no domain identity. Ask once for the DC
-# and an account and keep both for the session. Returns the extra collector
-# parameters, or $null if the user gives up.
-$script:Server = ''
+# Workgroup PCs: no domain to find, no domain identity. The DC goes on the settings screen of an
+# AD collection; the account is asked once and kept for the session.
 function Test-DomainJoined {
     try { return [bool](Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).PartOfDomain } catch { return $true }
 }
-function Get-WorkgroupParams {
-    if (Test-DomainJoined) { return @{} }
-    Write-Host "This computer is not joined to a domain. Collection needs the name of a domain controller and a domain account." -ForegroundColor Yellow
-    if (-not $script:Server) { $script:Server = Read-Remembered 'Server' "Domain controller or domain (e.g. dc01.corp.local; - to cancel)" }
-    if (-not $script:Server) { return $null }
-    if (-not $script:Credential) {
-        try { $script:Credential = Get-Credential -Message "Domain account (DOMAIN\user) for the read-only AD collection" } catch { }
-        if (-not $script:Credential) { Write-Host "No credentials given: the queries will probably be denied." -ForegroundColor Yellow }
+function Request-WorkgroupCredential {
+    if ($script:Credential) { return }
+    try { $script:Credential = Get-Credential -Message "Domain account (DOMAIN\user) for the read-only AD collection" } catch { }
+    if (-not $script:Credential) { Write-Host "No credentials given: the queries will probably be denied." -ForegroundColor Yellow }
+}
+# The domain password quality replicates from (Export-PasswordQuality.ps1 finds it the same
+# way), for the name of its report. The report itself records the real one.
+function Get-LocalDomainName {
+    $d = "$env:USERDNSDOMAIN"
+    if (-not $d) { try { $d = "$((Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).Domain)" } catch { } }
+    if (-not $d) { $d = 'domain' }
+    return $d.ToLower()
+}
+# False when the password-quality report names another domain than the snapshot: IDWolf.ps1
+# would refuse the pair, so it is left out here already.
+function Test-PqMatchesSnapshot {
+    param([string]$Snapshot, [string]$PasswordQuality)
+    $sd = Get-SnapshotDomainName $Snapshot
+    $pd = ''
+    try { $pd = "$(([System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $PasswordQuality).ProviderPath) | ConvertFrom-Json).domain)" } catch { }
+    if ($sd -and $pd -and $pd -ne 'domain' -and $pd -ne $sd) {
+        Write-Host "The password-quality report is for $pd, the snapshot for ${sd}: it is left out." -ForegroundColor Yellow
+        return $false
     }
-    return @{ Server = $script:Server }
+    return $true
 }
 
 # After a collection: analyze here, package for another machine, or stop. The snapshot stays
-# pending until one of them is done (an analysis that wrote no report keeps it pending).
-# Preset: the answers of a full run, already checked on the settings screen (Next, OutHtml,
-# Model, AiAttempts). Without it (a pending snapshot picked up on start) they are asked here.
+# pending until it is analyzed or packaged (an analysis that wrote no report keeps it pending),
+# so "stop" leaves it for the next start to offer.
+# Preset: the answers of a collection, already checked on the settings screen (Next, OutHtml,
+# Ai, Model, AiAttempts). Without it (a pending snapshot picked up on start) they are asked here.
 function Invoke-AfterCollection {
     param([string]$Snapshot, [string]$PasswordQuality = '', $Preset = $null)
     if ($Preset) { $next = "$($Preset.Next)" }
-    else { $next = ConvertTo-NextChoice (Read-Remembered 'Next' "Analyze here [A], package a zip to analyze on another machine [Z], or stop [S]?" 'A') }
-    if ($next -eq 'Z') { Invoke-Package -Snapshot $Snapshot -PasswordQuality $PasswordQuality; Clear-PendingSnapshot }
-    elseif ($next -eq 'S') { Clear-PendingSnapshot }
     else {
-        if ($Preset) { $html = "$($Preset.OutHtml)"; $m = "$($Preset.Model)"; $r = "$($Preset.AiAttempts)" }
-        else {
-            $html = Read-NewPath "Report HTML path" ("output\report_{0}.html" -f (Ts))
-            $m = Read-Remembered 'Model' "Gemini model" 'gemini-3.8-flash'
-            $r = Read-Remembered 'AiAttempts' "Gemini attempts on timeout / busy server, 0 = keep trying" '3'
+        # Picked up on start: analyzing is the default, whatever the last run chose.
+        $next = ConvertTo-NextChoice (Read-Host "Analyze here [A], package a zip to analyze on another machine [Z], or leave it for later [S]? [A]")
+    }
+    if ($next -eq 'Z') { Invoke-Package -Snapshot $Snapshot -PasswordQuality $PasswordQuality; Clear-PendingSnapshot }
+    elseif ($next -eq 'S') { Write-Host "Snapshot kept for later: $Snapshot. The next start offers to analyze or package it." -ForegroundColor Cyan }
+    else {
+        $s = $Preset
+        if (-not $s) {
+            $s = [ordered]@{ OutHtml = (Read-NewPath "Report HTML path" ("output\report_{0}.html" -f (Ts))) }
+            Read-AiSettings $s
         }
-        $ap = @{ Snapshot = $Snapshot; OutHtml = $html }
+        $ap = @{ Snapshot = $Snapshot; OutHtml = "$($s.OutHtml)" }
         if ($PasswordQuality) { $ap['PasswordQualityFile'] = $PasswordQuality }
-        if ($m) { $ap['Model'] = $m }
-        if ($r -match '^\d+$') { $ap['AiMaxAttempts'] = [int]$r }
-        # The analyzer still asks whether to send to Gemini or skip.
+        Add-AiParams -Params $ap -Ai "$($s.Ai)" -Model "$($s.Model)" -Attempts "$($s.AiAttempts)"
         $t0 = Get-Date
         Invoke-Sub 'IDWolf.ps1' $ap
         if (Test-Path -LiteralPath $ap.OutHtml) { Clear-PendingSnapshot }
@@ -301,7 +351,129 @@ function Invoke-AfterCollection {
     }
 }
 
+# What the collecting account can do (Get-CollectorRights, lib\Wizard.ps1), shown just before the
+# settings screen: a missing right is seen before the run, not as "not evaluated" checks or a
+# denied password-quality step after it.
+function Show-CollectorRights {
+    param($S)
+    $r = Get-CollectorRights -Server "$($S.Server)" -Credential $script:Credential
+    $yn = { param($v) if ($null -eq $v) { 'unknown' } elseif ($v) { 'yes' } else { 'no' } }
+    Write-Host "`nRights of $(if ($r.Account) { $r.Account } else { 'this account' }):" -ForegroundColor Cyan
+    Write-Host ("  Elevated session (local admin)      {0}" -f (& $yn $r.Elevated))
+    if ($r.Error) { Write-Host "  Domain rights not read: $($r.Error)" -ForegroundColor Yellow; return }
+    $da = if ($r.FilteredByUac) { 'filtered by UAC (window not elevated)' } else { "$(& $yn $r.DomainAdmin) / $(& $yn $r.EnterpriseAdmin)" }
+    Write-Host ("  Domain Admins / Enterprise Admins   {0}" -f $da)
+    Write-Host ("  Replication rights (DCSync)         {0}" -f (& $yn $r.Replication))
+    # The checks these rights leave out, from the catalog's Needs (the same ones the report will
+    # list as "not evaluated").
+    $gaps = @(Get-RightsGaps -Rights $r -Deep ($S.Deep -eq 'y'))
+    if (-not $gaps.Count) { Write-Host '  Every check can be evaluated with these rights.' -ForegroundColor Green; return }
+    $catalog = Get-IDWolfCheckCatalog
+    Write-Host '  These checks will come back "not evaluated":' -ForegroundColor Yellow
+    foreach ($g in $gaps) {
+        $types = @(if ($catalog) { Get-ChecksNeeding -Catalog $catalog -Sections $g.Sections })
+        Write-Host "    $($g.Reason)$(if ($types.Count) { " ($($types.Count)): $($types -join ', ')" })" -ForegroundColor Yellow
+    }
+    if ($r.FilteredByUac) { Write-Host '  Start Start-IDWolf.cmd with right-click > Run as administrator to collect with your full rights.' -ForegroundColor Yellow }
+}
+# The check catalog, only to name the checks above. Loaded in a function so the analyzer's own
+# functions stay out of the launcher; only its $script: tables are kept.
+function Get-IDWolfCheckCatalog {
+    try {
+        . (Join-Path $root 'lib\Checks.ps1')
+        . (Join-Path $root 'lib\ChecksHost.ps1')
+        return $script:CheckCatalog
+    }
+    catch { return $null }
+}
+
+# AD collection: a full run (1) asks what to do next and offers password quality; a single
+# collection (3) starts from "Then = S". Both go through the same settings screen.
+function Invoke-AdRun {
+    param([bool]$Full)
+    $script:SingleStep = -not $Full
+    $joined = Test-DomainJoined
+    $s = [ordered]@{}
+    if (-not $joined) {
+        Write-Host "This computer is not joined to a domain. Collection needs the name of a domain controller and a domain account." -ForegroundColor Yellow
+        $s.Server = Read-Remembered 'Server' "Domain controller or domain (e.g. dc01.corp.local; - to cancel)"
+        if (-not $s.Server) { Write-Host "Cancelled: no domain controller given." -ForegroundColor Yellow; return }
+        Request-WorkgroupCredential
+    }
+    # Timestamped file, so a re-run never overwrites the last snapshot.
+    $s.OutFile = Read-NewPath "AD snapshot output path" ("output\adsnap_{0}.json" -f (Ts))
+    $s.Deep = ConvertTo-YN (Read-Remembered 'Deep' "Deep collection? (y/n)" 'n')
+    # Separate on purpose: it reads password hashes, the AD collection never does.
+    $s.Pq = 'n'
+    if ($Full -and $joined) { $s.Pq = ConvertTo-YN (Read-Remembered 'Pq' "Also collect password quality? Needs DSInternals and DCSync rights; run from the DC or a trusted admin host (y/n)" 'n') }
+    elseif ($Full) { Write-Host "Password quality skipped: it needs a domain-joined machine (or the DC) to find the PDC. Run option 4 there." -ForegroundColor Yellow }
+    $s.PqOut = "output\pwq_{0}_{1}.json" -f $(if ($joined) { Get-LocalDomainName } else { 'domain' }), (Ts)
+    $s.WeakList = "$($script:State.launcher.WeakList)"
+    if ($s.Pq -eq 'y') {
+        $s.PqOut = Read-NewPath "Password-quality output path" $s.PqOut
+        $s.WeakList = Read-Remembered 'WeakList' "Weak/breached password list path (optional; - for none)" -Path
+    }
+    if ($Full) { Add-AfterCollectionSettings $s } else { Add-AfterCollectionSettings $s -Next 'S' }
+    Show-CollectorRights $s
+    if (-not (Confirm-RunSettings $s $joined)) { Write-Host "Cancelled: nothing collected." -ForegroundColor Yellow; return }
+    # Cleared on the settings screen: there is nothing to fall back on.
+    if (-not $joined -and -not $s.Server) { Write-Host "Cancelled: a workgroup PC needs a domain controller, and it was cleared. Nothing collected." -ForegroundColor Yellow; return }
+
+    $p = @{ OutFile = $s.OutFile } + (Get-CredParams)
+    if ($s.Server) { $p['Server'] = $s.Server }
+    if ($s.Deep -eq 'y') { $p['Deep'] = $true }
+    Invoke-Sub 'Collect-ADSnapshot.ps1' $p
+    if (-not (Test-Path -LiteralPath $s.OutFile)) { Write-Host "Snapshot not produced; see messages above." -ForegroundColor Red; return }
+    Write-Host "`nSnapshot ready: $($s.OutFile)" -ForegroundColor Green
+    Set-PendingSnapshot -Kind ad -Snapshot $s.OutFile
+    $pqOut = ""
+    if ($joined -and $s.Pq -eq 'y') {
+        $pqOut = Invoke-PasswordQualityStep -OutFile $s.PqOut -WeakList $s.WeakList
+        if (-not $pqOut) { Write-Host "Password quality not produced (see messages); continuing without it." -ForegroundColor Yellow }
+        elseif (-not (Test-PqMatchesSnapshot -Snapshot $s.OutFile -PasswordQuality $pqOut)) { $pqOut = "" }
+        else { Set-PendingSnapshot -Kind ad -Snapshot $s.OutFile -PasswordQuality $pqOut }
+    }
+    Invoke-AfterCollection -Snapshot $s.OutFile -PasswordQuality $pqOut -Preset $s
+}
+
+# Entra collection: full run (2) or single collection (5), like the AD one.
+function Invoke-EntraRun {
+    param([bool]$Full)
+    $script:SingleStep = -not $Full
+    $s = [ordered]@{}
+    $s.OutFile = Read-NewPath "Entra snapshot output path" ("output\entrasnapshot_{0}.json" -f (Ts))
+    $s.Tenant = Read-Remembered 'Tenant' "Tenant ID or domain (Enter = last one or the sign-in default; - for the sign-in default)"
+    $s.DeviceCode = ConvertTo-YN (Read-Remembered 'DeviceCode' "Use device-code sign-in? (y/n)" 'n')
+    if ($Full) { Add-AfterCollectionSettings $s } else { Add-AfterCollectionSettings $s -Next 'S' }
+    if (-not (Confirm-RunSettings $s)) { Write-Host "Cancelled: nothing collected." -ForegroundColor Yellow; return }
+
+    $p = @{ OutFile = $s.OutFile }
+    if ($s.Tenant) { $p['TenantId'] = $s.Tenant }
+    if ($s.DeviceCode -eq 'y') { $p['UseDeviceCode'] = $true }
+    Invoke-Sub 'Collect-EntraSnapshot.ps1' $p
+    if (-not (Test-Path -LiteralPath $s.OutFile)) { Write-Host "Snapshot not produced; see messages above." -ForegroundColor Red; return }
+    Write-Host "`nSnapshot ready: $($s.OutFile)" -ForegroundColor Green
+    Set-PendingSnapshot -Kind entra -Snapshot $s.OutFile
+    Invoke-AfterCollection -Snapshot $s.OutFile -Preset $s
+}
+
 Show-Banner
+
+# This window, checked once: on a DC a window that is not elevated collects like a standard
+# user, whatever the account (UAC filters the admin groups out of its token). The launcher
+# can't restart itself elevated (the safety review forbids starting processes), so it says how
+# and offers to quit; the answers given so far are remembered.
+$script:Session = Get-SessionStatus
+if ($script:Session.OnDc -and $script:Session.Elevated -eq $false) {
+    Write-Host "`nThis is a domain controller and this window is not elevated. Windows filters the admin rights out of it (UAC):" -ForegroundColor Yellow
+    Write-Host "even a Domain Admin collects like a standard user here, password quality is denied and many checks come back `"not evaluated`"." -ForegroundColor Yellow
+    Write-Host "Close it and start Start-IDWolf.cmd with right-click > Run as administrator (analysis and packaging work as they are)." -ForegroundColor Yellow
+    $a = Read-Host 'Quit now to restart elevated? (Y/n)'
+    if ([string]::IsNullOrWhiteSpace($a) -or (Test-Yes $a)) { Write-Host "Bye." -ForegroundColor DarkYellow; return }
+}
+elseif ($script:Session.Elevated -eq $false -and $script:Session.Rsat -eq $false) {
+    Write-Host "`nNot elevated, and RSAT (ActiveDirectory module) is not installed: an AD collection can't install it from this window. Start Start-IDWolf.cmd as administrator for that; Entra, analysis and packaging don't need it." -ForegroundColor DarkGray
+}
 
 # Interrupted last time? A snapshot collected but never analyzed comes first, then the offer
 # to repeat the last full run with the same answers.
@@ -317,9 +489,9 @@ if ($pend.Snapshot -and (Test-Path -LiteralPath $pend.Snapshot)) {
     }
 }
 elseif ($pend.Snapshot) { Clear-PendingSnapshot }
-elseif (@('5', '8') -contains $script:State.launcher.LastRun) {
+elseif (@('1', '2') -contains $script:State.launcher.LastRun) {
     $L = $script:State.launcher
-    $what = if ($L.LastRun -eq '5') {
+    $what = if ($L.LastRun -eq '1') {
         "full AD run$(if (Test-Yes $L.Deep) { ', deep collection' })$(if ($L.Server) { ", server $($L.Server)" })$(if (Test-Yes $L.Pq) { ', password quality' })"
     }
     else { "full Entra run$(if ($L.Tenant) { ", tenant $($L.Tenant)" })" }
@@ -330,149 +502,54 @@ elseif (@('5', '8') -contains $script:State.launcher.LastRun) {
 
 while ($true) {
     Write-Host ""
-    Write-Host "  [1] Collect AD snapshot        (on a domain-joined machine, RSAT)" -ForegroundColor White
-    Write-Host "  [2] Collect password quality   (DSInternals + DCSync rights, hashless)" -ForegroundColor White
-    Write-Host "  [3] Collect Entra ID snapshot  (Microsoft Graph)" -ForegroundColor White
-    Write-Host "  [4] Analyze a snapshot         (report + choose Gemini model)" -ForegroundColor White
-    Write-Host "  [5] Full AD run                (collect, then analyze)" -ForegroundColor White
-    Write-Host "  [6] Add AI summary             (from the snapshot JSON or zip, not the report)" -ForegroundColor White
+    Write-Host "  [1] Full AD run                 (collect, then analyze or package)" -ForegroundColor White
+    Write-Host "  [2] Full Entra run              (collect, then analyze or package)" -ForegroundColor White
+    Write-Host "  [3] Collect AD snapshot         (RSAT; a workgroup PC asks for the DC)" -ForegroundColor White
+    Write-Host "  [4] Collect password quality    (DSInternals + DCSync rights, hashless)" -ForegroundColor White
+    Write-Host "  [5] Collect Entra ID snapshot   (Microsoft Graph)" -ForegroundColor White
+    Write-Host "  [6] Analyze a snapshot          (report, optional AI summary)" -ForegroundColor White
     Write-Host "  [7] Package for another machine (snapshot + password quality in one zip)" -ForegroundColor White
-    Write-Host "  [8] Full Entra run             (collect, then analyze)" -ForegroundColor White
     Write-Host "  [C] Forget remembered choices" -ForegroundColor White
     Write-Host "  [Q] Quit" -ForegroundColor White
     if ($script:QueuedChoice) { $choice = $script:QueuedChoice; $script:QueuedChoice = $null; Write-Host "`nChoice: $choice (repeating the last run)" }
     else { $script:Replay = $false; $choice = (Read-Host "`nChoice").Trim().ToUpper() }
-    if (@('5', '8') -contains $choice) { $script:State.launcher['LastRun'] = $choice; Save-IDWolfState -Section launcher -Values @{ LastRun = $choice } }
+    if (@('1', '2') -contains $choice) { $script:State.launcher['LastRun'] = $choice; Save-IDWolfState -Section launcher -Values @{ LastRun = $choice } }
     switch ($choice) {
-        '1' { Invoke-Sub 'Collect-ADSnapshot.ps1' (Get-CredParams) }
-        '2' {
+        '1' { Invoke-AdRun -Full $true }
+        '2' { Invoke-EntraRun -Full $true }
+        '3' { Invoke-AdRun -Full $false }
+        '4' {
             if (-not (Test-DomainJoined)) {
                 Write-Host "This computer is not joined to a domain: live replication can't find the PDC from here." -ForegroundColor Yellow
                 Write-Host "Run this option on a domain-joined machine or the DC, or run Export-PasswordQuality.ps1 -FromDatabase ntds.dit -BootKeyFile SYSTEM." -ForegroundColor Yellow
                 continue
             }
-            $pqOut = Read-Path "Password-quality output path" ("output\pwq_{0}.json" -f (Ts))
+            $pqOut = Read-Path "Password-quality output path" ("output\pwq_{0}_{1}.json" -f (Get-LocalDomainName), (Ts))
             $wl = Read-Remembered 'WeakList' "Weak/breached password list path (optional; - for none)" -Path
             if (Invoke-PasswordQualityStep -OutFile $pqOut -WeakList $wl) { Write-Host "Password-quality report ready: $pqOut" -ForegroundColor Green }
         }
-        '3' { Invoke-Sub 'Collect-EntraSnapshot.ps1' }
-        '4' { Invoke-Sub 'IDWolf.ps1' }
-        '5' {
-            $wg = Get-WorkgroupParams
-            if ($null -eq $wg) { Write-Host "Cancelled: no domain controller given." -ForegroundColor Yellow; continue }
-            $joined = Test-DomainJoined
-            $s = [ordered]@{}
-            if ($wg.Server) { $s.Server = $wg.Server }
-            # Timestamped file, so a re-run never overwrites the last snapshot.
-            $s.OutFile = Read-NewPath "AD snapshot output path" ("output\adsnap_{0}.json" -f (Ts))
-            $s.Deep = ConvertTo-YN (Read-Remembered 'Deep' "Deep collection? (y/n)" 'n')
-            # Separate on purpose: it reads password hashes, the AD collection never does.
-            $s.Pq = 'n'
-            if ($joined) { $s.Pq = ConvertTo-YN (Read-Remembered 'Pq' "Also collect password quality? Needs DSInternals and DCSync rights; run from the DC or a trusted admin host (y/n)" 'n') }
-            else { Write-Host "Password quality skipped: it needs a domain-joined machine (or the DC) to find the PDC. Run option 2 there." -ForegroundColor Yellow }
-            $s.PqOut = "output\pwq_{0}.json" -f (Ts)
-            $s.WeakList = "$($script:State.launcher.WeakList)"
-            if ($s.Pq -eq 'y') {
-                $s.PqOut = Read-NewPath "Password-quality output path" $s.PqOut
-                $s.WeakList = Read-Remembered 'WeakList' "Weak/breached password list path (optional; - for none)" -Path
-            }
-            Add-AfterCollectionSettings $s
-            if (-not (Confirm-RunSettings $s $joined)) { Write-Host "Cancelled: nothing collected." -ForegroundColor Yellow; continue }
-
-            $p = @{ OutFile = $s.OutFile } + (Get-CredParams) + $wg
-            if ($s.Server) { $p['Server'] = $s.Server }
-            if ($s.Deep -eq 'y') { $p['Deep'] = $true }
-            Invoke-Sub 'Collect-ADSnapshot.ps1' $p
-            if (Test-Path -LiteralPath $s.OutFile) {
-                Write-Host "`nSnapshot ready: $($s.OutFile)" -ForegroundColor Green
-                Set-PendingSnapshot -Kind ad -Snapshot $s.OutFile
-                $pqOut = ""
-                if ($joined -and $s.Pq -eq 'y') {
-                    $pqOut = Invoke-PasswordQualityStep -OutFile $s.PqOut -WeakList $s.WeakList
-                    if (-not $pqOut) { Write-Host "Password quality not produced (see messages); continuing without it." -ForegroundColor Yellow }
-                    else { Set-PendingSnapshot -Kind ad -Snapshot $s.OutFile -PasswordQuality $pqOut }
-                }
-                Invoke-AfterCollection -Snapshot $s.OutFile -PasswordQuality $pqOut -Preset $s
-            }
-            else { Write-Host "Snapshot not produced; see messages above." -ForegroundColor Red }
-        }
-        '6' {
-            # AI summary for an existing analysis. It starts from the snapshot
-            # (tokenizing needs the directory data) and rewrites the report.
-            $snaps = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)snapshot|adsnap|entra' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
-            if ($snaps.Count -eq 0) { $snaps = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName }) }
-            $snaps = @($snaps) + @(Get-ChildItem -Path '.', 'output' -Filter *.zip -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)idwolf' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
-            $snap = ""
-            if ($snaps.Count -gt 0) {
-                for ($i = 0; $i -lt $snaps.Count; $i++) { Write-Host ("  [{0}] {1}" -f ($i + 1), $snaps[$i]) }
-                $pick = Read-Host "Pick a snapshot number, or type a path (Tab completes)"
-                if ($pick -match '^\d+$' -and [int]$pick -ge 1 -and [int]$pick -le $snaps.Count) { $snap = $snaps[[int]$pick - 1] } elseif ($pick) { $snap = $pick } else { $snap = Read-Path "Snapshot path" }
-            }
-            else { $snap = Read-Path "Snapshot path" }
-            if ($snap -and $snap -notmatch '(?i)\.(json|zip)$') {
-                Write-Host "Option 6 needs the snapshot JSON (adsnapshot_*.json / entrasnapshot_*.json) or its zip, not a report ($snap)." -ForegroundColor Yellow
-                Write-Host "The report is regenerated from the snapshot, with the AI section added." -ForegroundColor Yellow
-                $snap = ""
-            }
-            if ($snap -and (Test-Path -LiteralPath $snap)) {
-                $rep = Read-Path "Report HTML to (re)write" ("output\report_{0}.html" -f (Ts))
-                $ap = @{ Snapshot = $snap; OutHtml = $rep }
-                # No -SendToAI: the analyzer writes <report>_ai_prompt.txt first, shows its path, asks before
-                # sending, and asks for the API key then if there is none. Nothing leaves before that "y".
-                Write-Host "The exact text for Gemini will be saved next to the report as $([System.IO.Path]::GetFileNameWithoutExtension($rep))_ai_prompt.txt, and you confirm before anything is sent." -ForegroundColor Cyan
-                $m = Read-Remembered 'Model' "Gemini model" 'gemini-3.8-flash'
-                if ($m) { $ap['Model'] = $m }
-                $r = Read-Remembered 'AiAttempts' "Gemini attempts on timeout / busy server, 0 = keep trying" '3'
-                if ($r -match '^\d+$') { $ap['AiMaxAttempts'] = [int]$r }
-                # A zip brings its own password-quality report, if it has one.
-                if ($snap -notmatch '(?i)\.zip$') {
-                    $pqf = @(Get-ChildItem -Path '.', 'output' -Filter '*.json' -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)pwq|passwordquality' } | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
-                    $pq = Read-Path "Password-quality JSON to include (optional, Enter to skip)" $(if ($pqf.Count) { $pqf[0] } else { "" })
-                    if ($pq) { $ap['PasswordQualityFile'] = $pq }
-                }
-                $t0 = Get-Date
-                Invoke-Sub 'IDWolf.ps1' $ap
-                [void](Request-OpenReport -Path $rep -Since $t0)
-            }
-            elseif ($snap) { Write-Host "Snapshot not found." -ForegroundColor Red }
-        }
+        '5' { Invoke-EntraRun -Full $false }
+        '6' { Invoke-Sub 'IDWolf.ps1' }
         '7' {
             $snapDef = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)snapshot|adsnap|entra' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
             $s = Read-Path "Snapshot JSON" $(if ($snapDef.Count) { $snapDef[0] } else { "" })
             if (-not $s -or -not (Test-Path -LiteralPath $s)) { Write-Host "Snapshot not found." -ForegroundColor Red }
             else {
-                $pqDef = @(Get-ChildItem -Path '.', 'output' -Filter *.json -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)pwq|passwordquality' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1 | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
+                # Only a report of the snapshot's domain is offered (none for an Entra snapshot).
+                $pqDef = @(Get-PasswordQualityCandidates -Domain (Get-SnapshotDomainName $s))
                 $pq = Read-Path "Password-quality JSON to add (optional, Enter to skip)" $(if ($pqDef.Count) { $pqDef[0] } else { "" })
                 if ($pq -and -not (Test-Path -LiteralPath $pq)) { Write-Host "Password-quality file not found: $pq" -ForegroundColor Red }
+                elseif ($pq -and -not (Test-PqMatchesSnapshot -Snapshot $s -PasswordQuality $pq)) { Write-Host "Nothing packaged." -ForegroundColor Yellow }
                 else { Invoke-Package -Snapshot $s -PasswordQuality $pq }
             }
         }
-        '8' {
-            $s = [ordered]@{}
-            $s.OutFile = Read-NewPath "Entra snapshot output path" ("output\entrasnapshot_{0}.json" -f (Ts))
-            $s.Tenant = Read-Remembered 'Tenant' "Tenant ID or domain (Enter = last one or the sign-in default; - for the sign-in default)"
-            $s.DeviceCode = ConvertTo-YN (Read-Remembered 'DeviceCode' "Use device-code sign-in? (y/n)" 'n')
-            Add-AfterCollectionSettings $s
-            if (-not (Confirm-RunSettings $s)) { Write-Host "Cancelled: nothing collected." -ForegroundColor Yellow; continue }
-
-            $p = @{ OutFile = $s.OutFile }
-            if ($s.Tenant) { $p['TenantId'] = $s.Tenant }
-            if ($s.DeviceCode -eq 'y') { $p['UseDeviceCode'] = $true }
-            Invoke-Sub 'Collect-EntraSnapshot.ps1' $p
-            if (Test-Path -LiteralPath $s.OutFile) {
-                Write-Host "`nSnapshot ready: $($s.OutFile)" -ForegroundColor Green
-                Set-PendingSnapshot -Kind entra -Snapshot $s.OutFile
-                Invoke-AfterCollection -Snapshot $s.OutFile -Preset $s
-            }
-            else { Write-Host "Snapshot not produced; see messages above." -ForegroundColor Red }
-        }
         'C' {
             Clear-IDWolfState
-            $script:State = Read-IDWolfState
+            $script:State = Read-LauncherState
             Write-Host "Remembered choices deleted ($(Get-IDWolfStatePath))." -ForegroundColor Green
         }
         'Q' { break }
-        default { Write-Host "Pick 1-8, C or Q." -ForegroundColor Yellow }
+        default { Write-Host "Pick 1-7, C or Q." -ForegroundColor Yellow }
     }
     if ($choice -eq 'Q') { break }
 }

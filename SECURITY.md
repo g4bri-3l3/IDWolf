@@ -43,7 +43,9 @@ real directory data in the report.
   scheduled task, but creating the task is left to you; the safety review
   fails on any code that registers one.
 - **Network**: the domain controllers (LDAP/ADWS, SMB for SYSVOL, RPC for DNS
-  and replication status, NTP for the clock check, CIM/WinRM for disk and services), `graph.microsoft.com` for the Entra collector, and
+  and replication status, NTP for the clock check, CIM/WinRM for disk and services; before an AD
+  collection the launcher also reads the account's groups and the domain head's permissions over
+  LDAP, to show what it can do), `graph.microsoft.com` for the Entra collector, and
   Gemini only if you say yes (or pass `-SendToAI`), after every name has been
   replaced by a token. The exact text is saved next to the report
   (`<report>_ai_prompt.txt`) before you're asked, and the reply after
