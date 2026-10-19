@@ -49,10 +49,11 @@ $allowed = [ordered]@{
     'Install a missing prerequisite (only after asking, or with -InstallModules)' = @('Install-Module', 'Install-PackageProvider', 'Add-WindowsCapability', 'Install-WindowsFeature')
     'Connections for the collection (SYSVOL drive, CIM session to the DNS server and the DCs)' = @('New-PSDrive', 'Remove-PSDrive', 'New-CimSession', 'Remove-CimSession', 'Get-CimInstance')
     'Read a registry value on a DC (StdRegProv, read methods only: checked below)' = @('Invoke-CimMethod')
-    'Files: read inputs, write the snapshot / report' = @('Get-Acl', 'Get-Content', 'Set-Content', 'Export-Csv', 'Import-Csv', 'Get-ChildItem', 'Select-String', 'Test-Path', 'Resolve-Path', 'Join-Path', 'Split-Path', 'Get-Location', 'New-Item', 'Remove-Item', 'Get-PSDrive')
+    'Files: read inputs, write the snapshot / report' = @('Get-Acl', 'Get-Content', 'Set-Content', 'Export-Csv', 'Import-Csv', 'Get-ChildItem', 'Select-String', 'Test-Path', 'Resolve-Path', 'Join-Path', 'Split-Path', 'Get-Location', 'Set-Location', 'New-Item', 'Remove-Item', 'Get-PSDrive')
     'Connection diagnostics (DNS lookup of the domain and the DC locator record; the TCP connect test is .NET and sends nothing)' = @('Resolve-DnsName')
     'Modules and environment' = @('Import-Module', 'Get-Module', 'Get-PackageProvider', 'Get-Command', 'Add-Type', 'Get-Credential', 'Get-Date', 'Start-Sleep')
     'Console' = @('Write-Host', 'Write-Warning', 'Write-Progress', 'Read-Host', 'Out-Null')
+    'Session log of an interactive run (transcript in output; hidden prompts leave nothing in it)' = @('Start-Transcript', 'Stop-Transcript')
     'Open the finished report in the default browser (wizard only, after asking; lib\Wizard.ps1 only: checked below)' = @('Invoke-Item')
     'Data handling' = @('Measure-Command', 'ConvertTo-Json', 'ConvertFrom-Json', 'Select-Object', 'Where-Object', 'ForEach-Object', 'Sort-Object', 'Group-Object', 'Measure-Object', 'New-Object', 'Add-Member')
 }

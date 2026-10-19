@@ -42,12 +42,18 @@ real directory data in the report.
 - **Doesn't schedule itself.** `Invoke-IDWolfScheduled.ps1` is meant for a
   scheduled task, but creating the task is left to you; the safety review
   fails on any code that registers one.
+- **Session log**: an interactive session (launcher, analyzer wizard) keeps a
+  transcript in `output\idwolf_<timestamp>.log`, with the answers typed and the
+  console output. Hidden prompts (Gemini key, package passwords, credentials) are
+  not in it; it names directory objects, like the report.
 - **Network**: the domain controllers (LDAP/ADWS, SMB for SYSVOL, RPC for DNS
   and replication status, NTP for the clock check, CIM/WinRM for disk and services; before an AD
   collection the launcher also reads the account's groups and the domain head's permissions over
   LDAP, to show what it can do; and it and the collector test the connection to the chosen DC:
   DNS lookups, an LDAP read of RootDSE and of the Sites container for the DC list, and a TCP
-  connect to the ports a collection uses, closed at once without sending anything),
+  connect to the ports a collection uses, closed at once without sending anything; these LDAP
+  reads use 389, or LDAPS on 636 when only that port answers, with the DC's certificate checked
+  by Windows, never ignored),
   `graph.microsoft.com` for the Entra collector, and
   Gemini only if you say yes (or pass `-SendToAI`), after every name has been
   replaced by a token. The exact text is saved next to the report

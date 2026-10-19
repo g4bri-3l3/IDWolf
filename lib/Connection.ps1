@@ -15,7 +15,7 @@ $script:IDWolfDcPorts = @(
     [ordered]@{ port = 135; service = 'RPC'; usedFor = 'repadmin, password-quality replication'; used = $true }
     [ordered]@{ port = 88; service = 'Kerberos'; usedFor = 'sign-in to the DC'; used = $false }
     [ordered]@{ port = 53; service = 'DNS'; usedFor = 'name resolution, if the DC is a DNS server'; used = $false }
-    [ordered]@{ port = 636; service = 'LDAPS'; usedFor = 'not used by IDWolf (informational)'; used = $false }
+    [ordered]@{ port = 636; service = 'LDAPS'; usedFor = 'LDAP over TLS, when 389 does not answer'; used = $false }
     [ordered]@{ port = 3268; service = 'GC'; usedFor = 'not used by IDWolf (informational)'; used = $false }
 )
 
@@ -97,9 +97,81 @@ function Get-LocalDnsServers {
 }
 
 function New-LdapEntry {
-    param([string]$Path, [System.Management.Automation.PSCredential]$Credential = $null)
+    param([string]$Path, [System.Management.Automation.PSCredential]$Credential = $null, [switch]$Ssl)
+    if ($Ssl) {
+        # LDAPS: TLS on 636 under the Negotiate bind. The DC's certificate is checked by Windows
+        # (trusted chain, matching name); a bad one fails the bind, it is never ignored.
+        $auth = [System.DirectoryServices.AuthenticationTypes]::Secure -bor [System.DirectoryServices.AuthenticationTypes]::SecureSocketsLayer
+        if ($Credential) { return (New-Object System.DirectoryServices.DirectoryEntry($Path, $Credential.UserName, $Credential.GetNetworkCredential().Password, $auth)) }
+        return (New-Object System.DirectoryServices.DirectoryEntry($Path, $null, $null, $auth))
+    }
     if ($Credential) { return (New-Object System.DirectoryServices.DirectoryEntry($Path, $Credential.UserName, $Credential.GetNetworkCredential().Password)) }
     return (New-Object System.DirectoryServices.DirectoryEntry($Path))
+}
+
+# The LDAP error of a failed LDAPS bind, with the usual cause: Windows only says "The server is
+# not operational" when it refuses the DC's certificate.
+function Get-LdapsHint {
+    param([string]$Message)
+    return "$Message (LDAPS on 636: the DC's certificate must be trusted by this machine and carry the name used)"
+}
+
+# How the launcher reaches a DC over LDAP: plain LDAP on 389 (a Negotiate bind, signed), or
+# LDAPS on 636 when 389 does not answer and 636 does (a firewall that lets only LDAPS through).
+# Server may carry its own port (dc01:636 forces LDAPS). Without Server the bind is serverless;
+# if that fails, the first DC of the locator's SRV record is tested the same way. Binds RootDSE
+# with Properties and returns Root, Prefix (for the other entries), Ssl, Protocol and Error.
+function Open-LdapRootDse {
+    param([string]$Server = '', [System.Management.Automation.PSCredential]$Credential = $null, [string[]]$Properties = @('defaultNamingContext'), [int]$TimeoutMs = 2000)
+    $r = [ordered]@{ Root = $null; Prefix = ''; Ssl = $false; Protocol = 'LDAP'; Error = '' }
+    $bind = {
+        param([string]$Target, [bool]$Ssl)
+        $r.Prefix = if ($Target) { "LDAP://$Target/" } else { 'LDAP://' }
+        $r.Ssl = $Ssl; $r.Protocol = if ($Ssl) { 'LDAPS' } else { 'LDAP' }
+        try {
+            $root = New-LdapEntry ($r.Prefix + 'RootDSE') $Credential -Ssl:$Ssl
+            $root.RefreshCache($Properties)
+            $r.Root = $root; $r.Error = ''
+        }
+        catch {
+            $m = Get-InnerMessage $_.Exception
+            $r.Root = $null; $r.Error = if ($Ssl) { Get-LdapsHint $m } else { $m }
+        }
+    }
+    # Which port answers on a DC: 'ldap' (389 open: the caller binds), 'ldaps' (only 636: bound
+    # here over LDAPS), 'none'.
+    $viaLdaps = {
+        param([string]$TargetHost)
+        $p = @(Test-TcpPorts -TimeoutMs $TimeoutMs -Targets @([ordered]@{ host = $TargetHost; port = 389 }, [ordered]@{ host = $TargetHost; port = 636 }))
+        if (@($p | Where-Object { $_.port -eq 389 -and $_.open }).Count) { return 'ldap' }
+        if (-not @($p | Where-Object { $_.port -eq 636 -and $_.open }).Count) { return 'none' }
+        & $bind "$($TargetHost):636" $true
+        return 'ldaps'
+    }
+
+    if ($Server -match ':(\d+)$') { & $bind $Server ($Matches[1] -eq '636' -or $Matches[1] -eq '3269') }
+    elseif ($Server) {
+        $how = & $viaLdaps $Server
+        if ($how -eq 'ldap') { & $bind $Server $false }
+        elseif ($how -eq 'none') { $r.Prefix = "LDAP://$Server/"; $r.Error = "TCP 389 (LDAP) and 636 (LDAPS) of $Server do not answer" }
+    }
+    else {
+        & $bind '' $false
+        if ($r.Error) {
+            # Serverless bind refused: the locator's first DC, over LDAPS if only 636 answers there.
+            $dom = Get-DefaultDomainName
+            $first = ''
+            if ($dom -and (Get-Command Resolve-DnsName -ErrorAction SilentlyContinue)) {
+                try { $first = @(Resolve-DnsName -Name "_ldap._tcp.dc._msdcs.$dom" -Type SRV -DnsOnly -QuickTimeout -ErrorAction Stop | Where-Object { "$($_.Type)" -eq 'SRV' } | ForEach-Object { "$($_.NameTarget)".ToLower() } | Sort-Object -Unique)[0] } catch { }
+            }
+            if ($first) {
+                $plainError = $r.Error
+                if ((& $viaLdaps $first) -ne 'ldaps') { $r.Prefix = 'LDAP://'; $r.Ssl = $false; $r.Protocol = 'LDAP'; $r.Error = $plainError }
+                elseif ($r.Error) { $r.Error = "$plainError; over LDAPS to $first`: $($r.Error)" }
+            }
+        }
+    }
+    return [PSCustomObject]$r
 }
 
 # Everything that has to work before a collection can, measured: DNS of the domain, the DC
@@ -129,22 +201,33 @@ function Get-ConnectionDiagnostics {
 
     # LDAP RootDSE: proves the bind works, and names the DC that answered (the locator's pick
     # when no server is given) and its domain (all a workgroup PC has to go on).
-    $ldap = [ordered]@{ target = $(if ($Server) { $Server } else { $Domain }); ms = $null; answeredBy = ''; site = ''; error = '' }
-    $p389 = @($d.ports | Where-Object { $_.port -eq 389 })[0]
-    $sw = [Diagnostics.Stopwatch]::StartNew()
-    if ($Server -and -not ($p389 -and $p389.open)) { $ldap.error = 'not tried: TCP 389 does not answer' }
-    else { try {
-        $prefix = if ($Server) { "LDAP://$Server/" } else { 'LDAP://' }
-        $root = New-LdapEntry ($prefix + 'RootDSE') $Credential
-        $root.RefreshCache(@('dnsHostName', 'serverName', 'defaultNamingContext'))
-        $ldap.answeredBy = "$($root.Properties['dnsHostName'].Value)".ToLower()
-        # serverName = CN=DC01,CN=Servers,CN=<site>,CN=Sites,...
-        if ("$($root.Properties['serverName'].Value)" -match ',CN=Servers,CN=([^,]+),CN=Sites,') { $ldap.site = $Matches[1] }
-        $nc = "$($root.Properties['defaultNamingContext'].Value)"
-        if (-not $Domain -and $nc) { $Domain = ((($nc -split ',') | ForEach-Object { $_ -replace '^DC=', '' }) -join '.').ToLower() }
+    # Plain LDAP on 389; LDAPS on 636 when only that port answers (protocol / port say which).
+    $ldap = [ordered]@{ target = $(if ($Server) { $Server } else { $Domain }); protocol = 'LDAP'; port = 389; ms = $null; answeredBy = ''; site = ''; error = '' }
+    $bindLdap = {
+        param([string]$Target, [bool]$Ssl)
+        $ldap.protocol = if ($Ssl) { 'LDAPS' } else { 'LDAP' }; $ldap.port = if ($Ssl) { 636 } else { 389 }
+        $ldap.error = ''; $ldap.answeredBy = ''; $ldap.site = ''
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        try {
+            $prefix = if (-not $Target) { 'LDAP://' } elseif ($Ssl) { "LDAP://$($Target):636/" } else { "LDAP://$Target/" }
+            $root = New-LdapEntry ($prefix + 'RootDSE') $Credential -Ssl:$Ssl
+            $root.RefreshCache(@('dnsHostName', 'serverName', 'defaultNamingContext'))
+            $ldap.answeredBy = "$($root.Properties['dnsHostName'].Value)".ToLower()
+            # serverName = CN=DC01,CN=Servers,CN=<site>,CN=Sites,...
+            if ("$($root.Properties['serverName'].Value)" -match ',CN=Servers,CN=([^,]+),CN=Sites,') { $ldap.site = $Matches[1] }
+            $nc = "$($root.Properties['defaultNamingContext'].Value)"
+            if ($nc) { $bound.Domain = ((($nc -split ',') | ForEach-Object { $_ -replace '^DC=', '' }) -join '.').ToLower() }
+        }
+        catch { $m = Get-InnerMessage $_.Exception; $ldap.error = if ($Ssl) { Get-LdapsHint $m } else { $m } }
+        $ldap.ms = Get-ElapsedMs $sw
     }
-    catch { $ldap.error = Get-InnerMessage $_.Exception } }
-    $ldap.ms = Get-ElapsedMs $sw
+    $bound = @{ Domain = '' }
+    $portOpen = { param([int]$Port) [bool]@($d.ports | Where-Object { $_.port -eq $Port -and $_.open }).Count }
+    if (-not $Server) { & $bindLdap '' $false }
+    elseif (& $portOpen 389) { & $bindLdap $Server $false }
+    elseif (& $portOpen 636) { & $bindLdap $Server $true }
+    else { $ldap.error = 'not tried: TCP 389 (LDAP) and 636 (LDAPS) do not answer' }
+    if (-not $Domain -and $bound.Domain) { $Domain = $bound.Domain }
     $d.ldap = $ldap
     # Still nothing (workgroup PC, LDAP refused): a dotted -Server may be the domain itself.
     if (-not $Domain -and $Server -match '\.') { $Domain = $Server.ToLower() }
@@ -171,6 +254,13 @@ function Get-ConnectionDiagnostics {
     elseif (-not $Server) {
         if ($ldap.answeredBy) { & $testDc $ldap.answeredBy 'DC locator (automatic)' }
         elseif ($d.dcLocator -and @($d.dcLocator.targets).Count) { & $testDc @($d.dcLocator.targets)[0] 'first DNS SRV record' }
+        # The serverless bind failed and that DC answers only on 636: LDAPS to it.
+        if ($ldap.error -and $d.dc -and -not (& $portOpen 389) -and (& $portOpen 636)) {
+            $plainError = $ldap.error
+            & $bindLdap $d.dc $true
+            $ldap.target = $d.dc
+            if ($ldap.error) { $ldap.error = "$plainError; over LDAPS: $($ldap.error)" }
+        }
     }
     return $d
 }
@@ -201,9 +291,10 @@ function Show-ConnectionDiagnostics {
         else { Write-Host ("  DC locator (SRV)             {0} DC(s) in {1}" -f @($lc.targets).Count, (& $ms $lc.ms)) }
     }
     $l = $Diag.ldap
-    if ($l.error -like 'not tried*') { Write-Host ("  LDAP bind                    {0} {1}" -f $l.target, $l.error) -ForegroundColor Yellow }
-    elseif ($l.error) { Write-Host ("  LDAP bind                    {0} FAILED in {1}: {2}" -f $(if ($l.target) { $l.target } else { '(default)' }), (& $ms $l.ms), $l.error) -ForegroundColor Yellow }
-    else { Write-Host ("  LDAP bind                    {0}, answered by {1}{2}" -f (& $ms $l.ms), $l.answeredBy, $(if ($l.site) { " (site $($l.site))" })) }
+    $lbl = if ($l.protocol -eq 'LDAPS') { 'LDAPS bind (TCP 636)  ' } else { 'LDAP bind             ' }
+    if ($l.error -like 'not tried*') { Write-Host ("  {0}       {1} {2}" -f $lbl, $l.target, $l.error) -ForegroundColor Yellow }
+    elseif ($l.error) { Write-Host ("  {0}       {1} FAILED in {2}: {3}" -f $lbl, $(if ($l.target) { $l.target } else { '(default)' }), (& $ms $l.ms), $l.error) -ForegroundColor Yellow }
+    else { Write-Host ("  {0}       {1}, answered by {2}{3}{4}" -f $lbl, (& $ms $l.ms), $l.answeredBy, $(if ($l.site) { " (site $($l.site))" }), $(if ($l.protocol -eq 'LDAPS') { ': TCP 389 does not answer, LDAP over TLS used instead' })) }
     if (-not $Diag.dc) { Write-Host '  Domain controller            none found: check the DNS servers above and the domain name' -ForegroundColor Yellow; return }
     $cd = $Diag.dcDns
     if ($cd.error) { Write-Host ("  Domain controller            {0} [{1}]: DNS FAILED ({2})" -f $Diag.dc, $Diag.dcSelectedBy, $cd.error) -ForegroundColor Yellow; return }
@@ -221,21 +312,21 @@ function Show-ConnectionDiagnostics {
 # read-only, global catalog, PDC. Sorted by site, then name. Error explains an empty list.
 function Get-DomainControllerList {
     param([string]$Server = '', [System.Management.Automation.PSCredential]$Credential = $null)
-    $r = [ordered]@{ Domain = ''; Dcs = @(); Error = '' }
+    $r = [ordered]@{ Domain = ''; Dcs = @(); Protocol = ''; Error = '' }
     try {
-        $prefix = if ($Server) { "LDAP://$Server/" } else { 'LDAP://' }
-        $root = New-LdapEntry ($prefix + 'RootDSE') $Credential
-        try { $root.RefreshCache(@('defaultNamingContext', 'configurationNamingContext')) }
-        catch { throw "no domain controller answered over LDAP$(if ($Server) { " ($Server)" }): $(Get-InnerMessage $_.Exception)" }
+        $conn = Open-LdapRootDse -Server $Server -Credential $Credential -Properties @('defaultNamingContext', 'configurationNamingContext')
+        if ($conn.Error) { throw "no domain controller answered over LDAP$(if ($Server) { " ($Server)" }): $($conn.Error)" }
+        $prefix = $conn.Prefix; $ssl = $conn.Ssl; $r.Protocol = $conn.Protocol
+        $root = $conn.Root
         $nc = "$($root.Properties['defaultNamingContext'].Value)"
         $config = "$($root.Properties['configurationNamingContext'].Value)"
         $r.Domain = (($nc -split ',') | ForEach-Object { $_ -replace '^DC=', '' }) -join '.'
-        $head = New-LdapEntry ($prefix + $nc) $Credential
+        $head = New-LdapEntry ($prefix + $nc) $Credential -Ssl:$ssl
         $head.RefreshCache(@('fSMORoleOwner'))
         $pdcNtds = "$($head.Properties['fSMORoleOwner'].Value)".ToLower()
 
         # NTDS settings objects (nTDSDSA, nTDSDSARO for an RODC) of this domain's DCs. options bit 1 = GC.
-        $sites = New-LdapEntry ($prefix + "CN=Sites,$config") $Credential
+        $sites = New-LdapEntry ($prefix + "CN=Sites,$config") $Credential -Ssl:$ssl
         $ds = New-Object System.DirectoryServices.DirectorySearcher($sites, '(|(objectClass=nTDSDSA)(objectClass=nTDSDSARO))', @('distinguishedName', 'objectClass', 'options', 'msDS-HasDomainNCs', 'hasMasterNCs'))
         $ds.PageSize = 500
         $ntds = @{}
@@ -274,7 +365,7 @@ function Show-DomainControllerList {
     if ($list.Error) { Write-Host "  DC list not available: $($list.Error)" -ForegroundColor Yellow; return $list }
     $lat = @{}
     foreach ($p in @(Test-TcpPorts -TimeoutMs 2000 -Targets @($list.Dcs | ForEach-Object { [ordered]@{ host = $_.Name; port = 9389 } }))) { $lat[$p.host] = $p }
-    Write-Host "`nDomain controllers of $($list.Domain) ($(@($list.Dcs).Count)), ADWS (TCP 9389) from here:" -ForegroundColor Cyan
+    Write-Host "`nDomain controllers of $($list.Domain) ($(@($list.Dcs).Count)$(if ($list.Protocol -eq 'LDAPS') { ', read over LDAPS' })), ADWS (TCP 9389) from here:" -ForegroundColor Cyan
     for ($i = 0; $i -lt $list.Dcs.Count; $i++) {
         $dc = $list.Dcs[$i]; $t = $lat[$dc.Name]
         $roles = @(); if ($dc.Pdc) { $roles += 'PDC' }; if ($dc.GlobalCatalog) { $roles += 'GC' }; if ($dc.ReadOnly) { $roles += 'RODC' }

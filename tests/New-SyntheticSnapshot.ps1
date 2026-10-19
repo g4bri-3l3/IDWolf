@@ -489,12 +489,12 @@ $snapshot = [ordered]@{
                     dcLocator = [ordered]@{ record = '_ldap._tcp.dc._msdcs.moosebank.local'; targets = @('dc01.moosebank.local', 'dc02.moosebank.local'); ms = 6; error = '' }
                     dc = 'dc01.moosebank.local'; dcSelectedBy = 'chosen (-Server)'
                     dcDns = [ordered]@{ name = 'dc01.moosebank.local'; addresses = @('10.10.0.10'); ms = 2; error = '' }
-                    ldap = [ordered]@{ target = 'dc01.moosebank.local'; ms = 23; answeredBy = 'dc01.moosebank.local'; site = 'Milano-HQ'; error = '' }
+                    ldap = [ordered]@{ target = 'dc01.moosebank.local'; protocol = 'LDAP'; port = 389; ms = 23; answeredBy = 'dc01.moosebank.local'; site = 'Milano-HQ'; error = '' }
                     ports = @(
                         [ordered]@{ host = '10.10.0.10'; port = 9389; service = 'ADWS'; usedFor = 'every Get-AD* read (the collection)'; used = $true; open = $true; ms = 3; error = '' }
                         [ordered]@{ host = '10.10.0.10'; port = 445; service = 'SMB'; usedFor = 'SYSVOL (GPP passwords, GPO settings, scripts)'; used = $true; open = $true; ms = 2; error = '' }
                         [ordered]@{ host = '10.10.0.10'; port = 5985; service = 'WinRM'; usedFor = 'CIM: DC health, DNS server, CA settings'; used = $true; open = $false; ms = $null; error = 'no answer in 2000 ms (filtered?)' }
-                        [ordered]@{ host = '10.10.0.10'; port = 636; service = 'LDAPS'; usedFor = 'not used by IDWolf (informational)'; used = $false; open = $false; ms = $null; error = 'connection refused' }
+                        [ordered]@{ host = '10.10.0.10'; port = 636; service = 'LDAPS'; usedFor = 'LDAP over TLS, when 389 does not answer'; used = $false; open = $false; ms = $null; error = 'connection refused' }
                     )
                 }
             } }

@@ -2,6 +2,17 @@
 
 ## 1.5 - 2026-10-19
 
+- Session log: the launcher, and the analyzer wizard on its own, write a transcript to
+  `output\idwolf_<timestamp>.log` (`idwolf_analysis_...` for the wizard alone) with every
+  question, the answer given and all the console output of the collector and the analyzer. Only
+  at an interactive console; one log per session; hidden prompts leave nothing in it.
+  `Start-Transcript` / `Stop-Transcript` join the safety review's list.
+- Started from an elevated window (`C:\Windows\System32`), the launcher and the analyzer wizard
+  work from the IDWolf folder, so snapshots and reports no longer land in
+  `C:\Windows\System32\output`. `Set-Location` joins the safety review's list.
+- Analyzer wizard: the snapshot list is newest first; the Gemini key prompt is hidden (it was
+  echoed); switching AiMode to `send` on the review screen now asks the model, key and attempts,
+  and the review shows the model / attempts only when they apply and refuses an unknown AiMode.
 - Connection diagnostics (`lib\Connection.ps1`, no RSAT needed): the DNS servers of the
   collecting machine, the DNS lookup of the domain, the DC locator record
   (`_ldap._tcp.dc._msdcs.<domain>`), an LDAP bind with the DC and site that answered, the DC's
@@ -19,6 +30,14 @@
   the settings screen opens the same list. `Collect-ADSnapshot.ps1 -ListDomainControllers` prints
   it and exits, and its guided setup takes `L` too. `Export-PasswordQuality.ps1 -Server`
   replicates from that DC instead of the PDC; the launcher passes the chosen DC to it.
+- LDAPS: the LDAP reads IDWolf makes itself (the diagnostics' bind, the DC list, the launcher's
+  rights check) use 389 as before, and LDAPS on 636 when 389 does not answer and 636 does (a
+  firewall that lets only LDAPS through), also when the serverless bind fails and the locator's
+  DC answers only on 636. The console, `meta.connection.diagnostics.ldap` (`protocol`, `port`)
+  and the report say which was used. The DC's certificate is checked by Windows; a refused one
+  fails the bind with a hint, it is never ignored. With neither port answering, no bind is tried
+  (no 20 s wait). New `Open-LdapRootDse` in `lib\Connection.ps1`. The collection itself still
+  goes over ADWS.
 - `Edit-RunSettings` (`lib\Wizard.ps1`) takes `-Pickers`: a setting edited through a scriptblock
   (the DC list) instead of a typed answer.
 

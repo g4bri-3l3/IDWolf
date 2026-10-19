@@ -202,7 +202,11 @@ function Complete-WizardRun {
     if (-not $script:WizardMode) { return }
     if ($Html -and (Test-Path -LiteralPath $Html)) { Save-IDWolfState -Section analyzer -Values @{ LastReport = (Resolve-Path -LiteralPath $Html).ProviderPath } }
     [void](Request-OpenReport -Path $Html -Since $start)
+    Stop-IDWolfLog $script:SessionLog; $script:SessionLog = ''
 }
+# The wizard's session log (lib\Wizard.ps1) is closed even when the analysis stops with an error.
+$script:SessionLog = ''
+trap { Stop-IDWolfLog $script:SessionLog; $script:SessionLog = ''; break }
 
 # Guided setup when there's no -Snapshot: a few questions, then a short
 # review menu before running.
@@ -210,6 +214,14 @@ function Invoke-AnalyzerSetup {
     Show-IDWolfBanner
     Write-Host ""
     Write-Host "Interactive setup. Press Enter to accept the [default]." -ForegroundColor Cyan
+    # An elevated window starts in C:\Windows\System32: work from the IDWolf folder instead.
+    if ($env:windir -and (Get-Location).Path.TrimEnd('\').StartsWith($env:windir.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
+        Set-Location -LiteralPath $PSScriptRoot
+        Write-Host "Working folder: $PSScriptRoot (started in the Windows folder, as an elevated window does)." -ForegroundColor DarkGray
+    }
+    # Choices and console output to output\idwolf_analysis_<ts>.log; started from the launcher,
+    # everything already goes to the launcher's log.
+    $script:SessionLog = Start-IDWolfLog 'idwolf_analysis'
     # The default paths below are under .\output.
     $od = Join-Path (Get-Location).Path 'output'; if (-not (Test-Path -LiteralPath $od)) { New-Item -ItemType Directory -Path $od | Out-Null }
 
@@ -226,6 +238,8 @@ function Invoke-AnalyzerSetup {
     if ($candFiles.Count -eq 0) { $candFiles = @(Get-ChildItem -Path '.', 'output' -Filter *.json -File -ErrorAction SilentlyContinue) }
     $candFiles = @($candFiles) + @(Get-ChildItem -Path '.', 'output' -Filter *.zip -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '(?i)idwolf|snap|entra' })
     $candFiles = @($candFiles) + @(Get-ChildItem -Path '.', 'output' -Filter *.idwolf -File -ErrorAction SilentlyContinue)
+    # Newest first: the one just collected is [1].
+    $candFiles = @($candFiles | Sort-Object @{ Expression = 'LastWriteTimeUtc'; Descending = $true }, @{ Expression = 'FullName'; Descending = $false })
     $cands = @($candFiles | ForEach-Object { Resolve-Path -Relative -LiteralPath $_.FullName })
 
     # The last analysis, if its snapshot is still there: same settings, straight to the review below.
@@ -335,29 +349,52 @@ function Invoke-AnalyzerSetup {
         & $remember 'AiMode' $cfg.AiMode
     }
     $cfg.Model = if ($mem.Model) { $mem.Model } else { $script:Model }
-    if ($cfg.AiMode -ne 'skip') {
-        if (-not $reuse) { $cfg.Model = Read-Default "Gemini model" $cfg.Model; & $remember 'Model' $cfg.Model }
+    $cfg.AiAttempts = if ($mem.AiAttempts -match '^\d+$') { $mem.AiAttempts } else { "$script:AiMaxAttempts" }
+    # Model, key and attempts for the AI step: asked after the AI choice, and again when the review
+    # below switches AiMode to send. Ask = $false (same settings as last time) takes them as they are.
+    $askAi = {
+        param([bool]$Ask)
+        if ($cfg.AiMode -eq 'skip') { return }
+        if ($Ask) { $cfg.Model = Read-Default "Gemini model" $cfg.Model; & $remember 'Model' $cfg.Model }
         # The key is never remembered: asked again on every run that sends.
         if ($cfg.AiMode -eq 'send' -and -not $script:ApiKey) {
-            $k = Read-Host "GEMINI_API_KEY not set. Paste key now, or Enter to switch to dry-run"
-            if ($k) { $script:ApiKey = $k.Trim() } else { $cfg.AiMode = 'dryrun' }
+            # Hidden, so the key is neither on screen nor in the session log.
+            # Piped input can't be read hidden (Read-Host -AsSecureString would wait for a console).
+            $redirected = $true; try { $redirected = [Console]::IsInputRedirected } catch { }
+            if ($redirected) { $k = "$(Read-Host "GEMINI_API_KEY not set. Paste key now, or Enter to switch to dry-run")".Trim() }
+            else {
+                $sk = Read-Host "GEMINI_API_KEY not set. Paste key now (hidden), or Enter to switch to dry-run" -AsSecureString
+                $k = if ($sk -and $sk.Length) { (New-Object System.Net.NetworkCredential('', $sk)).Password.Trim() } else { '' }
+            }
+            if ($k) { $script:ApiKey = $k } else { $cfg.AiMode = 'dryrun' }
         }
-        if ($cfg.AiMode -eq 'send') {
-            $cfg.AiAttempts = if ($mem.AiAttempts -match '^\d+$') { $mem.AiAttempts } else { "$script:AiMaxAttempts" }
-            if (-not $reuse) { $cfg.AiAttempts = Read-Default "Gemini attempts on timeout / busy server (0 = keep trying)" $cfg.AiAttempts; & $remember 'AiAttempts' $cfg.AiAttempts }
+        if ($cfg.AiMode -eq 'send' -and $Ask) {
+            $a = Read-Default "Gemini attempts on timeout / busy server (0 = keep trying)" $cfg.AiAttempts
+            $cfg.AiAttempts = if ("$a" -match '^\d+$') { "$a" } else { "$script:AiMaxAttempts" }
+            & $remember 'AiAttempts' $cfg.AiAttempts
         }
     }
+    & $askAi (-not $reuse)
 
     # Last look before running.
     while ($true) {
         Write-Host "`nSettings:" -ForegroundColor Cyan
-        $keys = @($cfg.Keys)
+        # Model only with an AI step, attempts only when sending.
+        $keys = @($cfg.Keys | Where-Object { -not (($_ -eq 'Model' -and $cfg.AiMode -eq 'skip') -or ($_ -eq 'AiAttempts' -and $cfg.AiMode -ne 'send')) })
         for ($i = 0; $i -lt $keys.Count; $i++) { Write-Host ("  [{0}] {1,-20} {2}" -f ($i + 1), $keys[$i], $(if ($cfg[$keys[$i]]) { $cfg[$keys[$i]] } else { '(none)' })) }
         $edit = Read-Host "Enter a number to change, or press Enter to run"
         if ([string]::IsNullOrWhiteSpace($edit)) { break }
         if ($edit -match '^\d+$' -and [int]$edit -ge 1 -and [int]$edit -le $keys.Count) {
             $k = $keys[[int]$edit - 1]
-            if ($k -eq 'AiMode') { $cfg[$k] = Read-Default "  AiMode (skip/dryrun/send)" $cfg[$k] }
+            if ($k -eq 'AiMode') {
+                $was = $cfg.AiMode
+                $v = "$(Read-Default "  AiMode (skip/dryrun/send)" $cfg[$k])".Trim().ToLower()
+                if (@('skip', 'dryrun', 'send') -notcontains $v) { Write-Host "  Use skip, dryrun or send." -ForegroundColor Yellow; continue }
+                $cfg.AiMode = $v
+                # Switching the AI step on: its model, key and attempts are asked now.
+                if ($v -ne $was -and $v -ne 'skip') { & $askAi $true }
+            }
+            elseif ($k -eq 'AiAttempts') { $a = Read-Default "  AiAttempts (0 = keep trying)" $cfg[$k]; if ("$a" -match '^\d+$') { $cfg[$k] = "$a" } else { Write-Host "  A number, please." -ForegroundColor Yellow } }
             else { $cfg[$k] = Read-Default "  $k" $cfg[$k] }
         }
     }

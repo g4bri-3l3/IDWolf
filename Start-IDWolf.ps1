@@ -58,6 +58,13 @@ $root = $PSScriptRoot
 . (Join-Path $root 'lib\Connection.ps1')
 $script:ServerOverride = $Server
 
+# "Run as administrator" starts in C:\Windows\System32, and the default paths below are
+# relative (.\output): work from the IDWolf folder instead of writing into the Windows folder.
+if ($env:windir -and (Get-Location).Path.TrimEnd('\').StartsWith($env:windir.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase)) {
+    Set-Location -LiteralPath $root
+    Write-Host "Working folder: $root (started in the Windows folder, as an elevated window does)." -ForegroundColor DarkGray
+}
+
 function Show-Banner {
     # The version lives in IDWolf.ps1 only; read it from there so the two never drift.
     $ver = ''
@@ -406,6 +413,7 @@ function Show-CollectorRights {
     Write-Host "`nRights of $(if ($r.Account) { $r.Account } else { 'this account' }):" -ForegroundColor Cyan
     Write-Host ("  Elevated session (local admin)      {0}" -f (& $yn $r.Elevated))
     if ($r.Error) { Write-Host "  Domain rights not read: $($r.Error)" -ForegroundColor Yellow; return }
+    if ($r.Protocol -eq 'LDAPS') { Write-Host '  (read over LDAPS, TCP 636: 389 does not answer)' -ForegroundColor DarkGray }
     $da = if ($r.FilteredByUac) { 'filtered by UAC (window not elevated)' } else { "$(& $yn $r.DomainAdmin) / $(& $yn $r.EnterpriseAdmin)" }
     Write-Host ("  Domain Admins / Enterprise Admins   {0}" -f $da)
     Write-Host ("  Replication rights (DCSync)         {0}" -f (& $yn $r.Replication))
@@ -510,13 +518,18 @@ Show-Banner
 # user, whatever the account (UAC filters the admin groups out of its token). The launcher
 # can't restart itself elevated (the safety review forbids starting processes), so it says how
 # and offers to quit; the answers given so far are remembered.
+# Everything from here on goes to output\idwolf_<timestamp>.log (lib\Wizard.ps1).
+$script:SessionLog = Start-IDWolfLog 'idwolf'
+# A step that stops the launcher with an error still closes the log.
+trap { Stop-IDWolfLog $script:SessionLog; break }
+
 $script:Session = Get-SessionStatus
 if ($script:Session.OnDc -and $script:Session.Elevated -eq $false) {
     Write-Host "`nThis is a domain controller and this window is not elevated. Windows filters the admin rights out of it (UAC):" -ForegroundColor Yellow
     Write-Host "even a Domain Admin collects like a standard user here, password quality is denied and many checks come back `"not evaluated`"." -ForegroundColor Yellow
     Write-Host "Close it and start Start-IDWolf.cmd with right-click > Run as administrator (analysis and packaging work as they are)." -ForegroundColor Yellow
     $a = Read-Host 'Quit now to restart elevated? (Y/n)'
-    if ([string]::IsNullOrWhiteSpace($a) -or (Test-Yes $a)) { Write-Host "Bye." -ForegroundColor DarkYellow; return }
+    if ([string]::IsNullOrWhiteSpace($a) -or (Test-Yes $a)) { Write-Host "Bye." -ForegroundColor DarkYellow; Stop-IDWolfLog $script:SessionLog; return }
 }
 elseif ($script:Session.Elevated -eq $false -and $script:Session.Rsat -eq $false) {
     Write-Host "`nNot elevated, and RSAT (ActiveDirectory module) is not installed: an AD collection can't install it from this window. Start Start-IDWolf.cmd as administrator for that; Entra, analysis and packaging don't need it." -ForegroundColor DarkGray
@@ -613,3 +626,4 @@ while ($true) {
     if ($choice -eq 'Q') { break }
 }
 Write-Host "Bye." -ForegroundColor DarkYellow
+Stop-IDWolfLog $script:SessionLog

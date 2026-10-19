@@ -858,7 +858,8 @@ function ConvertTo-ConnectionHtml {
             $rows['DC locator (DNS SRV)'] = if ($d.dcLocator.error) { "$($d.dcLocator.record): $($d.dcLocator.error)" } else { "$(@($d.dcLocator.targets).Count) DC(s) in $(& $ms $d.dcLocator.ms): $(@($d.dcLocator.targets) -join ', ')" }
         }
         if ($d.ldap) {
-            $rows['LDAP bind (RootDSE)'] = if ($d.ldap.error) { "failed in $(& $ms $d.ldap.ms): $($d.ldap.error)" } else { "$(& $ms $d.ldap.ms), answered by $($d.ldap.answeredBy)$(if ($d.ldap.site) { ", site $($d.ldap.site)" })" }
+            $over = if ("$($d.ldap.protocol)" -eq 'LDAPS') { ' over LDAPS (TCP 636: 389 did not answer)' } else { '' }
+            $rows['LDAP bind (RootDSE)'] = if ($d.ldap.error) { "failed in $(& $ms $d.ldap.ms)$($over): $($d.ldap.error)" } else { "$(& $ms $d.ldap.ms)$over, answered by $($d.ldap.answeredBy)$(if ($d.ldap.site) { ", site $($d.ldap.site)" })" }
         }
         if ($d.dc) {
             $rows['Domain controller tested'] = "$($d.dc) ($($d.dcSelectedBy))" + $(if ($d.dcDns -and $d.dcDns.error) { ": DNS lookup failed, $($d.dcDns.error)" } elseif ($d.dcDns) { " = $(@($d.dcDns.addresses) -join ', ') in $(& $ms $d.dcDns.ms)" } else { '' })

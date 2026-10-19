@@ -155,7 +155,7 @@ function Edit-RunSettings {
 # needed. Never throws: anything it can't read comes back as $null with the reason in Error.
 function Get-CollectorRights {
     param([string]$Server = '', [System.Management.Automation.PSCredential]$Credential = $null)
-    $r = [ordered]@{ Account = ''; Elevated = $null; DomainAdmin = $null; EnterpriseAdmin = $null; Replication = $null; FilteredByUac = $false; Error = '' }
+    $r = [ordered]@{ Account = ''; Elevated = $null; DomainAdmin = $null; EnterpriseAdmin = $null; Replication = $null; FilteredByUac = $false; Protocol = ''; Error = '' }
     try {
         $me = [Security.Principal.WindowsIdentity]::GetCurrent()
         $r.Elevated = (New-Object Security.Principal.WindowsPrincipal($me)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -163,16 +163,14 @@ function Get-CollectorRights {
     }
     catch { }
     try {
-        $prefix = if ($Server) { "LDAP://$Server/" } else { 'LDAP://' }
-        $open = {
-            param([string]$Path)
-            if ($Credential) { New-Object System.DirectoryServices.DirectoryEntry($Path, $Credential.UserName, $Credential.GetNetworkCredential().Password) }
-            else { New-Object System.DirectoryServices.DirectoryEntry($Path) }
-        }
-        $rootDse = & $open ($prefix + 'RootDSE')
-        # An explicit bind, so a missing domain or a refused account surfaces as LDAP's own message.
-        try { $rootDse.RefreshCache(@('defaultNamingContext', 'rootDomainNamingContext')) }
-        catch { $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }; throw "no domain controller answered over LDAP$(if ($Server) { " ($Server)" }): $("$($e.Message)".Trim())" }
+        # LDAP on 389, or LDAPS on 636 when only that answers (Open-LdapRootDse, lib\Connection.ps1,
+        # which the launcher loads too). An explicit bind, so a missing domain or a refused account
+        # surfaces as LDAP's own message.
+        $conn = Open-LdapRootDse -Server $Server -Credential $Credential -Properties @('defaultNamingContext', 'rootDomainNamingContext')
+        if ($conn.Error) { throw "no domain controller answered over LDAP$(if ($Server) { " ($Server)" }): $($conn.Error)" }
+        $prefix = $conn.Prefix; $r.Protocol = $conn.Protocol
+        $open = { param([string]$Path) New-LdapEntry $Path $Credential -Ssl:$conn.Ssl }
+        $rootDse = $conn.Root
         $nc = "$($rootDse.Properties['defaultNamingContext'].Value)"
         if (-not $nc) { throw 'the domain could not be reached' }
         $rootNc = "$($rootDse.Properties['rootDomainNamingContext'].Value)"
@@ -255,6 +253,35 @@ function Get-RightsGaps {
 function Get-ChecksNeeding {
     param($Catalog, [string[]]$Sections)
     return @($Catalog.Keys | Where-Object { $k = $_; @(@($Catalog[$k].Needs) | Where-Object { $Sections -contains $_ }).Count } | Sort-Object)
+}
+
+# Session log of an interactive run (launcher, analyzer wizard): a transcript in .\output with
+# every question, every answer typed and everything printed, collector and analyzer included.
+# Hidden prompts (-AsSecureString: API key, package passwords) and Get-Credential leave nothing
+# in it. One log per session: the analyzer started from the launcher writes into the launcher's
+# (IDWOLF_LOG). Returns the path, or '' when it is not this call's log to stop.
+function Start-IDWolfLog {
+    param([string]$Name = 'idwolf', [switch]$Force)
+    if ($env:IDWOLF_LOG) { return '' }
+    # Only a person at a console: piped answers (tests, scripts) are not hidden and stay out.
+    if (-not $Force -and -not (Test-InteractiveConsole)) { return '' }
+    try {
+        $od = Join-Path (Get-Location).Path 'output'
+        if (-not (Test-Path -LiteralPath $od)) { New-Item -ItemType Directory -Path $od | Out-Null }
+        $p = Join-Path $od ("{0}_{1}.log" -f $Name, (Get-Date -Format 'yyyyMMdd_HHmmss'))
+        Start-Transcript -LiteralPath $p -ErrorAction Stop | Out-Null
+        $env:IDWOLF_LOG = $p
+        Write-Host "Session log: $p (choices and console output; it names directory objects: confidential)" -ForegroundColor DarkGray
+        return $p
+    }
+    catch { Write-Warning "No session log: $($_.Exception.Message)"; return '' }
+}
+function Stop-IDWolfLog {
+    param([string]$Path)
+    if (-not $Path) { return }
+    Write-Host "Session log written to $Path" -ForegroundColor DarkGray
+    try { Stop-Transcript | Out-Null } catch { }
+    $env:IDWOLF_LOG = $null
 }
 
 # True only for a person at a console: not a scheduled task, not piped input or output.

@@ -227,7 +227,17 @@ Secure Score are the closest free point-in-time comparisons.
 
 Snapshots, reports and packages go to an `output` folder under the current
 directory unless you give a path yourself. The menu and the analyzer also look
-there for snapshots to offer.
+there for snapshots to offer, newest first. Started "as administrator", a window
+opens in `C:\Windows\System32`: the launcher and the analyzer wizard then work
+from the IDWolf folder instead, so nothing lands in the Windows folder.
+
+Every interactive session (the launcher, or the analyzer wizard on its own) is
+logged to `output\idwolf_<timestamp>.log` (`idwolf_analysis_<timestamp>.log` for
+the wizard alone): each question with the answer given, and everything the
+collector and the analyzer print. Hidden prompts (the Gemini key, package
+passwords, `Get-Credential`) leave nothing in it, and a run with piped input or
+`-Snapshot` on the command line writes no log. The log names directory objects:
+keep it with the reports.
 
 Every collection (a full run, 1 or 2, or a single one, 3 or 5) asks all its
 questions first, then shows every answer on one screen: change one by its number,
@@ -253,8 +263,13 @@ connection and shows the result, each step with its time in milliseconds: the DN
 servers of this machine, the DNS lookup of the domain, the DC locator record
 (`_ldap._tcp.dc._msdcs.<domain>`), an LDAP bind and the DC and site that
 answered, the DC's address, and a TCP connect to each port a collection uses
-(9389 ADWS, 389 LDAP, 445 SMB, 5985 WinRM, 135 RPC, 88, 53; 636 and 3268 for
-information). A closed ADWS port is called out before the run. The DC can be
+(9389 ADWS, 389 LDAP, 445 SMB, 5985 WinRM, 135 RPC, 88, 53, 636 LDAPS; 3268 for
+information). A closed ADWS port is called out before the run. IDWolf's own
+LDAP reads (this bind, the DC list, the launcher's rights check) use 389 with a
+Negotiate (Kerberos) bind; when a firewall lets only 636 through, they switch to
+LDAPS and say so, here and in the report. The DC's certificate must be trusted
+by this machine: a certificate Windows refuses fails the bind, it is never
+ignored. The collection itself goes over ADWS (9389) either way. The DC can be
 changed on the settings screen (the list again), which tests the new one.
 `[D]` in the menu does the same on its own. The collector records the same
 diagnostics, plus the DC that actually served the AD cmdlets and how fast it
@@ -396,7 +411,7 @@ collectors talk to anything. `IDWolf.ps1`, the analysis, needs no network at all
 | the collecting machine | every DC | UDP 123 (NTP) | clock offset between DCs | `dc_time_skew` *not evaluated* |
 | the collecting machine | a DC | RPC (TCP 135 and the dynamic range) | `repadmin /showbackup`, last backup date | `ad_backup_overdue` not evaluated |
 | the collecting machine | DNS and Kerberos (TCP/UDP 53, 88) | name resolution and sign-in as on any domain-joined machine | everything | everything |
-| the collecting machine, the launcher | the chosen DC (every DC for the `L` list: 9389 only) | TCP 9389, 389, 445, 5985, 135, 88, 53, 636, 3268, connect only (closed at once, nothing sent); LDAP 389 for the bind and the DC list | connection diagnostics before a collection | the diagnostics say which one is closed |
+| the collecting machine, the launcher | the chosen DC (every DC for the `L` list: 9389 only) | TCP 9389, 389, 445, 5985, 135, 88, 53, 636, 3268, connect only (closed at once, nothing sent); LDAP 389 for the bind, the DC list and the rights check, LDAPS 636 instead when only 636 answers | connection diagnostics before a collection | the diagnostics say which one is closed |
 | a DC (or any host with the rights) | a DC | RPC (TCP 135 and the dynamic range) | `Export-PasswordQuality.ps1`: replication (DCSync) of the account data. Not needed with an offline `ntds.dit` | no password-quality report |
 | the Entra collector | `login.microsoftonline.com`, `graph.microsoft.com` | TCP 443 | sign-in and read-only Graph (`-UseDeviceCode` also needs a browser on any machine to `microsoft.com/devicelogin`) | no Entra snapshot |
 | the analysis machine | `generativelanguage.googleapis.com` (or `IDWOLF_GEMINI_BASEURL`) | TCP 443 | the optional Gemini step, only if you answer yes | no AI summary; the report is unaffected |

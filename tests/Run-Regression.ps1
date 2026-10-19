@@ -524,6 +524,9 @@ Assert-True ($html -match 'Attack-path map' -and $html -match "class='attack-map
 Assert-True ($html -match 'Collection and connection' -and $html -match 'from PAW-01 via dc01\.moosebank\.local' -and $html -match 'over ADWS \(TCP 9389\), first answer in 412 ms' -and $html -match 'answered by dc01\.moosebank\.local, site Milano-HQ' -and $html -match '<td>5985</td><td>WinRM</td><td><span class="no">closed</span>') 'HTML report shows the DC used, the connection timings and the ports'
 $oldMeta = [PSCustomObject]@{ collectedFrom = 'PAW-01'; collectedBy = 'X\y'; server = 'dc01.moosebank.local' }
 Assert-True ((ConvertTo-ConnectionHtml -Meta $oldMeta) -match 'older collector: only the server name' ) 'a snapshot without meta.connection says so instead of showing empty diagnostics'
+$ldapsMeta = $demo.meta | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+$ldapsMeta.connection.diagnostics.ldap.protocol = 'LDAPS'
+Assert-True ((ConvertTo-ConnectionHtml -Meta $ldapsMeta) -match 'over LDAPS \(TCP 636: 389 did not answer\), answered by dc01' -and $html -notmatch 'over LDAPS') 'report: a bind made over LDAPS says so, a plain LDAP bind does not'
 # Attack graph model
 $graph = Get-AttackGraph -Snapshot $demo -Index $r.Index -PrivMap $r.PrivMap -Findings $r.Findings
 Assert-True (@($graph.Nodes).Count -gt 0) 'attack graph has escalation source nodes'
@@ -1367,6 +1370,21 @@ try {
     [void](Edit-RunSettings -Settings $set -Pickers @{ Server = { param($Cur) $picks.Dequeue() } } -OnChange { param($Key, $Value) $changed.Add("$Key=$Value") } -Ask { param($q) $answers.Dequeue() } 6>$null)
     Assert-True ($set.Server -eq 'dc07.corp.local' -and ($changed -join ';') -eq 'Server=dc07.corp.local') "settings screen: a picker sets the value, picking the same one again is no change (got $($changed -join ';'))"
 
+    # Session log: a transcript in .\output, one per session (a nested start is a no-op).
+    $savedLog = $env:IDWOLF_LOG; $env:IDWOLF_LOG = $null
+    Push-Location $tmp
+    try {
+        $noConsole = Start-IDWolfLog 'piped' 6>$null
+        $lp = Start-IDWolfLog 'logtest' -Force 6>$null
+        $inner = Start-IDWolfLog 'nested' -Force 6>$null
+        Write-Host 'idwolf-log-marker' 6>$null
+        Stop-IDWolfLog $inner 6>$null
+        Stop-IDWolfLog $lp 6>$null
+        $logText = if ($lp -and (Test-Path -LiteralPath $lp)) { [System.IO.File]::ReadAllText($lp) } else { '' }
+        Assert-True ($lp -like '*output*logtest_*.log' -and -not $inner -and -not $noConsole -and $logText -match 'idwolf-log-marker' -and -not $env:IDWOLF_LOG -and -not @(Get-ChildItem (Join-Path $tmp 'output') -Filter 'nested_*').Count) "session log: written to output, console text in it, a nested start and a run without a console write nothing (got '$lp')"
+    }
+    finally { Pop-Location; $env:IDWOLF_LOG = $savedLog }
+
     # Connection helpers: nothing throws, an unreachable target comes back with a reason.
     . (Join-Path $root 'lib\Connection.ps1')
     $tp = @(Test-TcpPorts -TimeoutMs 500 -Targets @([ordered]@{ host = '127.0.0.1'; port = 1; service = 'x' }))
@@ -1378,6 +1396,17 @@ try {
     Assert-True ($picked -eq 'dc01.corp.local' -and $picked2 -eq '') "DC choice without a list: Enter keeps the current DC, '-' goes back to automatic"
     $diag = Get-ConnectionDiagnostics -Server '127.0.0.1:1' -Domain 'idwolf-test.invalid' -TimeoutMs 500
     Assert-True ($diag.ldap.error -and $diag.domainDns.error -and ($diag | ConvertTo-Json -Depth 6 -Compress) -match '"domain":"idwolf-test.invalid"') "connection diagnostics: failures recorded with reasons, serializable (ldap: $($diag.ldap.error))"
+    # LDAPS: a port of its own forces the protocol, and a failed TLS bind names the certificate.
+    $lp1 = Open-LdapRootDse -Server '127.0.0.1:1'
+    $lp636 = Open-LdapRootDse -Server '127.0.0.1:636'
+    Assert-True ($lp1.Error -and -not $lp1.Ssl -and $lp1.Protocol -eq 'LDAP' -and $null -eq $lp1.Root -and $lp636.Ssl -and $lp636.Protocol -eq 'LDAPS' -and $lp636.Prefix -eq 'LDAP://127.0.0.1:636/' -and $lp636.Error -match 'certificate') "LDAP route: dc:636 binds over LDAPS, a failure is a reason naming the certificate (got: $($lp636.Error))"
+    # Neither 389 nor 636 answering (any machine that is not a DC): no bind tried, no 20 s wait.
+    $loc = @(Test-TcpPorts -TimeoutMs 500 -Targets @([ordered]@{ host = '127.0.0.1'; port = 389 }, [ordered]@{ host = '127.0.0.1'; port = 636 }))
+    if (-not @($loc | Where-Object { $_.open }).Count) {
+        $lpNone = Open-LdapRootDse -Server '127.0.0.1' -TimeoutMs 500
+        $diagNone = Get-ConnectionDiagnostics -Server '127.0.0.1' -Domain 'idwolf-test.invalid' -TimeoutMs 500
+        Assert-True ($lpNone.Error -match '389 \(LDAP\) and 636 \(LDAPS\)' -and $diagNone.ldap.error -match '^not tried: TCP 389 \(LDAP\) and 636 \(LDAPS\)' -and $diagNone.ldap.protocol -eq 'LDAP') "LDAP route: with 389 and 636 both closed nothing is tried (got: $($lpNone.Error) / $($diagNone.ldap.error))"
+    }
 
     # Rights check before a collection: no domain controller answering is a reason, never an error.
     $rights = Get-CollectorRights -Server '127.0.0.1:1'
