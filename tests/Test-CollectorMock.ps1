@@ -23,6 +23,8 @@ Check ($errSections -contains 'domain.fineGrainedPolicies') 'FGPP access error r
 Check ($errSections -contains 'acl.DomainControllersOU') 'ACL access error recorded'
 Check ($errSections -contains 'adcs.caRegistry') 'unreadable CA host recorded (no CIM in the mock)'
 Check (@($snap.users).Count -eq 4) 'users collected after fallback'
+$conn = $snap.meta.connection
+Check ($conn -and $conn.requestedServer -eq 'mock.local' -and $conn.port -eq 9389 -and $null -ne $conn.firstAnswerMs -and $conn.diagnostics.requestedServer -eq 'mock.local' -and $conn.diagnostics.ldap.error) 'connection record in meta: server asked for, ADWS timing, diagnostics with the failed LDAP bind'
 $svc = $snap.users | Where-Object samAccountName -eq 'svc_sql'
 Check ($svc.descriptionSuspicious -and $svc.description -notmatch 'Summer2020') 'password in description masked at collection'
 Check (-not ($snap.users | Where-Object samAccountName -eq 'mario').descriptionSuspicious) 'no false positive on Italian description'

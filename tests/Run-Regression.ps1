@@ -521,6 +521,9 @@ $score = Get-HygieneScore -Findings $split.Active
 $html = ConvertTo-ReportHtml -Snapshot $demo -Index $r.Index -PrivMap $r.PrivMap -Split $split -Score $score -NotEvaluated @() -Comparison $cmp -Config $config -ToolVersion 'test' -ElapsedText '0s'
 Assert-True ($html -match '</html>\s*$' -and $html -match 'Accepted risks') 'HTML report renders with all sections'
 Assert-True ($html -match 'Attack-path map' -and $html -match "class='attack-map'") 'HTML report includes the attack-path map'
+Assert-True ($html -match 'Collection and connection' -and $html -match 'from PAW-01 via dc01\.moosebank\.local' -and $html -match 'over ADWS \(TCP 9389\), first answer in 412 ms' -and $html -match 'answered by dc01\.moosebank\.local, site Milano-HQ' -and $html -match '<td>5985</td><td>WinRM</td><td><span class="no">closed</span>') 'HTML report shows the DC used, the connection timings and the ports'
+$oldMeta = [PSCustomObject]@{ collectedFrom = 'PAW-01'; collectedBy = 'X\y'; server = 'dc01.moosebank.local' }
+Assert-True ((ConvertTo-ConnectionHtml -Meta $oldMeta) -match 'older collector: only the server name' ) 'a snapshot without meta.connection says so instead of showing empty diagnostics'
 # Attack graph model
 $graph = Get-AttackGraph -Snapshot $demo -Index $r.Index -PrivMap $r.PrivMap -Findings $r.Findings
 Assert-True (@($graph.Nodes).Count -gt 0) 'attack graph has escalation source nodes'
@@ -1354,6 +1357,27 @@ try {
     Assert-True ($go -eq $true -and (Edit-RunSettings -Settings ([ordered]@{ A = '1' }) -Ask { 'q' } 6>$null) -eq $false) 'settings screen: Enter starts, Q cancels'
     Assert-True ($set.Deep -eq 'y' -and $set.Next -eq 'Z' -and $set.Tenant -eq '' -and $set.OutHtml -eq 'r.html' -and $answers.Count -eq 0) "settings screen edits by number, normalizes y/n and A/Z/S, clears with '-', hides what doesn't apply (got $(($set.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '))"
     Assert-True (($changed -join ';') -eq 'Deep=y;Next=Z;Tenant=') "settings screen reports each change once, a refused value not at all (got $($changed -join ';'))"
+
+    # A picker (the DC list) replaces the typed answer and reports the change like one.
+    $answers = New-Object System.Collections.Queue
+    foreach ($x in @('1', '1', '')) { $answers.Enqueue($x) }
+    $set = [ordered]@{ Server = '' }
+    $changed = New-Object System.Collections.Generic.List[string]
+    $picks = New-Object System.Collections.Queue; foreach ($x in @('dc07.corp.local', 'dc07.corp.local')) { $picks.Enqueue($x) }
+    [void](Edit-RunSettings -Settings $set -Pickers @{ Server = { param($Cur) $picks.Dequeue() } } -OnChange { param($Key, $Value) $changed.Add("$Key=$Value") } -Ask { param($q) $answers.Dequeue() } 6>$null)
+    Assert-True ($set.Server -eq 'dc07.corp.local' -and ($changed -join ';') -eq 'Server=dc07.corp.local') "settings screen: a picker sets the value, picking the same one again is no change (got $($changed -join ';'))"
+
+    # Connection helpers: nothing throws, an unreachable target comes back with a reason.
+    . (Join-Path $root 'lib\Connection.ps1')
+    $tp = @(Test-TcpPorts -TimeoutMs 500 -Targets @([ordered]@{ host = '127.0.0.1'; port = 1; service = 'x' }))
+    Assert-True ($tp.Count -eq 1 -and -not $tp[0].open -and $tp[0].error -and $tp[0].service -eq 'x') "TCP test: a closed port is reported closed with a reason, extra keys kept (got: $($tp[0].error))"
+    $dl = Get-DomainControllerList -Server '127.0.0.1:1'
+    Assert-True ($dl.Error -and @($dl.Dcs).Count -eq 0) "DC list: no DC answering is a reason, not an exception (got: $($dl.Error))"
+    $picked = Select-DomainController -Current 'dc01.corp.local' -Server '127.0.0.1:1' -Ask { param($q) '' } 6>$null
+    $picked2 = Select-DomainController -Current 'dc01.corp.local' -Server '127.0.0.1:1' -Ask { param($q) '-' } 6>$null
+    Assert-True ($picked -eq 'dc01.corp.local' -and $picked2 -eq '') "DC choice without a list: Enter keeps the current DC, '-' goes back to automatic"
+    $diag = Get-ConnectionDiagnostics -Server '127.0.0.1:1' -Domain 'idwolf-test.invalid' -TimeoutMs 500
+    Assert-True ($diag.ldap.error -and $diag.domainDns.error -and ($diag | ConvertTo-Json -Depth 6 -Compress) -match '"domain":"idwolf-test.invalid"') "connection diagnostics: failures recorded with reasons, serializable (ldap: $($diag.ldap.error))"
 
     # Rights check before a collection: no domain controller answering is a reason, never an error.
     $rights = Get-CollectorRights -Server '127.0.0.1:1'

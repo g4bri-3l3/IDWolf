@@ -45,7 +45,10 @@ real directory data in the report.
 - **Network**: the domain controllers (LDAP/ADWS, SMB for SYSVOL, RPC for DNS
   and replication status, NTP for the clock check, CIM/WinRM for disk and services; before an AD
   collection the launcher also reads the account's groups and the domain head's permissions over
-  LDAP, to show what it can do), `graph.microsoft.com` for the Entra collector, and
+  LDAP, to show what it can do; and it and the collector test the connection to the chosen DC:
+  DNS lookups, an LDAP read of RootDSE and of the Sites container for the DC list, and a TCP
+  connect to the ports a collection uses, closed at once without sending anything),
+  `graph.microsoft.com` for the Entra collector, and
   Gemini only if you say yes (or pass `-SendToAI`), after every name has been
   replaced by a token. The exact text is saved next to the report
   (`<report>_ai_prompt.txt`) before you're asked, and the reply after
@@ -133,7 +136,10 @@ real directory data in the report.
   the DCs, any change shows up as event 5136, 5137, 5139 or 5141. Filter by the
   account that ran IDWolf: there should be none.
 - **Network.** Firewall or EDR logs should show only the DC, plus
-  `graph.microsoft.com` for Entra and Gemini if you agreed to it.
+  `graph.microsoft.com` for Entra and Gemini if you agreed to it. The connection
+  test before a collection opens and closes a TCP connection to nine ports of that
+  DC (and to 9389 on every DC when you ask for the list): expect those, a network
+  sensor may report them as a small port probe.
 
 ## The third-party pieces
 

@@ -829,6 +829,57 @@ function ConvertTo-TopRisksHtml {
     return "<h2 class=`"dash-h`">Top risks</h2><div class=`"risk-grid`">$($cards -join '')</div>"
 }
 
+# How the snapshot was taken: the DC that served it, the collector's connection diagnostics
+# (DNS, DC locator, LDAP bind, ports, with timings). Snapshots from older collectors only have the
+# server name. Everything comes from meta, so the same snapshot gives the same section.
+function ConvertTo-ConnectionHtml {
+    param($Meta)
+    $H = { param($t) ConvertTo-HtmlSafe "$t" }
+    $ms = { param($v) if ($null -eq $v -or "$v" -eq '') { '' } else { "$v ms" } }
+    $c = $Meta.connection
+    $rows = [ordered]@{
+        'Collected from' = "$($Meta.collectedFrom) as $($Meta.collectedBy)"
+        'Server asked for' = if ($c -and $c.requestedServer) { "$($c.requestedServer)" } elseif ($c) { 'automatic (DC locator)' } else { "$($Meta.server)" }
+    }
+    if ($c) {
+        $rows['Served by'] = "$(if ($c.servedBy) { $c.servedBy } else { 'not recorded' }) over $($c.protocol) (TCP $($c.port)), first answer in $(& $ms $c.firstAnswerMs)"
+    }
+    $d = if ($c) { $c.diagnostics } else { $null }
+    $out = New-Object System.Text.StringBuilder
+    [void]$out.Append('<details><summary><h2>Collection and connection</h2></summary>')
+    if (-not $c) { [void]$out.Append('<p class="meta">This snapshot was taken by an older collector: only the server name was recorded.</p>') }
+    elseif (-not $d) { [void]$out.Append('<p class="meta">Connection diagnostics were not run (lib\Connection.ps1 missing next to the collector).</p>') }
+    if ($d) {
+        if (@($d.localDnsServers).Count) { $rows['DNS servers of the collecting machine'] = (@($d.localDnsServers) -join ', ') }
+        if ($d.domainDns) {
+            $rows["DNS lookup of $($d.domain)"] = if ($d.domainDns.error) { "failed in $(& $ms $d.domainDns.ms): $($d.domainDns.error)" } else { "$(@($d.domainDns.addresses) -join ', ') in $(& $ms $d.domainDns.ms)" }
+        }
+        if ($d.dcLocator) {
+            $rows['DC locator (DNS SRV)'] = if ($d.dcLocator.error) { "$($d.dcLocator.record): $($d.dcLocator.error)" } else { "$(@($d.dcLocator.targets).Count) DC(s) in $(& $ms $d.dcLocator.ms): $(@($d.dcLocator.targets) -join ', ')" }
+        }
+        if ($d.ldap) {
+            $rows['LDAP bind (RootDSE)'] = if ($d.ldap.error) { "failed in $(& $ms $d.ldap.ms): $($d.ldap.error)" } else { "$(& $ms $d.ldap.ms), answered by $($d.ldap.answeredBy)$(if ($d.ldap.site) { ", site $($d.ldap.site)" })" }
+        }
+        if ($d.dc) {
+            $rows['Domain controller tested'] = "$($d.dc) ($($d.dcSelectedBy))" + $(if ($d.dcDns -and $d.dcDns.error) { ": DNS lookup failed, $($d.dcDns.error)" } elseif ($d.dcDns) { " = $(@($d.dcDns.addresses) -join ', ') in $(& $ms $d.dcDns.ms)" } else { '' })
+        }
+    }
+    [void]$out.Append('<div class="table-wrap"><table><tr><th>Item</th><th>Value</th></tr>')
+    foreach ($k in $rows.Keys) { [void]$out.Append("<tr class=`"data-row`"><td>$(& $H $k)</td><td>$(& $H $rows[$k])</td></tr>") }
+    [void]$out.Append('</table></div>')
+    if ($d -and @($d.ports).Count) {
+        [void]$out.Append("<p class=`"meta`">TCP ports on $(& $H $d.dc), tested from the collecting machine (connect only, nothing sent).</p>")
+        [void]$out.Append('<div class="table-wrap"><table><tr><th>Port</th><th>Service</th><th>State</th><th>Connect time</th><th>Used for</th></tr>')
+        foreach ($p in @($d.ports)) {
+            $state = if ($p.open) { '<span class="yes">open</span>' } elseif ($p.used) { "<span class=`"no`">closed</span> $(& $H $p.error)" } else { "closed $(& $H $p.error)" }
+            [void]$out.Append("<tr class=`"data-row`"><td>$(& $H $p.port)</td><td>$(& $H $p.service)</td><td>$state</td><td>$(& $H (& $ms $p.ms))</td><td>$(& $H $p.usedFor)</td></tr>")
+        }
+        [void]$out.Append('</table></div>')
+    }
+    [void]$out.Append('</details>')
+    return $out.ToString()
+}
+
 function ConvertTo-ReportHtml {
     param(
         $Snapshot, $Index, $PrivMap, $Split, $Score, $NotEvaluated, $Comparison,
@@ -850,7 +901,7 @@ function ConvertTo-ReportHtml {
     & $w (Get-IDWolfReportScript)
     & $w '</head><body>'
     & $w "<h1 class=`"title`">$(Get-WolfLogoHtml)<span>IDWolf: Active Directory Hygiene Report</span></h1>"
-    & $w "<div class=`"meta`">Domain <b>$(& $H $Snapshot.domain.dnsRoot)</b> ($(& $H $Snapshot.domain.netbios)) &middot; forest $(& $H $Snapshot.domain.forestName) &middot; snapshot $(& $H $collected.ToString('yyyy-MM-dd HH:mm')) UTC by $(& $H $Snapshot.meta.collectedBy) from $(& $H $Snapshot.meta.collectedFrom) &middot; IDWolf v$ToolVersion &middot; analysis $ElapsedText</div>"
+    & $w "<div class=`"meta`">Domain <b>$(& $H $Snapshot.domain.dnsRoot)</b> ($(& $H $Snapshot.domain.netbios)) &middot; forest $(& $H $Snapshot.domain.forestName) &middot; snapshot $(& $H $collected.ToString('yyyy-MM-dd HH:mm')) UTC by $(& $H $Snapshot.meta.collectedBy) from $(& $H $Snapshot.meta.collectedFrom)$(if ($Snapshot.meta.connection -and $Snapshot.meta.connection.servedBy) { " via $(& $H $Snapshot.meta.connection.servedBy)" }) &middot; IDWolf v$ToolVersion &middot; analysis $ElapsedText</div>"
     if ($Snapshot.meta.synthetic) {
         & $w '<blockquote>Synthetic snapshot generated for testing and demonstration. No real directory data.</blockquote>'
     }
@@ -971,6 +1022,9 @@ function ConvertTo-ReportHtml {
     foreach ($k in $postureRows.Keys) { & $w "<tr class=`"data-row`"><td>$(& $H $k)</td><td>$(& $H $postureRows[$k])</td></tr>" }
     & $w '</table></div>'
     & $w "<p class=`"meta`">Thresholds: krbtgt $($Config.KrbtgtMaxAgeDays)/$($Config.KrbtgtCriticalDays) days, privileged inactivity $($Config.PrivInactiveDays) days, user inactivity $($Config.InactiveDays) days, stale computer $($Config.StaleComputerDays) days, password age $($Config.PasswordMaxAgeDays) days, minimum length $($Config.MinPasswordLength), max Domain Admins $($Config.MaxDomainAdmins).</p></details>"
+
+    # ---------------- Collection and connection ----------------
+    try { & $w (ConvertTo-ConnectionHtml -Meta $Snapshot.meta) } catch { Write-Warning "Connection section skipped: $($_.Exception.Message)" }
 
     # ---------------- Comparison ----------------
     if ($Comparison) {

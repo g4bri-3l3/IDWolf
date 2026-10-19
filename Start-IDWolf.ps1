@@ -23,24 +23,40 @@
     after collecting unless "Then" is changed there. [C] in the menu deletes the file. After an
     analysis it offers to open the report in the default browser.
 
+    Before an AD collection it tests the connection (DNS of the domain, DC locator, LDAP bind,
+    the DC to be used and its ports, each with its time) and asks which DC to use: L lists
+    them with site, role and ADWS latency. [D] in the menu does the same on its own.
+
 .PARAMETER Credential
     Account for the AD collection and the password-quality step. If password
     quality is denied, the launcher offers to ask for another one and keeps it
     for the session.
 
+.PARAMETER Server
+    Domain controller (or domain) for the AD collections and the password-quality step
+    (alias -DomainController). It replaces the remembered one for this session; without it the
+    AD collections ask, with L to pick from the list of DCs. [D] in the menu lists the DCs and
+    tests the connection to one.
+
 .EXAMPLE
     .\Start-IDWolf.ps1 -Credential (Get-Credential)
+.EXAMPLE
+    .\Start-IDWolf.ps1 -Server dc07.corp.local
 #>
 
 [CmdletBinding()]
 Param(
-    [System.Management.Automation.PSCredential]$Credential
+    [System.Management.Automation.PSCredential]$Credential,
+    [Alias('DomainController')]
+    [string]$Server = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 . (Join-Path $root 'lib\Bundle.ps1')
 . (Join-Path $root 'lib\Wizard.ps1')
+. (Join-Path $root 'lib\Connection.ps1')
+$script:ServerOverride = $Server
 
 function Show-Banner {
     # The version lives in IDWolf.ps1 only; read it from there so the two never drift.
@@ -165,7 +181,7 @@ function ConvertTo-YN { param($Answer) if (Test-Yes $Answer) { return 'y' } retu
 # Collections (1, 2, 3, 5): the questions first, then every answer on one screen
 # (Edit-RunSettings, lib\Wizard.ps1) to check or change before anything runs. Enter starts.
 $script:RunLabels = @{
-    Server     = 'Domain controller or domain'
+    Server     = 'Domain controller (empty = auto)'
     OutFile    = 'Snapshot output path'
     Deep       = 'Deep collection'
     Pq         = 'Password quality (DCSync rights)'
@@ -219,7 +235,9 @@ function Add-AfterCollectionSettings {
 }
 function Confirm-RunSettings {
     param($S, [bool]$Joined = $true)
-    return Edit-RunSettings -Settings $S -Labels $script:RunLabels -YesNo @('Deep', 'Pq', 'DeviceCode') -Choices @{ Next = @('A', 'Z', 'S'); Ai = @('S', 'A', 'D') } `
+    # The DC is picked from the list (or typed there); a new one gets its connection tested.
+    $pickers = @{ Server = { param($Cur) Select-DomainController -Current $Cur -Credential $script:Credential } }
+    return Edit-RunSettings -Settings $S -Labels $script:RunLabels -YesNo @('Deep', 'Pq', 'DeviceCode') -Choices @{ Next = @('A', 'Z', 'S'); Ai = @('S', 'A', 'D') } -Pickers $pickers `
         -Visible ({ param($Key, $Set)
             if (@('Pq', 'PqOut', 'WeakList') -contains $Key -and -not $Joined) { return $false }
             if (@('PqOut', 'WeakList') -contains $Key -and $Set.Pq -ne 'y') { return $false }
@@ -227,7 +245,33 @@ function Confirm-RunSettings {
             if (@('Model', 'AiAttempts') -contains $Key -and $Set.Ai -ne 'A') { return $false }
             return $true
         }.GetNewClosure()) `
-        -OnChange { param($Key, $Value) Save-RunSetting $Key $Value }
+        -OnChange { param($Key, $Value) Save-RunSetting $Key $Value; if ($Key -eq 'Server') { Show-AdConnection $Value } }
+}
+# Connection diagnostics for an AD collection (lib\Connection.ps1): DNS, DC locator, LDAP bind,
+# the DC that will be used and its ports, with timings.
+function Show-AdConnection {
+    param([string]$Server = '')
+    Write-Host 'Testing the connection to the domain...' -ForegroundColor DarkGray
+    try { Show-ConnectionDiagnostics (Get-ConnectionDiagnostics -Server $Server -Credential $script:Credential) }
+    catch { Write-Host "  Connection diagnostics failed: $($_.Exception.Message)" -ForegroundColor Yellow }
+}
+# The DC for an AD collection on a domain-joined machine: -Server if given, else asked with the
+# remembered one as default; L lists the DCs to pick from, - means automatic (DC locator).
+function Read-ServerChoice {
+    if ($script:ServerOverride) { Write-Host "Domain controller: $script:ServerOverride  (-Server)" -ForegroundColor DarkGray; return $script:ServerOverride }
+    $mem = $script:State.launcher.Server
+    if ($script:Replay -and $null -ne $mem) {
+        Write-Host ("Domain controller: {0}  (as last time)" -f $(if ($mem) { $mem } else { 'automatic' })) -ForegroundColor DarkGray
+        return "$mem"
+    }
+    $v = Read-Host ("Domain controller: name, L to list the DCs, - for automatic [{0}]" -f $(if ($mem) { $mem } else { 'automatic' }))
+    $v = "$v".Trim()
+    if (-not $v) { $v = "$mem" }
+    elseif ($v -eq '-') { $v = '' }
+    elseif ($v -match '^[Ll]$') { $v = Select-DomainController -Current "$mem" -Credential $script:Credential }
+    $script:State.launcher['Server'] = $v
+    Save-IDWolfState -Section launcher -Values @{ Server = $v }
+    return $v
 }
 # The analyzer's parameters for the AI step chosen above.
 function Add-AiParams {
@@ -274,10 +318,11 @@ function Get-CredParams { if ($script:Credential) { @{ Credential = $script:Cred
 # retry with another account and keep it for the session. Returns the report
 # path, or "" if there's none.
 function Invoke-PasswordQualityStep {
-    param([string]$OutFile, [string]$WeakList = "")
+    param([string]$OutFile, [string]$WeakList = "", [string]$Server = "")
     for ($attempt = 1; $attempt -le 2; $attempt++) {
         $p = @{ OutFile = $OutFile } + (Get-CredParams)
         if ($WeakList) { $p['WeakPasswordsFile'] = $WeakList }
+        if ($Server) { $p['Server'] = $Server }
         Invoke-Sub 'Export-PasswordQuality.ps1' $p
         if (Test-Path -LiteralPath $OutFile) { return $OutFile }
         if ($attempt -eq 2) { break }
@@ -396,10 +441,11 @@ function Invoke-AdRun {
     $s = [ordered]@{}
     if (-not $joined) {
         Write-Host "This computer is not joined to a domain. Collection needs the name of a domain controller and a domain account." -ForegroundColor Yellow
-        $s.Server = Read-Remembered 'Server' "Domain controller or domain (e.g. dc01.corp.local; - to cancel)"
+        $s.Server = if ($script:ServerOverride) { $script:ServerOverride } else { Read-Remembered 'Server' "Domain controller or domain (e.g. dc01.corp.local; - to cancel)" }
         if (-not $s.Server) { Write-Host "Cancelled: no domain controller given." -ForegroundColor Yellow; return }
         Request-WorkgroupCredential
     }
+    else { $s.Server = Read-ServerChoice }
     # Timestamped file, so a re-run never overwrites the last snapshot.
     $s.OutFile = Read-NewPath "AD snapshot output path" ("output\adsnap_{0}.json" -f (Ts))
     $s.Deep = ConvertTo-YN (Read-Remembered 'Deep' "Deep collection? (y/n)" 'n')
@@ -414,6 +460,7 @@ function Invoke-AdRun {
         $s.WeakList = Read-Remembered 'WeakList' "Weak/breached password list path (optional; - for none)" -Path
     }
     if ($Full) { Add-AfterCollectionSettings $s } else { Add-AfterCollectionSettings $s -Next 'S' }
+    Show-AdConnection "$($s.Server)"
     Show-CollectorRights $s
     if (-not (Confirm-RunSettings $s $joined)) { Write-Host "Cancelled: nothing collected." -ForegroundColor Yellow; return }
     # Cleared on the settings screen: there is nothing to fall back on.
@@ -428,7 +475,7 @@ function Invoke-AdRun {
     Set-PendingSnapshot -Kind ad -Snapshot $s.OutFile
     $pqOut = ""
     if ($joined -and $s.Pq -eq 'y') {
-        $pqOut = Invoke-PasswordQualityStep -OutFile $s.PqOut -WeakList $s.WeakList
+        $pqOut = Invoke-PasswordQualityStep -OutFile $s.PqOut -WeakList $s.WeakList -Server "$($s.Server)"
         if (-not $pqOut) { Write-Host "Password quality not produced (see messages); continuing without it." -ForegroundColor Yellow }
         elseif (-not (Test-PqMatchesSnapshot -Snapshot $s.OutFile -PasswordQuality $pqOut)) { $pqOut = "" }
         else { Set-PendingSnapshot -Kind ad -Snapshot $s.OutFile -PasswordQuality $pqOut }
@@ -509,6 +556,7 @@ while ($true) {
     Write-Host "  [5] Collect Entra ID snapshot   (Microsoft Graph)" -ForegroundColor White
     Write-Host "  [6] Analyze a snapshot          (report, optional AI summary)" -ForegroundColor White
     Write-Host "  [7] Package for another machine (snapshot + password quality in one zip)" -ForegroundColor White
+    Write-Host "  [D] Domain controllers and connection test" -ForegroundColor White
     Write-Host "  [C] Forget remembered choices" -ForegroundColor White
     Write-Host "  [Q] Quit" -ForegroundColor White
     if ($script:QueuedChoice) { $choice = $script:QueuedChoice; $script:QueuedChoice = $null; Write-Host "`nChoice: $choice (repeating the last run)" }
@@ -526,7 +574,7 @@ while ($true) {
             }
             $pqOut = Read-Path "Password-quality output path" ("output\pwq_{0}_{1}.json" -f (Get-LocalDomainName), (Ts))
             $wl = Read-Remembered 'WeakList' "Weak/breached password list path (optional; - for none)" -Path
-            if (Invoke-PasswordQualityStep -OutFile $pqOut -WeakList $wl) { Write-Host "Password-quality report ready: $pqOut" -ForegroundColor Green }
+            if (Invoke-PasswordQualityStep -OutFile $pqOut -WeakList $wl -Server $script:ServerOverride) { Write-Host "Password-quality report ready: $pqOut" -ForegroundColor Green }
         }
         '5' { Invoke-EntraRun -Full $false }
         '6' { Invoke-Sub 'IDWolf.ps1' }
@@ -543,13 +591,24 @@ while ($true) {
                 else { Invoke-Package -Snapshot $s -PasswordQuality $pq }
             }
         }
+        'D' {
+            # Lists the DCs, then tests the one picked (Enter = the DC the next AD collection would use).
+            $cur = if ($script:ServerOverride) { $script:ServerOverride } else { "$($script:State.launcher.Server)" }
+            $dc = Select-DomainController -Current $cur -Credential $script:Credential
+            Show-AdConnection $dc
+            if ($dc -ne $cur -and -not $script:ServerOverride) {
+                $script:State.launcher['Server'] = $dc
+                Save-IDWolfState -Section launcher -Values @{ Server = $dc }
+                Write-Host "The next AD collection will use $(if ($dc) { $dc } else { 'the DC the locator picks' })." -ForegroundColor Cyan
+            }
+        }
         'C' {
             Clear-IDWolfState
             $script:State = Read-LauncherState
             Write-Host "Remembered choices deleted ($(Get-IDWolfStatePath))." -ForegroundColor Green
         }
         'Q' { break }
-        default { Write-Host "Pick 1-7, C or Q." -ForegroundColor Yellow }
+        default { Write-Host "Pick 1-7, D, C or Q." -ForegroundColor Yellow }
     }
     if ($choice -eq 'Q') { break }
 }

@@ -222,6 +222,7 @@ Secure Score are the closest free point-in-time comparisons.
 ```powershell
 .\Start-IDWolf.ps1                              # menu: 1 = full AD run, 2 = full Entra run, then the single steps
 .\Start-IDWolf.ps1 -Credential (Get-Credential) # same, with a delegated / admin account
+.\Start-IDWolf.ps1 -Server dc07.corp.local      # same, collecting from that domain controller
 ```
 
 Snapshots, reports and packages go to an `output` folder under the current
@@ -241,7 +242,26 @@ read over LDAP without changing anything, so a missing right shows up before the
 run rather than after it. On a domain controller, start the launcher as
 administrator: in a window that is not elevated UAC filters the admin groups out,
 so even a Domain Admin collects like a standard user. The launcher says so on
-start and offers to quit; it does not restart itself. The launcher and the analyzer wizard remember your answers and offer them as
+start and offers to quit; it does not restart itself.
+
+**Which domain controller, and is it reachable.** An AD collection asks which DC
+to use: Enter keeps the last one (or automatic, the DC the locator picks), `L`
+lists every DC of the domain with its site, PDC / GC / RODC role and ADWS
+(TCP 9389) connect time from this machine, and you pick one by number or type a
+name. `-Server` on the command line skips the question. It then tests the
+connection and shows the result, each step with its time in milliseconds: the DNS
+servers of this machine, the DNS lookup of the domain, the DC locator record
+(`_ldap._tcp.dc._msdcs.<domain>`), an LDAP bind and the DC and site that
+answered, the DC's address, and a TCP connect to each port a collection uses
+(9389 ADWS, 389 LDAP, 445 SMB, 5985 WinRM, 135 RPC, 88, 53; 636 and 3268 for
+information). A closed ADWS port is called out before the run. The DC can be
+changed on the settings screen (the list again), which tests the new one.
+`[D]` in the menu does the same on its own. The collector records the same
+diagnostics, plus the DC that actually served the AD cmdlets and how fast it
+first answered, in `meta.connection`; the report shows them under Details,
+*Collection and connection*, and the DC in its header line.
+
+The launcher and the analyzer wizard remember your answers and offer them as
 defaults next time. A snapshot that was collected but not analyzed or packaged (a
 single collection, "stop", Ctrl+C, a closed window) is offered on the next launch;
 otherwise the launcher offers to repeat the last full run with the same answers. The
@@ -316,12 +336,22 @@ different channel than the file.
 ```powershell
 .\Collect-ADSnapshot.ps1                              # guided setup when run with no parameters
 .\Collect-ADSnapshot.ps1 -Server dc01.corp.local -OutFile .\snap.json
+.\Collect-ADSnapshot.ps1 -ListDomainControllers        # the DCs (site, PDC / GC / RODC, ADWS latency), then exit
 .\Collect-ADSnapshot.ps1 -Deep -Credential (Get-Credential)
 .\Collect-ADSnapshot.ps1 -SkipSysvol -SkipAcl -SkipAdcs -SkipGpo -SkipDns -SkipHealth   # lighter
 ```
 
 You don't need to run it on a DC. Any domain-joined machine that can reach a DC
 over ADWS (TCP 9389) and SYSVOL over SMB will do. Slow steps show a spinner.
+
+`-Server` (alias `-DomainController`) picks the DC, for example the one in your
+site out of twenty; `-ListDomainControllers` shows them, and the guided setup
+takes `L` for the same list. Before reading anything the collector tests the
+connection (DNS, DC locator, LDAP bind, ports, with timings): one line when all is
+well, the full table when a port it needs is closed or the domain can't be
+reached. `Export-PasswordQuality.ps1 -Server` replicates from that DC instead of
+the PDC (a writable one: an RODC holds no hashes), and `Invoke-IDWolfScheduled.ps1
+-Server` passes it to the collector.
 
 **From a workgroup PC (not joined to the domain).** It works if you give the
 collector what a joined machine would find by itself:
@@ -366,6 +396,7 @@ collectors talk to anything. `IDWolf.ps1`, the analysis, needs no network at all
 | the collecting machine | every DC | UDP 123 (NTP) | clock offset between DCs | `dc_time_skew` *not evaluated* |
 | the collecting machine | a DC | RPC (TCP 135 and the dynamic range) | `repadmin /showbackup`, last backup date | `ad_backup_overdue` not evaluated |
 | the collecting machine | DNS and Kerberos (TCP/UDP 53, 88) | name resolution and sign-in as on any domain-joined machine | everything | everything |
+| the collecting machine, the launcher | the chosen DC (every DC for the `L` list: 9389 only) | TCP 9389, 389, 445, 5985, 135, 88, 53, 636, 3268, connect only (closed at once, nothing sent); LDAP 389 for the bind and the DC list | connection diagnostics before a collection | the diagnostics say which one is closed |
 | a DC (or any host with the rights) | a DC | RPC (TCP 135 and the dynamic range) | `Export-PasswordQuality.ps1`: replication (DCSync) of the account data. Not needed with an offline `ntds.dit` | no password-quality report |
 | the Entra collector | `login.microsoftonline.com`, `graph.microsoft.com` | TCP 443 | sign-in and read-only Graph (`-UseDeviceCode` also needs a browser on any machine to `microsoft.com/devicelogin`) | no Entra snapshot |
 | the analysis machine | `generativelanguage.googleapis.com` (or `IDWOLF_GEMINI_BASEURL`) | TCP 443 | the optional Gemini step, only if you answer yes | no AI summary; the report is unaffected |

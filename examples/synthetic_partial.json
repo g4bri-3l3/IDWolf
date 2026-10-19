@@ -7,6 +7,7 @@
     "collectedBy": "MOOSEBANK\\auditor",
     "collectedFrom": "PAW-01",
     "server": "dc01.moosebank.local",
+    "connection": null,
     "options": {
       "skipSysvol": true,
       "skipAcl": false,

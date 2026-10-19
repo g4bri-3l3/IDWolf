@@ -15,7 +15,10 @@
     by path only, so no secret ends up in the file.
 
 .PARAMETER Server
-    DC or domain to query. Default: whatever the AD module picks.
+    DC or domain to query (alias -DomainController). Default: whatever the AD
+    module picks. -ListDomainControllers shows the DCs to choose from.
+.PARAMETER ListDomainControllers
+    List the DCs of the domain (site, PDC / GC / RODC, ADWS latency from here) and exit.
 .PARAMETER OutFile
     Snapshot path. Default: output\adsnapshot_<domain>_<timestamp>.json
 .PARAMETER Deep
@@ -41,11 +44,15 @@
     .\Collect-ADSnapshot.ps1
 .EXAMPLE
     .\Collect-ADSnapshot.ps1 -Server dc01.corp.local -OutFile .\snap.json
+.EXAMPLE
+    .\Collect-ADSnapshot.ps1 -ListDomainControllers
 #>
 
 [CmdletBinding()]
 Param(
+    [Alias('DomainController')]
     [string]$Server = "",
+    [switch]$ListDomainControllers,
     [string]$OutFile = "",
     [switch]$SkipSysvol,
     [switch]$SkipAcl,
@@ -63,8 +70,22 @@ Param(
 # account with broad read rights. Without it those checks show up as
 # "not evaluated".
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.4"
+$script:CollectorVersion = "1.5"
 $script:Errors = New-Object System.Collections.Generic.List[object]
+
+# Connection diagnostics and the DC list (lib\Connection.ps1). Optional: a collector copied
+# on its own still collects, without them.
+$connLib = Join-Path $PSScriptRoot 'lib\Connection.ps1'
+$script:HaveConnLib = Test-Path -LiteralPath $connLib
+if ($script:HaveConnLib) { . $connLib }
+
+if ($ListDomainControllers) {
+    if (-not $script:HaveConnLib) { Write-Host "lib\Connection.ps1 is missing next to the collector: the DC list needs it." -ForegroundColor Red; exit 1 }
+    $list = Show-DomainControllerList -Server $Server -Credential $Credential
+    if ($list.Error) { exit 1 }
+    Write-Host "Collect from one of them with -Server <name>." -ForegroundColor Cyan
+    exit 0
+}
 
 function Add-CollectionError {
     param([string]$Section, [string]$Message)
@@ -170,7 +191,10 @@ if (@($PSBoundParameters.Keys | Where-Object { $_ -ne 'Credential' }).Count -eq 
             elseif ($key.KeyChar -and -not [char]::IsControl($key.KeyChar)) { $buf += $key.KeyChar; Write-Host -NoNewline $key.KeyChar; $tm = @() } }
     }
     Write-Host "Read-only collection. Press Enter to accept the [default]. Tab completes paths." -ForegroundColor Cyan
-    if (Test-DomainJoined) { $Server = Read-Default "Domain controller or domain to query (blank = auto)" "" }
+    if (Test-DomainJoined) {
+        $Server = Read-Default "Domain controller or domain to query (blank = auto$(if ($script:HaveConnLib) { ', L = list the DCs' }))" ""
+        if ($Server -match '^[Ll]$') { $Server = if ($script:HaveConnLib) { Select-DomainController -Credential $Credential } else { '' } }
+    }
     else {
         Write-Host $script:WorkgroupNote -ForegroundColor Yellow
         while (-not $Server) { $Server = Read-Default "Domain controller or domain to query (required on a workgroup PC)" ""; if (-not $Server) { Write-Host "  A name is needed: there is no domain to find automatically." -ForegroundColor Yellow } }
@@ -289,14 +313,28 @@ Write-Host "IDWolf collector v$script:CollectorVersion (read-only)" -ForegroundC
 # --------------------------------------------------------------------------
 # Domain and forest. If this fails there is nothing to collect, so let it throw.
 # --------------------------------------------------------------------------
+# Connection diagnostics first (DNS, DC locator, LDAP bind, ports, timings): one line when all
+# is well, the full table when something is off or the domain can't be reached. They go in
+# meta.connection too, so the report shows how the snapshot was taken.
+$connDiag = $null
+if ($script:HaveConnLib) {
+    try { $connDiag = Get-ConnectionDiagnostics -Server $Server -Credential $Credential; Show-ConnectionDiagnostics $connDiag -Compact }
+    catch { Write-Host "  Connection diagnostics skipped: $($_.Exception.Message)" -ForegroundColor DarkGray }
+}
+$adwsSw = [Diagnostics.Stopwatch]::StartNew()
 try { $domain = Get-ADDomain @common }
 catch {
     Write-Host "Could not reach the domain$(if ($Server) { " via $Server" }): $("$($_.Exception.Message)".Trim())" -ForegroundColor Red
     Write-Host "  Check the DC name, DNS resolution of the domain, TCP 9389 (ADWS) to the DC, and the account ($(if ($Credential) { $Credential.UserName } else { "$env:USERDOMAIN\$env:USERNAME" }))." -ForegroundColor Yellow
+    if ($connDiag) { Show-ConnectionDiagnostics $connDiag }
     exit 1
 }
+$adwsMs = [int][Math]::Round($adwsSw.Elapsed.TotalMilliseconds)
 $forest = Get-ADForest @common
 $rootDse = Get-ADRootDSE @common
+# The DC that actually served the AD cmdlets (ADWS, TCP 9389).
+$servedBy = "$($rootDse.dnsHostName)".ToLower()
+Write-Host ("AD cmdlets served by {0} over ADWS (TCP 9389), first answer in {1} ms" -f $(if ($servedBy) { $servedBy } elseif ($Server) { $Server } else { 'the DC picked by the AD module' }), $adwsMs) -ForegroundColor DarkGray
 $domainDN = $domain.DistinguishedName
 $domainSid = $domain.DomainSID.Value
 $configNC = $rootDse.configurationNamingContext
@@ -1729,7 +1767,15 @@ $snapshot = [ordered]@{
         collectedBy      = "$env:USERDOMAIN\$env:USERNAME"
         collectedFrom    = $env:COMPUTERNAME
         server           = if ($Server) { $Server } else { "$($domain.PDCEmulator)" }
-        options          = [ordered]@{ skipSysvol = [bool]$SkipSysvol; skipAcl = [bool]$SkipAcl; skipAdcs = [bool]$SkipAdcs; skipGpo = [bool]$SkipGpo; skipDns = [bool]$SkipDns; skipHealth = [bool]$SkipHealth; deep = [bool]$Deep }
+        connection       = [ordered]@{
+            requestedServer = $Server
+            servedBy        = $servedBy
+            protocol        = 'ADWS'
+            port            = 9389
+            firstAnswerMs   = $adwsMs
+            diagnostics     = $connDiag
+        }
+        options         = [ordered]@{ skipSysvol = [bool]$SkipSysvol; skipAcl = [bool]$SkipAcl; skipAdcs = [bool]$SkipAdcs; skipGpo = [bool]$SkipGpo; skipDns = [bool]$SkipDns; skipHealth = [bool]$SkipHealth; deep = [bool]$Deep }
         collectionErrors = $script:Errors.ToArray()
         synthetic        = $false
     }

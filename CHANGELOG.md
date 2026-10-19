@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.5 - 2026-10-19
+
+- Connection diagnostics (`lib\Connection.ps1`, no RSAT needed): the DNS servers of the
+  collecting machine, the DNS lookup of the domain, the DC locator record
+  (`_ldap._tcp.dc._msdcs.<domain>`), an LDAP bind with the DC and site that answered, the DC's
+  address, and a TCP connect (closed at once, nothing sent) to the ports a collection uses, each
+  with its time in ms. The launcher shows them before every AD collection, again when the DC is
+  changed on the settings screen, and on its own under the new menu entry `[D]`. The collector
+  prints one line when all is well and the full table when a port it needs is closed or the
+  domain can't be reached, and records them in `meta.connection` together with the DC that
+  served the AD cmdlets (`rootDSE.dnsHostName`) and its first ADWS answer time. The report shows
+  them under Details, *Collection and connection*, and the DC in its header; older snapshots
+  say they have only the server name. `Resolve-DnsName` joins the safety review's list.
+- Choosing the domain controller: `Start-IDWolf.ps1 -Server` (alias `-DomainController`, as on
+  the collector), and the AD collections ask for it with `L` listing every DC of the domain
+  (one LDAP query of the Sites container: site, PDC / GC / RODC) with its ADWS connect time;
+  the settings screen opens the same list. `Collect-ADSnapshot.ps1 -ListDomainControllers` prints
+  it and exits, and its guided setup takes `L` too. `Export-PasswordQuality.ps1 -Server`
+  replicates from that DC instead of the PDC; the launcher passes the chosen DC to it.
+- `Edit-RunSettings` (`lib\Wizard.ps1`) takes `-Pickers`: a setting edited through a scriptblock
+  (the DC list) instead of a typed answer.
+
 ## 1.4 - 2026-10-16
 
 - Launcher, AD collections (1 and 3): before the settings screen it shows what the collecting

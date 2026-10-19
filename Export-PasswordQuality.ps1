@@ -19,6 +19,9 @@
     line decides which; the file name doesn't matter.
 .PARAMETER Credential
     Account with DCSync rights, if the session doesn't have them.
+.PARAMETER Server
+    Writable DC to replicate from (alias -DomainController). Default: the PDC.
+    An RODC holds no password hashes, so it can't be used.
 .PARAMETER OutFile
     Output JSON path (default passwordquality_<domain>_<ts>.json).
 .PARAMETER FromDatabase
@@ -42,6 +45,8 @@ Param(
     [string]$FromDatabase = "",
     [string]$BootKeyFile = "",
     [System.Management.Automation.PSCredential]$Credential,
+    [Alias('DomainController')]
+    [string]$Server = "",
     [switch]$InstallModules
 )
 
@@ -96,13 +101,16 @@ try {
     $domainDns = $dom.Name; $pdc = $dom.PdcRoleOwner.Name
 }
 catch {
-    if (-not $FromDatabase) {
+    if (-not $FromDatabase -and $Server) { $pdc = $Server; Write-Host "Domain not located ($("$($_.Exception.Message)".Trim())); replicating from $Server as given." -ForegroundColor Yellow }
+    elseif (-not $FromDatabase) {
         Write-Host "Could not locate the domain / PDC: $($_.Exception.Message)" -ForegroundColor Red
         $joined = $true; try { $joined = [bool](Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).PartOfDomain } catch { }
         if (-not $joined) { Write-Host "  This computer is not joined to a domain, and live replication needs to find the PDC. Run it from a domain-joined machine or the DC, or use -FromDatabase with an offline NTDS.dit + SYSTEM hive." -ForegroundColor Yellow }
         exit 1
     }
 }
+# -Server: replicate from that DC instead of the PDC (any writable DC holds the secrets).
+if ($Server) { $pdc = $Server }
 
 # Spinner for the slow steps, like the Gemini one (see Collect-ADSnapshot.ps1).
 function Invoke-WithSpinner {

@@ -100,13 +100,16 @@ function Clear-IDWolfState {
 # Settings is an ordered dictionary (changed in place). Labels names each key. YesNo keys
 # hold 'y' / 'n'; Choices limits a key to some values (upper case). Visible hides settings
 # that don't apply (e.g. the report path when the run stops after collecting). OnChange
-# runs after each edit with the key and the new value. Ask is there for the tests.
+# runs after each edit with the key and the new value. Pickers maps a key to a scriptblock
+# that gets the current value and returns the new one (e.g. a list to pick from), instead of
+# a typed answer. Ask is there for the tests.
 function Edit-RunSettings {
     param(
         [System.Collections.Specialized.OrderedDictionary]$Settings,
         [hashtable]$Labels = @{},
         [string[]]$YesNo = @(),
         [hashtable]$Choices = @{},
+        [hashtable]$Pickers = @{},
         [scriptblock]$Visible = { param($Key, $S) $true },
         [scriptblock]$OnChange = { param($Key, $Value) },
         [scriptblock]$Ask = { param($q) Read-Host $q }
@@ -126,7 +129,12 @@ function Edit-RunSettings {
         if ("$e" -notmatch '^\d+$' -or [int]$e -lt 1 -or [int]$e -gt $keys.Count) { Write-Host "Pick 1-$($keys.Count), or Enter to start." -ForegroundColor Yellow; continue }
         $k = $keys[[int]$e - 1]
         $label = if ($Labels.ContainsKey($k)) { $Labels[$k] } else { $k }
-        $hint = if ($YesNo -contains $k) { ' (y/n)' } elseif ($Choices.ContainsKey($k)) { " ($($Choices[$k] -join '/'))" } else { ' (- to clear)' }
+        if ($Pickers.ContainsKey($k)) {
+            $v = "$(& $Pickers[$k] "$($Settings[$k])")"
+            if ($v -ne "$($Settings[$k])") { $Settings[$k] = $v; & $OnChange $k $v }
+            continue
+        }
+        $hint =if ($YesNo -contains $k) { ' (y/n)' } elseif ($Choices.ContainsKey($k)) { " ($($Choices[$k] -join '/'))" } else { ' (- to clear)' }
         $v = & $Ask "  $label$hint [$($Settings[$k])]"
         if ([string]::IsNullOrWhiteSpace($v)) { continue }
         $v = "$v".Trim()
