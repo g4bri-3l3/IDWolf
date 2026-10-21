@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.6 - 2026-10-21
 
 - AI step, reasoning: the model now works in three passes (as an intruder from every realistic
   starting point and across categories; as a reviewer trying to break each chain against the
