@@ -6,7 +6,10 @@
 #     map never leaves this machine;
 #   - -AiDryRun writes the exact prompt to a file and sends nothing;
 #   - every real send leaves the prompt and the reply next to the report
-#     (<report>_ai_prompt.txt / _ai_response.json), still pseudonymized.
+#     (<report>_ai_prompt.txt / _ai_response.json), still pseudonymized; the
+#     prompt file is self-contained, to paste into another model;
+#   - a safety refusal gets one retry with the defensive instructions
+#     (<report>_ai_prompt_defensive.txt).
 
 # Names that are the same everywhere: they help the model and give nothing away.
 $script:AiKeepNames = @(
@@ -124,8 +127,9 @@ function Get-AiToken {
 function Unprotect-AiText {
     param($Pz, [string]$Text)
     if (-not $Text) { return $Text }
-    # Longest token first: HOST-12 before HOST-1.
-    return [regex]::Replace($Text, '\b(?:DOMAIN|NETBIOS|FOREST|TRUST|DCHOST|DC|USER|HOSTFQDN|HOST|GROUP|GPO|PSO|FOREIGN|PATH|DN|SID|CA)-\d+\b', {
+    # Any PREFIX-n the map knows, AD or Entra (UPN-3, APP-2, CAPOLICY-1...); \b keeps HOST-12
+    # whole. Anything else that looks like one (CVE-2025, a model's typo) is left alone.
+    return [regex]::Replace($Text, '\b[A-Z][A-Z0-9]*-\d+\b', {
             param($m)
             if ($Pz.Reverse.ContainsKey($m.Value)) { return $Pz.Reverse[$m.Value] }
             return $m.Value
@@ -149,21 +153,75 @@ function Test-AiLeak {
 # --------------------------------------------------------------------------
 # Prompt
 # --------------------------------------------------------------------------
-$script:AiSystemPrompt = @"
-You are an Active Directory security assistant helping the defenders who
-own this domain plan remediation. You receive deterministic hygiene
-findings that were already computed by a local tool from a read-only
-directory snapshot. Treat them as established facts: do not recompute,
-dispute or add findings that are not in the input.
+# Two variants of the same instructions. The full one has the model reason like an attacker
+# (every foothold, every combination), then try to break its own chains, then plan the defence
+# from what survived. If Gemini refuses it (a safety block), the defensive one is sent instead,
+# once: same output, no adversary wording. The output never holds exploitation steps either way.
+$script:AiMethodFull = @'
+How to work (internally; output only the JSON object described below):
+A. Adversary pass. Think like a skilled intruder. For each realistic
+   foothold (unauthenticated on the network; any domain user or any tenant
+   user; a guest; a specific account, group or application token that the
+   findings name), look for the shortest and the most reliable ways to reach
+   full control, combining findings across categories. Look for the
+   non-obvious combinations as well as the textbook ones: a Low or Medium
+   finding is often the missing link of a critical chain. Judge each finding
+   by what it gives an intruder, not by its severity label.
+B. Verification pass. Then try to break every chain you found. For each
+   link, decide whether a finding in the input shows it ("shown") or whether
+   it depends on something the input does not show ("assumed": a patch
+   level, network reachability, a weak password, an account actually in
+   use). A check listed under "Not evaluated" is unknown: never clean, never
+   shown. Drop a chain when a link contradicts the input (a disabled account,
+   a right on a different object, a setting the findings say is fine). Keep
+   a chain whose only weakness is an assumed link, with lower confidence.
+   Remember the strongest chains you dropped, and why.
+C. Defender pass. Derive everything else (summary, triage, plan, quick
+   wins, monitoring) from the chains that survived: the change that breaks
+   the most surviving chains, and the most likely ones, comes first.
+'@
+
+$script:AiMethodDefensive = @'
+How to work (internally; output only the JSON object described below):
+A. Combination review. For each kind of starting access (none, any domain
+   or tenant user, a guest, a specific account, group or application token
+   that the findings name), work out which findings, taken together, would
+   let that access grow into full control of the directory, including
+   combinations across categories. A Low or Medium finding can complete a
+   critical combination.
+B. Evidence review. For each step of each combination, decide whether a
+   finding in the input shows it ("shown") or whether it depends on
+   something the input does not show ("assumed": a patch level, network
+   reachability, a weak password, an account actually in use). A check
+   listed under "Not evaluated" is unknown: never clean, never shown. Drop a
+   combination when a step contradicts the input; keep one whose only
+   weakness is an assumed step, with lower confidence. Remember the
+   strongest combinations you dropped, and why.
+C. Planning. Derive everything else (summary, triage, plan, quick wins,
+   monitoring) from the combinations that remain: the change that breaks the
+   most of them, and the most likely ones, comes first.
+'@
+
+$script:AiSystemPromptTemplate = @'
+You are an identity security analyst working for the defenders who own
+this Active Directory domain or Microsoft Entra ID tenant (the input says
+which). You receive deterministic hygiene findings already computed by a
+local tool from a read-only snapshot. Treat them as established facts: do
+not recompute, dispute or add findings that are not in the input. When the
+input lists checks as "Not evaluated", the tool could not collect their
+data: treat them as unknown.
 
 Identifiers were replaced by placeholder tokens (USER-3, HOST-7, GROUP-2,
-DOMAIN-1, DN-4, SID-1, PATH-1...). Always refer to objects by their token
-exactly as written; never guess the real name. Well-known built-in names
-(Administrator, krbtgt, Domain Admins...) are left as is.
+DOMAIN-1, DN-4, SID-1, PATH-1, UPN-2, APP-1, SP-4...). Always refer to
+objects by their token exactly as written; never guess the real name.
+Well-known built-in names (Administrator, krbtgt, Domain Admins...) are left
+as is.
 
-Your output is for defenders only. Describe risk in terms of impact and
-business consequence; do not write attack procedures, commands or
-exploitation steps.
+{{METHOD}}
+Your output is for defenders. Describe WHAT grants control and WHERE to
+break it, in terms of impact and business consequence. Never write HOW to
+exploit it: no commands, tool names, payloads or step-by-step attack
+procedures.
 
 Produce:
 1. executive_summary: 4-6 sentences for management. Overall posture, the
@@ -171,37 +229,38 @@ Produce:
 2. remediation_plan: an ordered list of work packages. Group related
    checks that share an owner or a change window (for example all
    Kerberos service-account items). Order by risk reduction per unit of
-   effort: exposures that alone give domain-wide control first, then
+   effort: what breaks the surviving chains to full control first, then
    credential exposure, then hygiene. Each item: title, the check ids it
    covers, affected object tokens (at most 8), why this position in the
-   order, effort (low | medium | high), and operational caveats (what can
-   break, what to test first). Do NOT number the items yourself.
+   order (name the chains it breaks), effort (low | medium | high), and
+   operational caveats (what can break, what to test first). Do NOT number
+   the items yourself.
 3. quick_wins: up to 5 changes that are low effort and low disruption.
 4. monitoring: for exposures that cannot be fixed immediately, what to
-   monitor meanwhile: relevant Windows Security event IDs and a short
-   description of the detection logic for a SIEM. Only reference event
-   IDs you are confident exist and apply.
+   monitor meanwhile: relevant Windows Security event IDs (or, for Entra,
+   the sign-in and audit log activity) and a short description of the
+   detection logic for a SIEM. Only reference event IDs you are confident
+   exist and apply.
 5. comparison_narrative: only if a "Comparison" section is present,
    2-4 sentences on the trend (real progress vs churn). Omit otherwise.
 6. attack_paths: using the "Attack surface toward Tier 0" section as the
-   only source, describe up to 6 of the most important escalation paths in
-   defensive terms. For each: a short title, the severity, an ordered list
-   of steps naming the object tokens and the technique at each hop toward
-   Tier 0, and a one or two sentence narrative of the business impact and
-   where to break the chain. Describe WHAT grants control, never HOW to
-   exploit it: no commands, tools or step-by-step attack procedure.
+   only source, describe up to 6 of the most important escalation paths.
+   For each: a short title, the severity, an ordered list of steps naming
+   the object tokens and the technique at each hop toward Tier 0, and a one
+   or two sentence narrative of the business impact and where to break the
+   chain. When the input has no such section, return an empty list.
 7. remediation_scripts: for the check ids where a safe, standard fix can be
    expressed as PowerShell, give a snippet. Each: the check id, a short
-   PowerShell block using the native ActiveDirectory/GroupPolicy cmdlets
-   (use the object tokens as placeholders the operator will substitute),
-   and caveats. Only for changes that are routine and reversible; for
-   anything destructive or environment-specific, return guidance in
-   caveats and keep the script minimal or empty. Never include credential
-   theft or offensive code.
+   PowerShell block using native cmdlets (use the object tokens as
+   placeholders the operator will substitute), and caveats. Only for changes
+   that are routine and reversible; for anything destructive or
+   environment-specific, return guidance in caveats and keep the script
+   minimal or empty. Never include credential theft or offensive code.
 8. triage: re-rank the fired checks by real exploitability in THIS
-   environment (chained paths, reachability, privilege of the affected
-   objects), not by static severity alone. Each: a rank (1 = fix first),
-   the check ids, the key object tokens, and a one sentence rationale.
+   environment (the surviving chains, reachability, privilege of the
+   affected objects), not by static severity alone. Each: a rank (1 = fix
+   first), the check ids, the key object tokens, and a one sentence
+   rationale.
 9. known_exploitation: which fired checks match attack vectors used in
    publicly reported attacks or published research of roughly the last
    three years. Start from the "Recent attack vectors" section of the input
@@ -212,22 +271,36 @@ Produce:
    here (which objects or conditions in the findings). Never invent
    incidents, dates or CVE numbers.
 10. compromise_assessment: can the findings be chained into full
-   compromise of the domain (Domain Admin or equivalent control; for an
+   compromise (Domain Admin or equivalent control of the domain; for an
    Entra tenant, Global Administrator or equivalent)? Unlike attack_paths,
-   you may combine any findings (for example coercion, a relay target and a
+   combine any findings (for example coercion, a relay target and a
    certificate template). Give: verdict (likely | possible | unlikely), a
-   2-3 sentence summary, and up to 4 chains. Each chain: a title, its own
-   starting_point (the access an attacker must already have for THAT chain:
-   unauthenticated on the network, any domain user, any tenant user, or a
-   specific account or group token when the chain starts from an object
-   that is not open to everyone, such as a principal that already holds a
-   right), the check ids in order, the key object tokens, and a narrative of
-   the impact and the single link whose fix breaks the chain. The top-level
-   starting_point is the least access among all the chains; never say "any
-   domain user" there when every chain starts from a specific account. Use only the
-   findings: when a chain also depends on something the findings do not
-   show (a patch level, network reachability), say so. Same rule as above:
-   what grants control, never how to exploit it.
+   2-3 sentence summary, and up to 4 chains, most likely first. Each chain:
+   - title;
+   - starting_point: the access needed for THAT chain (unauthenticated on
+     the network, any domain user, any tenant user, a guest, or a specific
+     token when the chain starts from an object that is not open to
+     everyone, such as a principal that already holds a right);
+   - confidence: high (every link shown), medium (one assumed link),
+     low (more than one);
+   - links: the ordered links, each with the check id, the object tokens,
+     what the link gives (the control gained at that step), evidence
+     (shown | assumed) and, for an assumed link, the assumption that must
+     hold;
+   - break_point: the single check whose fix breaks the chain most
+     cheaply, and why;
+   - checks and objects: the check ids in order and the key object tokens;
+   - narrative: the impact in two or three sentences.
+   The top-level starting_point is the least access among all the chains;
+   never say "any domain user" there when every chain starts from a
+   specific account.
+11. rejected_chains: up to 4 of the strongest chains you considered and
+   dropped in the verification pass. Each: title, the check ids, and the
+   reason (which link the input contradicts).
+12. verify_next: up to 6 things a defender should check by hand to confirm
+   or rule out an assumed link (a patch level, whether a port is reachable,
+   whether an account is still used). Each: the question and the check ids
+   it concerns.
 
 If no findings are provided, say so plainly and return empty lists.
 
@@ -244,8 +317,16 @@ Respond with one JSON object only, no markdown fences:
   "triage": [ { "rank": 1, "checks": ["..."], "objects": ["..."], "rationale": "..." } ],
   "known_exploitation": [ { "checks": ["..."], "vector": "...", "public": "...", "relevance": "..." } ],
   "compromise_assessment": { "verdict": "likely|possible|unlikely", "starting_point": "...", "summary": "...",
-      "chains": [ { "title": "...", "starting_point": "...", "checks": ["..."], "objects": ["..."], "narrative": "..." } ] } }
-"@
+      "chains": [ { "title": "...", "starting_point": "...", "confidence": "high|medium|low",
+          "links": [ { "check": "...", "objects": ["..."], "gives": "...", "evidence": "shown|assumed", "assumption": "..." } ],
+          "break_point": { "check": "...", "why": "..." },
+          "checks": ["..."], "objects": ["..."], "narrative": "..." } ] },
+  "rejected_chains": [ { "title": "...", "checks": ["..."], "reason": "..." } ],
+  "verify_next": [ { "question": "...", "checks": ["..."] } ] }
+'@
+
+$script:AiSystemPrompt = $script:AiSystemPromptTemplate.Replace('{{METHOD}}', $script:AiMethodFull)
+$script:AiSystemPromptDefensive = $script:AiSystemPromptTemplate.Replace('{{METHOD}}', $script:AiMethodDefensive)
 
 # One line per fired check that is in $script:RecentAttackVectors (Reporting.ps1), in list order.
 function Get-AiRecentVectorLines {
@@ -260,8 +341,24 @@ function Get-AiRecentVectorLines {
     return , $out.ToArray()
 }
 
+# The checks the tool could not evaluate, in catalog order: without them the model would read a
+# missing finding as a clean link. Titles only; they name no object.
+function Get-AiNotEvaluatedLines {
+    param($NotEvaluated, $Catalog)
+    $types = @(@($NotEvaluated) | Where-Object { $_ -and $_.Type } | ForEach-Object { "$($_.Type)" } | Select-Object -Unique)
+    if ($types.Count -eq 0) { return , @() }
+    $out = New-Object System.Collections.Generic.List[string]
+    $out.Add('')
+    $out.Add('Not evaluated (data the tool could not collect; unknown, never clean):')
+    foreach ($t in @($types | Sort-Object { Get-CheckPosition $_ }, { $_ })) {
+        $title = if ($Catalog -and $Catalog.Contains($t)) { $Catalog[$t].Title } else { '' }
+        $out.Add("- ${t}$(if ($title) { ": $title" })")
+    }
+    return , $out.ToArray()
+}
+
 function New-AiPrompt {
-    param($Findings, $Pz, $Snapshot, $Score, $Comparison, [int]$MaxObjectsPerCheck = 12)
+    param($Findings, $Pz, $Snapshot, $Score, $Comparison, $NotEvaluated, [int]$MaxObjectsPerCheck = 12)
     $lines = New-Object System.Collections.Generic.List[string]
     $lines.Add("Domain: $(Protect-AiText $Pz $Snapshot.domain.dnsRoot). Functional level: $($Snapshot.domain.domainMode). Hygiene score: $(if ($Score.Reliable -eq $false) { "not reliable, only $($Score.Coverage)% of the checks were evaluated" } else { "$($Score.Score)/100" }).")
     $lines.Add("Counts: users $(@($Snapshot.users).Count), computers $(@($Snapshot.computers).Count), domain controllers $(@($Snapshot.domainControllers).Count).")
@@ -288,6 +385,7 @@ function New-AiPrompt {
         }
     }
     foreach ($vl in (Get-AiRecentVectorLines -Findings $Findings)) { $lines.Add($vl) }
+    foreach ($nl in (Get-AiNotEvaluatedLines -NotEvaluated $NotEvaluated -Catalog $script:CheckCatalog)) { $lines.Add($nl) }
     if ($Comparison -and (@($Comparison.New).Count + @($Comparison.Resolved).Count) -gt 0) {
         $lines.Add('')
         $lines.Add('Comparison with the previous run (already computed):')
@@ -298,12 +396,17 @@ function New-AiPrompt {
     return ($lines -join "`n")
 }
 
-# The same text that goes into the request: system instruction, then the
-# user prompt. Used by the dry run and by the copy kept before a real send.
+# The same text that goes into the request: the instructions, then the input. Used by the dry
+# run and by the copy kept before a real send. Self-contained on purpose: pasted whole into
+# another provider's chat it works as one message, and the reply is the same JSON.
+$script:AiInputMarker = '=== INPUT (computed locally by IDWolf; tokens stand for real names) ==='
+function Get-AiPasteText {
+    param([string]$UserPrompt, [string]$SystemPrompt = $script:AiSystemPrompt)
+    return "$($SystemPrompt.TrimEnd())`n`n$script:AiInputMarker`n$UserPrompt`n"
+}
 function Write-AiPromptFile {
-    param([string]$Path, [string]$UserPrompt)
-    $text = "=== SYSTEM ===`n$script:AiSystemPrompt`n`n=== USER ===`n$UserPrompt`n"
-    [System.IO.File]::WriteAllText($Path, $text, (New-Object System.Text.UTF8Encoding($false)))
+    param([string]$Path, [string]$UserPrompt, [string]$SystemPrompt = $script:AiSystemPrompt)
+    [System.IO.File]::WriteAllText($Path, (Get-AiPasteText -UserPrompt $UserPrompt -SystemPrompt $SystemPrompt), (New-Object System.Text.UTF8Encoding($false)))
 }
 
 # report_x.html -> report_x_ai_prompt.txt, in the same folder.
@@ -356,16 +459,19 @@ function Request-GeminiApiKey {
 # MaxAttempts 0 keeps trying until it works (Ctrl+C to stop). Only timeouts,
 # 429 and 5xx are retried; a 400/401/403 won't fix itself.
 function Invoke-GeminiAnalysis {
-    param([string]$UserPrompt, [string]$ApiKey, [string]$Model, [int]$MaxAttempts = 3, [int]$TimeoutSeconds = 180)
+    param([string]$UserPrompt, [string]$ApiKey, [string]$Model, [int]$MaxAttempts = 3, [int]$TimeoutSeconds = 180, [string]$SystemPrompt = $script:AiSystemPrompt)
+    $script:AiLastBlocked = $false
     $unlimited = $MaxAttempts -le 0
     $ofText = if ($unlimited) { '' } else { "/$MaxAttempts" }
     $canRetry = { param($n) $unlimited -or $n -lt $MaxAttempts }
     # Wait 2, 4, 8... seconds, at most a minute.
     $backoff = { param($n) [int][Math]::Min(60, [Math]::Pow(2, [Math]::Min($n, 6))) }
     $body = @{
-        system_instruction = @{ parts = @(@{ text = $script:AiSystemPrompt }) }
+        system_instruction = @{ parts = @(@{ text = $SystemPrompt }) }
         contents           = @(@{ role = 'user'; parts = @(@{ text = $UserPrompt }) })
-        generationConfig   = @{ temperature = 0.2; responseMimeType = 'application/json' }
+        # No temperature: Gemini 3 reasons best at its default (1.0); Google warns that lower values
+        # can make it loop. Thinking is left at the model's default, high on Gemini 3.
+        generationConfig   = @{ responseMimeType = 'application/json' }
     } | ConvertTo-Json -Depth 10
     # Key in a header, not the URL, so it stays out of proxy logs.
     # IDWOLF_GEMINI_BASEURL points at an internal gateway (or the test endpoint).
@@ -412,7 +518,12 @@ function Invoke-GeminiAnalysis {
     if (-not $result) { return $null }
     try { $resp = $result.Body | ConvertFrom-Json } catch { Write-Host 'ERROR: Gemini response is not valid JSON.' -ForegroundColor Red; return $null }
     $reply = Get-GeminiReplyText $resp
-    $raw = ($reply.Text -replace '^\s*```(?:json)?', '') -replace '```\s*$', ''
+    if ($script:AiBlockReasons -contains $reply.FinishReason) {
+        $script:AiLastBlocked = $true
+        Write-Host "Gemini refused the request ($($reply.FinishReason))." -ForegroundColor Yellow
+        return $null
+    }
+    $raw =($reply.Text -replace '^\s*```(?:json)?', '') -replace '```\s*$', ''
     try { return ($raw | ConvertFrom-Json) }
     catch {
         Write-Host "ERROR: model did not return clean JSON (finishReason: $(if ($reply.FinishReason) { $reply.FinishReason } else { 'none' })):`n$raw" -ForegroundColor Red
@@ -420,6 +531,28 @@ function Invoke-GeminiAnalysis {
         elseif ($reply.FinishReason -and $reply.FinishReason -ne 'STOP') { Write-Host "Gemini stopped the reply early ($($reply.FinishReason)). Run again, or try another model with -Model." -ForegroundColor Yellow }
         return $null
     }
+}
+
+# Why Gemini stops a reply on safety grounds (candidate finishReason) or refuses the prompt
+# (promptFeedback.blockReason, which Get-GeminiReplyText returns as FinishReason).
+$script:AiBlockReasons = @('SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST', 'SPII', 'OTHER')
+$script:AiLastBlocked = $false
+
+# The full instructions first; if Gemini refuses them, the defensive variant once. The variant
+# actually sent is saved next to the report too, so the prompt file always matches what went out.
+function Invoke-AiAnalysisWithFallback {
+    param([string]$UserPrompt, [string]$ApiKey, [string]$Model, [int]$MaxAttempts = 3, [string]$ReportPath = '')
+    $raw = Invoke-GeminiAnalysis -UserPrompt $UserPrompt -ApiKey $ApiKey -Model $Model -MaxAttempts $MaxAttempts -SystemPrompt $script:AiSystemPrompt
+    if ($raw -or -not $script:AiLastBlocked) { return [PSCustomObject]@{ Raw = $raw; Variant = 'full' } }
+    Write-Host 'Retrying once with the defensive-only instructions (no adversary pass; same output format).' -ForegroundColor Yellow
+    if ($ReportPath) {
+        $alt = Get-AiSidecarPath $ReportPath '_ai_prompt_defensive.txt'
+        Write-AiPromptFile -Path $alt -UserPrompt $UserPrompt -SystemPrompt $script:AiSystemPromptDefensive
+        Write-Host "Defensive prompt kept at $alt"
+    }
+    $raw = Invoke-GeminiAnalysis -UserPrompt $UserPrompt -ApiKey $ApiKey -Model $Model -MaxAttempts $MaxAttempts -SystemPrompt $script:AiSystemPromptDefensive
+    if (-not $raw -and $script:AiLastBlocked) { Write-Host 'Gemini refused the defensive variant too. The deterministic report is complete; the prompt file can be pasted into another model.' -ForegroundColor Yellow }
+    return [PSCustomObject]@{ Raw = $raw; Variant = 'defensive' }
 }
 
 # The reply text of the first candidate. Thinking models can split it over several
@@ -437,7 +570,7 @@ function Get-GeminiReplyText {
 # the model can't invent findings.
 # --------------------------------------------------------------------------
 function ConvertFrom-AiResponse {
-    param($Raw, $Pz, $Findings, [string]$Model)
+    param($Raw, $Pz, $Findings, [string]$Model, [string]$Variant = 'full')
     $valid = @{}; foreach ($f in $Findings) { $valid[$f.Type] = $true }
     $u = { param($t) Unprotect-AiText $Pz "$t" }
     $plan = @()
@@ -504,9 +637,33 @@ function ConvertFrom-AiResponse {
         foreach ($ch in @($ca.chains | Where-Object { $_ })) {
             $checks = @($ch.checks | Where-Object { $valid.ContainsKey("$_") })
             if ($checks.Count -eq 0) { continue }
+            # Checked here, not trusted: a link can only be "shown" by a check that fired, and a
+            # chain is "high" only when every link is shown.
+            $links = @()
+            foreach ($l in @($ch.links | Where-Object { $_ } | Select-Object -First 10)) {
+                $lc = "$($l.check)"
+                $ev = "$($l.evidence)".ToLower(); if (@('shown', 'assumed') -notcontains $ev) { $ev = 'assumed' }
+                if ($lc -and -not $valid.ContainsKey($lc)) { $lc = ''; $ev = 'assumed' }
+                if (-not $lc -and $ev -eq 'shown') { $ev = 'assumed' }
+                $links += [PSCustomObject]@{
+                    Check      = $lc
+                    Objects    = @($l.objects | Where-Object { $_ } | Select-Object -First 4 | ForEach-Object { & $u $_ })
+                    Gives      = & $u $l.gives
+                    Evidence   = $ev
+                    Assumption = & $u $l.assumption
+                }
+            }
+            $conf = "$($ch.confidence)".ToLower(); if (@('high', 'medium', 'low') -notcontains $conf) { $conf = '' }
+            $assumed = @($links | Where-Object { $_.Evidence -eq 'assumed' }).Count
+            if ($links.Count -and $assumed -gt 0 -and $conf -eq 'high') { $conf = $(if ($assumed -eq 1) { 'medium' } else { 'low' }) }
+            $bp = $null
+            if ($ch.break_point -and $valid.ContainsKey("$($ch.break_point.check)")) { $bp = [PSCustomObject]@{ Check = "$($ch.break_point.check)"; Why = & $u $ch.break_point.why } }
             $chains += [PSCustomObject]@{
                 Title     = & $u $ch.title
                 StartingPoint = & $u $ch.starting_point
+                Confidence = $conf
+                Links     = $links
+                BreakPoint = $bp
                 Checks    = $checks
                 Objects   = @($ch.objects | Where-Object { $_ } | Select-Object -First 8 | ForEach-Object { & $u $_ })
                 Narrative = & $u $ch.narrative
@@ -517,8 +674,22 @@ function ConvertFrom-AiResponse {
         }
     }
 
+    $rejected = @()
+    foreach ($rc in @($Raw.rejected_chains | Where-Object { $_ } | Select-Object -First 4)) {
+        if (-not $rc.title -and -not $rc.reason) { continue }
+        $rejected += [PSCustomObject]@{ Title = & $u $rc.title; Checks = @($rc.checks | Where-Object { $valid.ContainsKey("$_") }); Reason = & $u $rc.reason }
+    }
+    $verify = @()
+    foreach ($v in @($Raw.verify_next | Where-Object { $_ } | Select-Object -First 6)) {
+        if (-not $v.question) { continue }
+        $verify += [PSCustomObject]@{ Question = & $u $v.question; Checks = @($v.checks | Where-Object { $valid.ContainsKey("$_") }) }
+    }
+
     return [PSCustomObject]@{
         Model               = $Model
+        Variant             = $Variant
+        RejectedChains      = $rejected
+        VerifyNext          = $verify
         ExecutiveSummary    = & $u $Raw.executive_summary
         RemediationPlan     = $plan
         QuickWins           = @($Raw.quick_wins | Where-Object { $_ } | Select-Object -First 5 | ForEach-Object { & $u $_ })
@@ -541,7 +712,7 @@ function ConvertTo-AiSectionHtml {
     # Collapsible like the attack map: open by default, at the top of the dashboard.
     # HTML entity, not a literal emoji: PS 5.1 reads these BOM-less files as ANSI.
     & $w "<details open class='ai-details'><summary><h2><span class='ai-robot' role='img' aria-label='AI' style='margin-right:8px'>&#x1F916;</span>AI summary and remediation plan</h2></summary>"
-    & $w "<div class='ai-section'><div class='ai-badge'>AI-assisted &middot; $(& $H $AiResult.Model) &middot; $($AiResult.MaskedIdentifiers) identifiers pseudonymized before sending</div>"
+    & $w "<div class='ai-section'><div class='ai-badge'>AI-assisted &middot; $(& $H $AiResult.Model) &middot; $($AiResult.MaskedIdentifiers) identifiers pseudonymized before sending$(if ($AiResult.Variant -eq 'defensive') { ' &middot; defensive-only instructions (the full prompt was refused)' })</div>"
     & $w "<p>$(& $H $AiResult.ExecutiveSummary)</p>"
     $cmp = $AiResult.CompromiseAssessment
     if ($cmp) {
@@ -554,8 +725,37 @@ function ConvertTo-AiSectionHtml {
         foreach ($c in @($cmp.Chains)) {
             $objs = if (@($c.Objects).Count -gt 0) { "<br><span class='meta'>Objects: $(& $H ($c.Objects -join ', '))</span>" } else { '' }
             $from = if ($c.StartingPoint) { " <span class='check-id'>from: $(& $H $c.StartingPoint)</span>" } else { '' }
-            & $w "<div style='margin:10px 0'><b>$(& $H $c.Title)</b>$from<div class='meta' style='margin:4px 0'>$((@($c.Checks) | ForEach-Object { "<code>$_</code>" }) -join ' &rarr; ')</div><div>$(& $H $c.Narrative)</div>$objs</div>"
+            $conf = if ($c.Confidence) { " <span class='check-id'>confidence: $(& $H $c.Confidence)</span>" } else { '' }
+            & $w "<div style='margin:10px 0'><b>$(& $H $c.Title)</b>$from$conf<div class='meta' style='margin:4px 0'>$((@($c.Checks) | ForEach-Object { "<code>$_</code>" }) -join ' &rarr; ')</div><div>$(& $H $c.Narrative)</div>$objs"
+            if (@($c.Links).Count -gt 0) {
+                & $w "<ol class='meta' style='margin:6px 0 0 18px'>"
+                foreach ($l in @($c.Links)) {
+                    $chk = if ($l.Check) { "<code>$(& $H $l.Check)</code> " } else { '' }
+                    $lo = if (@($l.Objects).Count) { " ($(& $H ($l.Objects -join ', ')))" } else { '' }
+                    $ev = if ($l.Evidence -eq 'shown') { "<span class='check-id'>shown by the findings</span>" } else { "<span class='check-id'>assumed</span>$(if ($l.Assumption) { ": $(& $H $l.Assumption)" })" }
+                    & $w "<li>$chk$(& $H $l.Gives)$lo &middot; $ev</li>"
+                }
+                & $w '</ol>'
+            }
+            if ($c.BreakPoint) { & $w "<div class='meta' style='margin-top:4px'>Break it here: <code>$(& $H $c.BreakPoint.Check)</code> &middot; $(& $H $c.BreakPoint.Why)</div>" }
+            & $w '</div>'
         }
+    }
+    if (@($AiResult.VerifyNext).Count -gt 0) {
+        & $w '<h3>Check by hand (assumptions behind the chains)</h3><ul>'
+        foreach ($v in $AiResult.VerifyNext) {
+            $vc = if (@($v.Checks).Count) { " <span class='meta'>$((@($v.Checks) | ForEach-Object { "<code>$_</code>" }) -join ' ')</span>" } else { '' }
+            & $w "<li>$(& $H $v.Question)$vc</li>"
+        }
+        & $w '</ul>'
+    }
+    if (@($AiResult.RejectedChains).Count -gt 0) {
+        & $w '<h3>Chains considered and ruled out</h3><ul>'
+        foreach ($rc in $AiResult.RejectedChains) {
+            $rcc = if (@($rc.Checks).Count) { " <span class='meta'>$((@($rc.Checks) | ForEach-Object { "<code>$_</code>" }) -join ' ')</span>" } else { '' }
+            & $w "<li><b>$(& $H $rc.Title)</b>$rcc<br>$(& $H $rc.Reason)</li>"
+        }
+        & $w '</ul>'
     }
     if ($AiResult.ComparisonNarrative) { & $w "<h3>Trend since previous run</h3><p>$(& $H $AiResult.ComparisonNarrative)</p>" }
     if (@($AiResult.QuickWins).Count -gt 0) {

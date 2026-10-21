@@ -6,12 +6,16 @@
 # (%LOCALAPPDATA%\IDWolf\wizard.json; IDWOLF_STATE_DIR moves it, for the tests). It holds
 # choices and file paths only: never a password, an API key or anything read from the
 # directory. Only the keys listed below are written, whatever a caller passes.
+# 'defaults' are the launcher's default settings ([S] in its menu): set on purpose, used by a
+# run only when the user says so, never changed by the answers given during a run.
 
 $script:WizardStateKeys = @{
     analyzer = @('Snapshot', 'OutJson', 'ExceptionsFile', 'CompareTo', 'PasswordQualityFile', 'AiMode', 'Model', 'AiAttempts', 'LastReport')
     launcher = @('LastRun', 'Server', 'Deep', 'Pq', 'WeakList', 'Next', 'Ai', 'Tenant', 'DeviceCode', 'Model', 'AiAttempts')
     pending  = @('Kind', 'Snapshot', 'PasswordQuality', 'CollectedAt')
+    defaults = @('Server', 'Deep', 'Pq', 'WeakList', 'Tenant', 'DeviceCode', 'Next', 'Ai', 'Model', 'AiAttempts')
 }
+$script:WizardStateSections = @('analyzer', 'launcher', 'pending', 'defaults')
 
 # The DNS name of the domain a plain JSON snapshot describes ('' for an Entra snapshot, a zip,
 # or a file that can't be read).
@@ -45,15 +49,15 @@ function Get-IDWolfStatePath {
     return (Join-Path $dir 'wizard.json')
 }
 
-# Always returns @{ analyzer = @{}; launcher = @{}; pending = @{} }. A missing or damaged
-# file is an empty state: remembering choices must never stop a run.
+# Always returns @{ analyzer = @{}; launcher = @{}; pending = @{}; defaults = @{} }. A missing
+# or damaged file is an empty state: remembering choices must never stop a run.
 function Read-IDWolfState {
-    $state = @{ analyzer = @{}; launcher = @{}; pending = @{} }
+    $state = @{ analyzer = @{}; launcher = @{}; pending = @{}; defaults = @{} }
     $p = Get-IDWolfStatePath
     if (-not (Test-Path -LiteralPath $p)) { return $state }
     try {
         $raw = [System.IO.File]::ReadAllText($p) | ConvertFrom-Json
-        foreach ($sec in @($script:WizardStateKeys.Keys)) {
+        foreach ($sec in $script:WizardStateSections) {
             $o = $raw.$sec
             if (-not $o) { continue }
             foreach ($k in $script:WizardStateKeys[$sec]) {
@@ -66,9 +70,10 @@ function Read-IDWolfState {
     return $state
 }
 
-# Merges Values into one section and writes the file. A value of $null removes the key.
+# Merges Values (a hashtable or an ordered dictionary) into one section and writes the file.
+# A value of $null removes the key.
 function Save-IDWolfState {
-    param([ValidateSet('analyzer', 'launcher', 'pending')][string]$Section, [hashtable]$Values, [switch]$Replace)
+    param([ValidateSet('analyzer', 'launcher', 'pending', 'defaults')][string]$Section, [System.Collections.IDictionary]$Values, [switch]$Replace)
     try {
         $state = Read-IDWolfState
         if ($Replace) { $state[$Section] = @{} }
@@ -77,7 +82,7 @@ function Save-IDWolfState {
             if ($null -eq $Values[$k]) { $state[$Section].Remove($k) } else { $state[$Section][$k] = "$($Values[$k])" }
         }
         $out = [ordered]@{ version = 1 }
-        foreach ($sec in 'analyzer', 'launcher', 'pending') {
+        foreach ($sec in $script:WizardStateSections) {
             $o = [ordered]@{}
             foreach ($k in $script:WizardStateKeys[$sec]) { if ($state[$sec].ContainsKey($k)) { $o[$k] = $state[$sec][$k] } }
             $out[$sec] = $o
@@ -90,8 +95,17 @@ function Save-IDWolfState {
     catch { Write-Warning "Could not remember the choices: $($_.Exception.Message)" }
 }
 
+# Deletes the file. KeepDefaults keeps the default settings and forgets everything else.
 function Clear-IDWolfState {
+    param([switch]$KeepDefaults)
     $p = Get-IDWolfStatePath
+    if ($KeepDefaults) {
+        $d = (Read-IDWolfState).defaults
+        if ($d.Count) {
+            foreach ($sec in 'analyzer', 'launcher', 'pending') { Save-IDWolfState -Section $sec -Values @{} -Replace }
+            return
+        }
+    }
     if (Test-Path -LiteralPath $p) { Remove-Item -LiteralPath $p -Force }
 }
 
@@ -102,7 +116,8 @@ function Clear-IDWolfState {
 # that don't apply (e.g. the report path when the run stops after collecting). OnChange
 # runs after each edit with the key and the new value. Pickers maps a key to a scriptblock
 # that gets the current value and returns the new one (e.g. a list to pick from), instead of
-# a typed answer. Ask is there for the tests.
+# a typed answer. Confirm names what Enter does ('start'; 'save' for the default settings).
+# Ask is there for the tests.
 function Edit-RunSettings {
     param(
         [System.Collections.Specialized.OrderedDictionary]$Settings,
@@ -112,6 +127,7 @@ function Edit-RunSettings {
         [hashtable]$Pickers = @{},
         [scriptblock]$Visible = { param($Key, $S) $true },
         [scriptblock]$OnChange = { param($Key, $Value) },
+        [string]$Confirm = 'start',
         [scriptblock]$Ask = { param($q) Read-Host $q }
     )
     while ($true) {
@@ -123,10 +139,10 @@ function Edit-RunSettings {
             $label = if ($Labels.ContainsKey($k)) { $Labels[$k] } else { $k }
             Write-Host ("  [{0}] {1,-34} {2}" -f ($i + 1), $label, $shown)
         }
-        $e = & $Ask 'Enter a number to change, Q to cancel, or press Enter to start'
+        $e = & $Ask "Enter a number to change, Q to cancel, or press Enter to $Confirm"
         if ([string]::IsNullOrWhiteSpace($e)) { return $true }
         if ("$e".Trim() -match '^[Qq]$') { return $false }
-        if ("$e" -notmatch '^\d+$' -or [int]$e -lt 1 -or [int]$e -gt $keys.Count) { Write-Host "Pick 1-$($keys.Count), or Enter to start." -ForegroundColor Yellow; continue }
+        if ("$e" -notmatch '^\d+$' -or [int]$e -lt 1 -or [int]$e -gt $keys.Count) { Write-Host "Pick 1-$($keys.Count), or Enter to $Confirm." -ForegroundColor Yellow; continue }
         $k = $keys[[int]$e - 1]
         $label = if ($Labels.ContainsKey($k)) { $Labels[$k] } else { $k }
         if ($Pickers.ContainsKey($k)) {

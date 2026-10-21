@@ -565,7 +565,7 @@ Assert-True (@($graph.Trusts).Count -ge 1) 'attack graph includes external/fores
 Write-Host "[ai pseudonymization]"
 $script:RefDate = ConvertTo-UtcDate $demo.meta.collectedAtUtc
 $pz = New-Pseudonymizer -Snapshot $demo -Index $r.Index
-$prompt = New-AiPrompt -Findings $r.Findings -Pz $pz -Snapshot $demo -Score $score -Comparison $cmp
+$prompt = New-AiPrompt -Findings $r.Findings -Pz $pz -Snapshot $demo -Score $score -Comparison $cmp -NotEvaluated $r.NotEvaluated
 Assert-True (@(Test-AiLeak -Pz $pz -Text $prompt).Count -eq 0) "leak check clean: $((Test-AiLeak -Pz $pz -Text $prompt) -join ', ')"
 foreach ($secret in 'moosebank', 'MOOSEBANK', 'adm.rossi', 'svc_sql_admin', 'SRV-BACKUP01', 'sql01', 'app01', 'DC01', 'S-1-5-21-1111111111', 'partner.example', 'PSO-Admins', 'ext.admin', 'Groups.xml', 'Workstation Baseline', 'Inventory', 'fs01', 'dc-tools') {
     Assert-True ($prompt.IndexOf($secret, [StringComparison]::OrdinalIgnoreCase) -lt 0) "prompt must not contain '$secret'"
@@ -603,9 +603,17 @@ $fake = [PSCustomObject]@{
     )
     compromise_assessment = [PSCustomObject]@{ verdict = 'LIKELY'; starting_point = 'any domain user'; summary = "Through $tok."
         chains = @(
-            [PSCustomObject]@{ title = 'Roast then DA'; starting_point = "$tok"; checks = @('kerberoastable_user', 'made_up', 'privileged_kerberoastable'); objects = @($tok); narrative = "Rotate $tok to break it." }
+            [PSCustomObject]@{ title = 'Roast then DA'; starting_point = "$tok"; confidence = 'HIGH'; checks = @('kerberoastable_user', 'made_up', 'privileged_kerberoastable'); objects = @($tok); narrative = "Rotate $tok to break it."
+                links = @(
+                    [PSCustomObject]@{ check = 'kerberoastable_user'; objects = @($tok); gives = "the password of $tok"; evidence = 'shown'; assumption = '' }
+                    [PSCustomObject]@{ check = 'made_up'; objects = @(); gives = 'invented'; evidence = 'shown'; assumption = '' }
+                    [PSCustomObject]@{ check = 'privileged_kerberoastable'; objects = @($tok); gives = 'Domain Admin'; evidence = 'Assumed'; assumption = 'the password is weak' }
+                )
+                break_point = [PSCustomObject]@{ check = 'kerberoastable_user'; why = "a long random password on $tok" } }
             [PSCustomObject]@{ title = 'Invented chain'; checks = @('made_up'); objects = @(); narrative = 'x' }
         ) }
+    rejected_chains = @([PSCustomObject]@{ title = 'Relay to the CA'; checks = @('adcs_esc8', 'made_up'); reason = "Web enrollment on HOST-1`$ is off." })
+    verify_next = @([PSCustomObject]@{ question = "Is $tok still in use?"; checks = @('kerberoastable_user') }, [PSCustomObject]@{ question = ''; checks = @() })
 }
 $geminiReply = Get-GeminiReplyText ('{"candidates":[{"content":{"parts":[{"text":"x","thought":true},{"text":"{\"a\": [1,"},{"text":" 2]}"}]},"finishReason":"STOP"}]}' | ConvertFrom-Json)
 Assert-True ($geminiReply.Text -eq '{"a": [1, 2]}' -and $geminiReply.FinishReason -eq 'STOP') 'Gemini reply split over several parts is joined, thought parts skipped'
@@ -626,6 +634,46 @@ Assert-True (@($ai.KnownExploitation).Count -eq 1 -and $ai.KnownExploitation[0].
 $cmpA = $ai.CompromiseAssessment
 Assert-True ($cmpA.Verdict -eq 'likely' -and $cmpA.Summary -eq 'Through svc_sql_admin.' -and @($cmpA.Chains).Count -eq 1 -and ($cmpA.Chains[0].Checks -join ',') -eq 'kerberoastable_user,privileged_kerberoastable' -and $cmpA.Chains[0].Narrative -eq 'Rotate svc_sql_admin to break it.' -and $cmpA.Chains[0].StartingPoint -eq 'svc_sql_admin') 'compromise assessment: verdict normalized, invented checks and chains dropped, de-tokenized'
 Assert-True (($prompt -match '(?m)^Recent attack vectors') -and ($prompt -match '(?m)^- kerberoastable_user: Kerberoasting') -and ($prompt -match '(?m)^- adcs_esc8: ') -and ($prompt -notmatch '(?m)^- badsuccessor_dmsa_create: ')) 'prompt lists only the fired checks tied to recent attacks'
+# Chains checked locally: a link cannot be "shown" by a check that did not fire, "high" needs every link shown.
+$ch0 = $cmpA.Chains[0]
+Assert-True (@($ch0.Links).Count -eq 3 -and $ch0.Links[0].Evidence -eq 'shown' -and $ch0.Links[0].Gives -eq 'the password of svc_sql_admin' -and $ch0.Links[1].Check -eq '' -and $ch0.Links[1].Evidence -eq 'assumed' -and $ch0.Links[2].Evidence -eq 'assumed' -and $ch0.Links[2].Assumption -eq 'the password is weak') 'chain links: invented check demoted to assumed, evidence normalized, de-tokenized'
+Assert-True ($ch0.Confidence -eq 'low' -and $ch0.BreakPoint.Check -eq 'kerberoastable_user' -and $ch0.BreakPoint.Why -eq 'a long random password on svc_sql_admin') 'chain claimed high with two assumed links is lowered; break point kept and de-tokenized'
+Assert-True (@($ai.RejectedChains).Count -eq 1 -and ($ai.RejectedChains[0].Checks -join ',') -eq 'adcs_esc8' -and $ai.RejectedChains[0].Reason -eq 'Web enrollment on SRV-BACKUP01$ is off.') 'rejected chains: unknown checks dropped, de-tokenized'
+Assert-True (@($ai.VerifyNext).Count -eq 1 -and $ai.VerifyNext[0].Question -eq 'Is svc_sql_admin still in use?') 'verify next: empty questions dropped, de-tokenized'
+$aiHtmlV = ConvertTo-AiSectionHtml -AiResult $ai
+Assert-True ($aiHtmlV -match 'confidence: low' -and $aiHtmlV -match 'shown by the findings' -and $aiHtmlV -match 'assumed</span>: the password is weak' -and $aiHtmlV -match 'Break it here' -and $aiHtmlV -match 'Chains considered and ruled out' -and $aiHtmlV -match 'Check by hand' -and $aiHtmlV -notmatch 'defensive-only') 'AI section shows links, evidence, break point, ruled-out chains and manual checks'
+# The prompt says what could not be evaluated, so a gap is never read as a clean link.
+$neTypes = @($r.NotEvaluated | ForEach-Object { $_.Type })
+Assert-True ($neTypes.Count -eq 0 -or (($prompt -match '(?m)^Not evaluated \(') -and ($prompt -match "(?m)^- $([regex]::Escape($neTypes[0]))"))) "prompt lists the checks not evaluated ($($neTypes.Count))"
+$pNe = New-AiPrompt -Findings $r.Findings -Pz $pz -Snapshot $demo -Score $score -NotEvaluated @([PSCustomObject]@{ Type = 'adcs_esc8' }, [PSCustomObject]@{ Type = 'krbtgt_password_old' }, [PSCustomObject]@{ Type = 'adcs_esc8' })
+Assert-True ($pNe -match '(?m)^- krbtgt_password_old: krbtgt password not rotated\n- adcs_esc8: Web enrollment' -and ([regex]::Matches($pNe, '(?m)^- adcs_esc8: Web enrollment')).Count -eq 1) 'not-evaluated lines in catalog order, once each'
+# De-tokenization works for any prefix the map knows (Entra too), and leaves the rest alone.
+$pzT = [PSCustomObject]@{ Reverse = @{ 'UPN-3' = 'anna@contoso.example'; 'APP-12' = 'Payroll'; 'CAPOLICY-1' = 'Block legacy' } }
+Assert-True ((Unprotect-AiText $pzT 'UPN-3 uses APP-12 (not APP-1), see CAPOLICY-1 and CVE-2025-1234.') -eq 'anna@contoso.example uses Payroll (not APP-1), see Block legacy and CVE-2025-1234.') 'Entra tokens de-tokenized; unknown tokens and CVE ids untouched'
+Assert-True (-not $script:AiSystemPromptDefensive.Contains('Adversary') -and -not $script:AiSystemPromptDefensive.Contains('intruder') -and $script:AiSystemPromptDefensive.Contains('B. Evidence review') -and $script:AiSystemPrompt.Contains('B. Verification pass') -and -not $script:AiSystemPrompt.Contains('{{METHOD}}')) 'two variants of the instructions: the defensive one has no adversary wording'
+
+# A safety refusal of the full instructions: one retry with the defensive ones, saved next to the report.
+Write-Host "[ai fallback]"
+& {
+    $script:fakeBodies = New-Object System.Collections.Generic.List[string]
+    $script:fakeReplies = New-Object System.Collections.Generic.Queue[string]
+    function Invoke-HttpPostWithSpinner { param($Uri, $JsonBody, $Message, $TimeoutSeconds, $Headers) $script:fakeBodies.Add($JsonBody); [PSCustomObject]@{ StatusCode = 200; IsSuccess = $true; Body = $script:fakeReplies.Dequeue() } }
+    $okReply = '{"candidates":[{"content":{"parts":[{"text":"{\"executive_summary\": \"ok\"}"}]},"finishReason":"STOP"}]}'
+    $fbHtml = Join-Path $tmp 'fallback.html'
+    $script:fakeReplies.Enqueue('{"promptFeedback":{"blockReason":"PROHIBITED_CONTENT"}}'); $script:fakeReplies.Enqueue($okReply)
+    $c1 = Invoke-AiAnalysisWithFallback -UserPrompt 'input' -ApiKey 'k' -Model 'm' -MaxAttempts 1 -ReportPath $fbHtml 6>$null
+    $b2 = if ($script:fakeBodies.Count -ge 2) { $script:fakeBodies[1] | ConvertFrom-Json } else { $null }
+    $defFile = Join-Path $tmp 'fallback_ai_prompt_defensive.txt'
+    Assert-True ($c1.Variant -eq 'defensive' -and $c1.Raw.executive_summary -eq 'ok' -and $script:fakeBodies.Count -eq 2 -and $b2.system_instruction.parts[0].text -eq $script:AiSystemPromptDefensive) 'blocked prompt: retried once with the defensive instructions'
+    Assert-True ((Test-Path $defFile) -and [System.IO.File]::ReadAllText($defFile) -eq (Get-AiPasteText -UserPrompt 'input' -SystemPrompt $script:AiSystemPromptDefensive)) 'the defensive prompt actually sent is saved next to the report'
+    Assert-True ($null -eq ($script:fakeBodies[0] | ConvertFrom-Json).generationConfig.temperature) 'no temperature sent (Gemini 3 default)'
+    $script:fakeBodies.Clear(); $script:fakeReplies.Enqueue($okReply)
+    $c2 = Invoke-AiAnalysisWithFallback -UserPrompt 'input' -ApiKey 'k' -Model 'm' -MaxAttempts 1 6>$null
+    Assert-True ($c2.Variant -eq 'full' -and $script:fakeBodies.Count -eq 1 -and ($script:fakeBodies[0] | ConvertFrom-Json).system_instruction.parts[0].text -eq $script:AiSystemPrompt) 'normal answer: one call, full instructions'
+    $script:fakeBodies.Clear(); $script:fakeReplies.Enqueue('{"candidates":[{"content":{"parts":[{"text":"not json"}]},"finishReason":"MAX_TOKENS"}]}')
+    $c3 = Invoke-AiAnalysisWithFallback -UserPrompt 'input' -ApiKey 'k' -Model 'm' -MaxAttempts 1 6>$null
+    Assert-True ($null -eq $c3.Raw -and $script:fakeBodies.Count -eq 1) 'a reply cut short is not a refusal: no retry with the other variant'
+}
 $allChecks = @($script:CheckCatalog.Keys) + @($script:EntraCheckCatalog.Keys)
 Assert-True (@($script:RecentAttackVectors.Keys | Where-Object { $allChecks -notcontains $_ }).Count -eq 0) "recent attack vector list names only real checks (unknown: $(@($script:RecentAttackVectors.Keys | Where-Object { $allChecks -notcontains $_ }) -join ', '))"
 $unnamedMitre = @(@($script:CheckCatalog.Values) + @($script:EntraCheckCatalog.Values) | ForEach-Object { "$($_.Mitre)" } | Where-Object { $_ -and -not $script:MitreTechniqueNames.ContainsKey($_) } | Sort-Object -Unique)
@@ -1131,7 +1179,7 @@ $aiHtml = Join-Path $tmp 'aitest.html'
 $aiPromptFile = Join-Path $tmp 'aitest_ai_prompt.txt'
 Assert-True (Test-Path $aiPromptFile) 'the prompt is saved next to the report before any send'
 $aiPromptText = if (Test-Path $aiPromptFile) { [System.IO.File]::ReadAllText($aiPromptFile) } else { '' }
-Assert-True ($aiPromptText -match '=== SYSTEM ===' -and $aiPromptText -match '=== USER ===' -and $aiPromptText -match 'DOMAIN-1') 'saved prompt holds system and user parts, pseudonymized'
+Assert-True ($aiPromptText.StartsWith('You are an identity security analyst') -and $aiPromptText.Contains($script:AiInputMarker) -and $aiPromptText.Contains('A. Adversary pass') -and $aiPromptText -match 'DOMAIN-1' -and $aiPromptText -notmatch '=== SYSTEM') 'saved prompt is one paste-ready text: instructions, then the input, pseudonymized'
 Assert-True ($aiPromptText.IndexOf('moosebank', [StringComparison]::OrdinalIgnoreCase) -lt 0) 'saved prompt has no real domain name'
 Assert-True (-not (Test-Path (Join-Path $tmp 'aitest_ai_response.json'))) 'no reply file when nothing was sent'
 $aiDry = Join-Path $tmp 'dry.txt'
@@ -1336,6 +1384,16 @@ try {
     Assert-True ($st.analyzer.Count -eq 0 -and $st.launcher.Count -eq 0) 'a damaged state file reads as empty instead of stopping the run'
     Clear-IDWolfState
     Assert-True (-not (Test-Path -LiteralPath $statePath)) 'Clear-IDWolfState deletes the file'
+    # Default settings: listed keys only; forgetting the remembered answers keeps them.
+    Save-IDWolfState -Section defaults -Values ([ordered]@{ Deep = 'y'; Next = 'Z'; OutFile = 'x.json'; ApiKey = 'AIzaSECRET' })
+    Save-IDWolfState -Section launcher -Values @{ Deep = 'n'; LastRun = '1' }
+    $st = Read-IDWolfState
+    Assert-True ($st.defaults.Deep -eq 'y' -and $st.defaults.Next -eq 'Z' -and -not $st.defaults.ContainsKey('OutFile') -and -not $st.defaults.ContainsKey('ApiKey') -and $st.launcher.Deep -eq 'n') 'default settings keep listed keys only, apart from the remembered answers'
+    Clear-IDWolfState -KeepDefaults
+    $st = Read-IDWolfState
+    Assert-True ($st.defaults.Deep -eq 'y' -and $st.launcher.Count -eq 0) 'Clear-IDWolfState -KeepDefaults forgets the answers and keeps the default settings'
+    Clear-IDWolfState
+    Assert-True (-not (Test-Path -LiteralPath $statePath)) 'Clear-IDWolfState without -KeepDefaults deletes the default settings too'
 
     # Opening the report: asked only at a console, .html only, only a file written by this run.
     $opened = New-Object System.Collections.Generic.List[string]
@@ -1494,8 +1552,37 @@ try {
         Save-IDWolfState -Section launcher -Values @{ LastRun = '5' }
         $oM = (@('n', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
         Assert-True ($oM -match 'Last time: full AD run' -and (Read-IDWolfState).launcher.LastRun -eq '1') "an old LastRun 5 reads as the full AD run, now 1: $(if ($oM -notmatch 'full AD run') { $oM })"
-        $oC = (@('n', 'C', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
-        Assert-True ($oC -match 'Remembered choices deleted' -and -not (Test-Path -LiteralPath $statePath)) 'launcher [C] deletes the remembered choices'
+        $oC = (@('n', 'S', '2', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
+        Assert-True ($oC -match 'Remembered answers deleted' -and -not (Test-Path -LiteralPath $statePath)) 'launcher [S] 2 deletes the remembered answers'
+
+        # Default settings [S]: set on their screen (Enter saves), kept apart from the answers.
+        $oS = (@('S', '1', '4', 'contoso.example', '6', 'S', '', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
+        $st = Read-IDWolfState
+        Assert-True ($oS -match 'Default settings saved' -and $st.defaults.Tenant -eq 'contoso.example' -and $st.defaults.Next -eq 'S' -and $st.defaults.Ai -eq 'A' -and -not $st.launcher.ContainsKey('Tenant')) "[S] saves the default settings, not as remembered answers: $(if ($oS -notmatch 'Default settings saved') { $oS })"
+        # A collection asks whether to use them: yes skips the questions, the settings screen
+        # shows them, and nothing is saved as a remembered answer.
+        $oU = (@('2', '', 'Q', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
+        $st = Read-IDWolfState
+        Assert-True ($oU -match 'Default settings: tenant contoso\.example, device-code sign-in no, then stop' -and $oU -match '\(default settings\)' -and $oU -match 'Tenant \(empty = sign-in default\)\s+contoso\.example' -and $oU -match 'Cancelled: nothing collected' -and -not $st.launcher.ContainsKey('Tenant')) "a run with the default settings goes straight to the settings screen: $(if ($oU -notmatch 'Cancelled: nothing collected') { $oU })"
+        # No: the usual questions, the default settings are not used.
+        $oN = (@('n', '2', 'n', '', '', 'n', 'Z', 'Q', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
+        Assert-True ($oN -match 'Tenant \(empty = sign-in default\)\s+\(none\)' -and $oN -match 'Cancelled: nothing collected' -and $oN -notmatch '\(default settings\)') "declining the default settings asks the questions: $(if ($oN -notmatch 'Cancelled: nothing collected') { $oN })"
+        # Repeating the last run doesn't ask about them.
+        $oP = (@('', 'Q', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
+        Assert-True ($oP -match 'as last time' -and $oP -notmatch 'Use the default settings') "repeating the last run doesn't offer the default settings: $(if ($oP -match 'Use the default settings') { $oP })"
+        # [S] 2 keeps them; [S] 1 then X deletes them.
+        $oK = (@('n', 'S', '2', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
+        $st = Read-IDWolfState
+        Assert-True ($oK -match 'default settings are kept' -and $st.defaults.Tenant -eq 'contoso.example' -and -not $st.launcher.ContainsKey('LastRun')) "[S] 2 forgets the answers and keeps the default settings: $(if ($oK -notmatch 'default settings are kept') { $oK })"
+        # The analyzer wizard on its own (6) offers the AI step of the default settings; taken,
+        # it is not remembered as the wizard's own answer.
+        Save-IDWolfState -Section defaults -Values @{ Ai = 'D' }
+        $wizHtml2 = Join-Path $tmp 'wiz_defaults.html'
+        $oA = (@($wizDemo, $wizHtml2, 'n', 'n', 'n', 'n', '', '') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'IDWolf.ps1') 2>&1 | Out-String
+        $st = Read-IDWolfState
+        Assert-True ($oA -match 'Default settings: AI step dry-run' -and $oA -match 'AiMode\s+dryrun' -and (Test-Path -LiteralPath $wizHtml2) -and -not $st.analyzer.ContainsKey('AiMode') -and $st.analyzer.Snapshot -eq $wizDemo) "analyzer wizard uses the AI step of the default settings without remembering it: $(if ($oA -notmatch 'AiMode\s+dryrun') { $oA })"
+        $oX = (@('S', '1', 'X', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
+        Assert-True ($oX -match 'Default settings deleted' -and (Read-IDWolfState).defaults.Count -eq 0) '[S] 1 then X deletes the default settings'
     }
     finally { Pop-Location }
 }

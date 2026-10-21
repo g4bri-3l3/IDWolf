@@ -1651,7 +1651,7 @@ function Test-EntraLeak {
 }
 
 function New-EntraAiPrompt {
-    param($Findings, $Pz, $Snapshot, $Score)
+    param($Findings, $Pz, $Snapshot, $Score, $NotEvaluated)
     $lines = New-Object System.Collections.Generic.List[string]
     $lines.Add("Microsoft Entra ID tenant hygiene. Tenant: $(Protect-EntraText $Pz $(if ($Snapshot.org) { $Snapshot.org.displayName } else { 'tenant' })). Hygiene score: $(if ($Score.Reliable -eq $false) { "not reliable, only $($Score.Coverage)% of the checks were evaluated" } else { "$($Score.Score)/100" }).")
     $lines.Add("Users: $(@($Snapshot.users).Count). Service principals: $(@($Snapshot.servicePrincipals).Count). Security defaults: $($Snapshot.securityDefaults).")
@@ -1665,6 +1665,7 @@ function New-EntraAiPrompt {
         foreach ($f in ($g.Group | Select-Object -First 12)) { $lines.Add("- [$($f.Severity)] $(Protect-EntraText $Pz $f.Object): $(Protect-EntraText $Pz $f.Detail)") }
     }
     if (Get-Command Get-AiRecentVectorLines -ErrorAction SilentlyContinue) { foreach ($vl in (Get-AiRecentVectorLines -Findings $Findings)) { $lines.Add($vl) } }
+    if (Get-Command Get-AiNotEvaluatedLines -ErrorAction SilentlyContinue) { foreach ($nl in (Get-AiNotEvaluatedLines -NotEvaluated $NotEvaluated -Catalog $script:EntraCheckCatalog)) { $lines.Add($nl) } }
     return ($lines -join "`n")
 }
 

@@ -285,10 +285,24 @@ if one was collected since, and compares against the report of the last run if y
 compared last time. Only password-quality reports of the snapshot's domain are
 offered, newest first, and the analyzer refuses a report of another domain. Everything is saved after each answer, in
 `%LOCALAPPDATA%\IDWolf\wizard.json`: choices and file paths only, never a
-password, an API key or anything read from the directory. `[C]` in the menu
-deletes it. At the end of an interactive analysis you're asked whether to open
+password, an API key or anything read from the directory. `[S]` then `2` in the
+launcher's menu forgets them. At the end of an interactive analysis you're asked whether to open
 the report in the default browser. Runs with `-Snapshot` on the command line and
 the scheduled script never ask and never read or write that file.
+
+Remembered answers follow whatever you typed last time. For settings that should
+stay put, `[S]` then `1` in the launcher's menu sets **default settings**: DC, deep
+collection, password quality and weak-password list, tenant and device-code
+sign-in, what to do after collecting, and the AI step with its model and
+attempts. Once they are set, every collection (1, 2, 3, 5) first asks
+`Use the default settings? (Y/n)`. Yes skips the questions and goes straight to
+the settings screen, where a change applies to that run only, and nothing runs
+until you press Enter there. No asks the questions as usual. Output paths are
+new on every run, repeating the last run doesn't ask, and a single collection
+still stops after collecting. An analysis on its own (option 6, or `IDWolf.ps1`
+without `-Snapshot`) offers the AI step of the default settings, with its model
+and attempts, in place of the AI question. Forgetting the remembered answers
+keeps the default settings; `[S]`, `1`, then `X` deletes them.
 
 Did you download the zip? Windows marks those files as coming from the internet,
 and PowerShell will complain ("not digitally signed", or a prompt on every run).
@@ -997,8 +1011,27 @@ Once the report is on disk, IDWolf can ask Gemini for:
   invent incidents or CVE numbers;
 - a verdict on whether the findings can be chained into full compromise of the
   domain (or of the Entra tenant): likely, possible or unlikely, the least access
-  the chain needs, and up to four chains, each with the one link whose fix breaks
-  it.
+  the chain needs, and up to four chains. Each chain lists its links, what each
+  one gives, whether a finding shows it or it is only assumed (a patch level,
+  a reachable port, a weak password), a confidence, and the one link whose fix
+  breaks it;
+- the chains it considered and ruled out, with the reason, and what to check by
+  hand to confirm or rule out an assumed link.
+
+How the model is asked to work: first like an intruder, from every realistic
+starting point (unauthenticated, any user, a guest, a specific account) and
+across categories, since a Low finding is often the missing link of a critical
+chain; then like a reviewer trying to break each chain against the findings,
+where a check that couldn't be evaluated counts as unknown, never as clean;
+then like a defender, putting first the fix that breaks the most chains that
+survived. Only the result comes back, written for defenders: what grants
+control and where to break it, never how to exploit it. IDWolf checks the
+chains it gets back: a link can't be shown by a check that didn't fire, and a
+chain with assumed links can't be high confidence.
+
+If Gemini refuses those instructions on safety grounds, IDWolf retries once
+with a defensive-only variant (same output, no intruder wording), saves it as
+`<report>_ai_prompt_defensive.txt` and says so in the report.
 
 This is how your data is protected:
 
@@ -1009,8 +1042,9 @@ This is how your data is protected:
   your local report.
 - **Leak check.** Before anything is sent, the text is scanned again for every
   original name, domain suffix and SID. If one is still there, nothing is sent.
-- **Small payload.** Findings grouped by check, at most 12 objects each, plus
-  the score. Never the snapshot, the ACLs or the descriptions.
+- **Small payload.** Findings grouped by check, at most 12 objects each, the
+  score and the list of checks that couldn't be evaluated. Never the snapshot,
+  the ACLs or the descriptions.
 - **Consent.** You're asked first. `-SendToAI` skips the question for
   unattended runs, `-SkipLLM` turns the step off, and `-AiDryRun prompt.txt`
   shows exactly what would go out.
@@ -1019,6 +1053,11 @@ This is how your data is protected:
   yes. After a send, Gemini's reply goes to `<report>_ai_response.json`. Both
   are still pseudonymized: they are the record of what left the machine and what
   came back. The token map is never written to disk.
+- **Another model instead of Gemini.** The prompt file is self-contained: the
+  instructions, then the input. Paste it whole into the chat of any other model
+  (or your own internal one) and the answer is the same JSON. Only the tokens
+  in it leave your machine; the answer stays pseudonymized, since the real names
+  are put back only by IDWolf.
 - **Validation.** Anything about a check that didn't fire is thrown away, and
   the section is labelled as AI-written.
 - **The key and the connection.** The key travels in a header, not in the URL.
@@ -1213,7 +1252,7 @@ collections run there, and some bugs only show up there.
 - Reference results: the AD `demo` gives **195 findings** (25 Critical, 77 High,
   67 Medium, 26 Low) and 17 Tier 0 principals, and 203 with the example
   password report. `-Deep` gives 200. `partial` gives 185. The Entra tenant
-  gives 93. In total there are **587 assertions**.
+  gives 93. In total there are **612 assertions**.
 - `tests/lab/` is for a throw-away lab domain, never for production.
   `New-LabAttackPaths.ps1` plants a four-step ACL chain and a few delegation
   findings. It **writes to AD**, asks you to type the domain name first, and has

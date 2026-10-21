@@ -20,8 +20,15 @@
     a snapshot that was collected but never analyzed, or to repeat the last full run with the
     same answers. Every collection (1, 2, 3, 5) asks its questions first, then shows all the
     answers on one screen to change before Enter starts it; a single collection (3, 5) stops
-    after collecting unless "Then" is changed there. [C] in the menu deletes the file. After an
-    analysis it offers to open the report in the default browser.
+    after collecting unless "Then" is changed there. After an analysis it offers to open the
+    report in the default browser.
+
+    [S] in the menu sets default settings (DC, deep, password quality, what to do after
+    collecting, AI step, model, tenant...), kept apart from the remembered answers. Once set,
+    every collection first asks whether to use them: yes skips the questions and goes straight
+    to the settings screen, where a change applies to that run only; no asks as usual. Output
+    paths are new on every run. Repeating the last run doesn't ask. Analysis on its own (6)
+    offers their AI step. [S] also forgets the remembered answers (the default settings stay).
 
     Before an AD collection it tests the connection (DNS of the domain, DC locator, LDAP bind,
     the DC to be used and its ports, each with its time) and asks which DC to use: L lists
@@ -146,8 +153,16 @@ function Read-LauncherState {
 }
 $script:State = Read-LauncherState
 $script:Replay = $false
+# The default settings ([S]) while a run uses them: Read-Remembered takes them without asking
+# (Required: an empty one is asked anyway) and saves nothing.
+$script:Preset = $null
 function Read-Remembered {
-    param([string]$Key, [string]$Prompt, [string]$Default = '', [switch]$Path)
+    param([string]$Key, [string]$Prompt, [string]$Default = '', [switch]$Path, [switch]$Required)
+    if ($script:Preset -and $script:Preset.ContainsKey($Key) -and -not ($Required -and -not $script:Preset[$Key])) {
+        $v = "$($script:Preset[$Key])"
+        Write-Host ("{0}: {1}  (default settings)" -f $Prompt, $(if ($v) { $v } else { '(none)' })) -ForegroundColor DarkGray
+        return $v
+    }
     $mem = $script:State.launcher[$Key]
     if ($script:Replay -and $null -ne $mem) {
         Write-Host ("{0}: {1}  (as last time)" -f $Prompt, $(if ($mem) { $mem } else { '(none)' })) -ForegroundColor DarkGray
@@ -165,10 +180,17 @@ function Read-Remembered {
     return "$v"
 }
 function Test-Yes { param($Answer) return ("$Answer" -match '^[YySs]') }
-# A new output path: asked, except while repeating the last run (the timestamped default is used).
+# A setting that isn't asked: the default settings in use, else the remembered answer.
+function Get-RunDefault {
+    param([string]$Key)
+    if ($script:Preset -and $script:Preset.ContainsKey($Key)) { return "$($script:Preset[$Key])" }
+    return "$($script:State.launcher[$Key])"
+}
+# A new output path: asked, except while repeating the last run or using the default settings
+# (the timestamped default is used).
 function Read-NewPath {
     param([string]$Prompt, [string]$Default)
-    if ($script:Replay) { Write-Host "${Prompt}: $Default" -ForegroundColor DarkGray; return $Default }
+    if ($script:Replay -or $script:Preset) { Write-Host "${Prompt}: $Default" -ForegroundColor DarkGray; return $Default }
     return (Read-Path $Prompt $Default)
 }
 # A collected snapshot stays "pending" until it is analyzed, packaged or dropped, so the next
@@ -229,12 +251,12 @@ function Read-AiSettings {
 # to [A] on the settings screen has values to show.
 function Add-AfterCollectionSettings {
     param($S, [string]$Next = '')
-    $L = $script:State.launcher
     $S.Next = if ($Next) { $Next } else { ConvertTo-NextChoice (Read-Remembered 'Next' "After collecting: analyze here [A], package a zip for another machine [Z], or stop [S]?" 'A') }
     $S.OutHtml = "output\report_{0}.html" -f (Ts)
-    $S.Ai = if ($L.Ai) { ConvertTo-AiChoice $L.Ai } else { 'A' }
-    $S.Model = if ($L.Model) { $L.Model } else { 'gemini-3.8-flash' }
-    $S.AiAttempts = if ($L.AiAttempts) { $L.AiAttempts } else { '3' }
+    $ai = Get-RunDefault 'Ai'; $model = Get-RunDefault 'Model'; $attempts = Get-RunDefault 'AiAttempts'
+    $S.Ai = if ($ai) { ConvertTo-AiChoice $ai } else { 'A' }
+    $S.Model = if ($model) { $model } else { 'gemini-3.8-flash' }
+    $S.AiAttempts = if ($attempts) { $attempts } else { '3' }
     if ($S.Next -eq 'A') {
         $S.OutHtml = Read-NewPath "Report HTML path" $S.OutHtml
         Read-AiSettings $S
@@ -254,6 +276,85 @@ function Confirm-RunSettings {
         }.GetNewClosure()) `
         -OnChange { param($Key, $Value) Save-RunSetting $Key $Value; if ($Key -eq 'Server') { Show-AdConnection $Value } }
 }
+# Default settings ([S]): the settings of a run, set once and kept apart from the remembered
+# answers. Output paths are not among them (new on every run). Enter saves, Q leaves them as
+# they were; X before the screen deletes them.
+function Edit-DefaultSettings {
+    $d = $script:State.defaults
+    if ($d.Count) {
+        $a = (Read-Host 'Change the default settings [Enter], or delete them [X]?').Trim().ToUpper()
+        if ($a -eq 'X') {
+            Save-IDWolfState -Section defaults -Values @{} -Replace
+            $script:State.defaults = @{}
+            Write-Host 'Default settings deleted: every run asks its questions again.' -ForegroundColor Green
+            return
+        }
+    }
+    # Unset keys start from the remembered answers, then the launcher's own defaults.
+    $L = $script:State.launcher
+    $get = { param([string]$Key, [string]$Fallback) if ($d.ContainsKey($Key)) { "$($d[$Key])" } elseif ($null -ne $L[$Key]) { "$($L[$Key])" } else { $Fallback } }
+    $s = [ordered]@{
+        Server     = & $get 'Server' ''
+        Deep       = ConvertTo-YN (& $get 'Deep' 'n')
+        Pq         = ConvertTo-YN (& $get 'Pq' 'n')
+        WeakList   = & $get 'WeakList' ''
+        Tenant     = & $get 'Tenant' ''
+        DeviceCode = ConvertTo-YN (& $get 'DeviceCode' 'n')
+        Next       = ConvertTo-NextChoice (& $get 'Next' 'A')
+        Ai         = ConvertTo-AiChoice (& $get 'Ai' 'A')
+        Model      = & $get 'Model' 'gemini-3.8-flash'
+        AiAttempts = & $get 'AiAttempts' '3'
+    }
+    Write-Host "`nDefault settings: every collection asks whether to use them, then shows them on its settings screen; an analysis on its own (6) offers their AI step. Output paths are new on every run." -ForegroundColor Cyan
+    $pickers = @{ Server = { param($Cur) Select-DomainController -Current $Cur -Credential $script:Credential } }
+    $ok = Edit-RunSettings -Settings $s -Labels $script:RunLabels -YesNo @('Deep', 'Pq', 'DeviceCode') -Choices @{ Next = @('A', 'Z', 'S'); Ai = @('S', 'A', 'D') } -Pickers $pickers -Confirm 'save' `
+        -Visible { param($Key, $Set)
+            if ($Key -eq 'WeakList' -and $Set.Pq -ne 'y') { return $false }
+            if (@('Ai', 'Model', 'AiAttempts') -contains $Key -and $Set.Next -ne 'A') { return $false }
+            if (@('Model', 'AiAttempts') -contains $Key -and $Set.Ai -ne 'A') { return $false }
+            return $true
+        }
+    if (-not $ok) { Write-Host 'Default settings not changed.' -ForegroundColor Yellow; return }
+    Save-IDWolfState -Section defaults -Values $s -Replace
+    $script:State.defaults = (Read-IDWolfState).defaults
+    Write-Host "Default settings saved ($(Get-IDWolfStatePath))." -ForegroundColor Green
+}
+# The default settings in one line, for the question below.
+function Format-DefaultSettings {
+    param($D, [string]$Kind)
+    $yn = { param($v) if (Test-Yes $v) { 'yes' } else { 'no' } }
+    $parts = @()
+    if ($Kind -eq 'entra') {
+        $parts += "tenant $(if ($D.Tenant) { $D.Tenant } else { 'sign-in default' })"
+        $parts += "device-code sign-in $(& $yn $D.DeviceCode)"
+    }
+    else {
+        $parts += "DC $(if ($D.Server) { $D.Server } else { 'automatic' })"
+        $parts += "deep $(& $yn $D.Deep)"
+        $parts += "password quality $(& $yn $D.Pq)"
+    }
+    $next = ConvertTo-NextChoice $D.Next
+    if ($next -eq 'Z') { $parts += 'then zip' }
+    elseif ($next -eq 'S') { $parts += 'then stop' }
+    else {
+        $ai = ConvertTo-AiChoice $D.Ai
+        $parts += "then analyze, AI $(if ($ai -eq 'S') { 'skipped' } elseif ($ai -eq 'D') { 'dry-run' } else { "ask ($($D.Model))" })"
+    }
+    return ($parts -join ', ')
+}
+# At the start of a collection: use the default settings? Not asked while repeating the last
+# run, nor when there are none.
+function Request-DefaultSettings {
+    param([string]$Kind, [bool]$Full = $true)
+    $script:Preset = $null
+    $d = $script:State.defaults
+    if ($script:Replay -or -not $d.Count) { return }
+    $line = Format-DefaultSettings $d $Kind
+    if (-not $Full) { $line = ($line -replace ', then .*$', '') + ', then stop' }
+    Write-Host "`nDefault settings: $line." -ForegroundColor Cyan
+    $a = Read-Host 'Use the default settings? (Y/n)'
+    if ([string]::IsNullOrWhiteSpace($a) -or (Test-Yes $a)) { $script:Preset = $d }
+}
 # Connection diagnostics for an AD collection (lib\Connection.ps1): DNS, DC locator, LDAP bind,
 # the DC that will be used and its ports, with timings.
 function Show-AdConnection {
@@ -266,6 +367,11 @@ function Show-AdConnection {
 # remembered one as default; L lists the DCs to pick from, - means automatic (DC locator).
 function Read-ServerChoice {
     if ($script:ServerOverride) { Write-Host "Domain controller: $script:ServerOverride  (-Server)" -ForegroundColor DarkGray; return $script:ServerOverride }
+    if ($script:Preset -and $script:Preset.ContainsKey('Server')) {
+        $v = "$($script:Preset.Server)"
+        Write-Host ("Domain controller: {0}  (default settings)" -f $(if ($v) { $v } else { 'automatic' })) -ForegroundColor DarkGray
+        return $v
+    }
     $mem = $script:State.launcher.Server
     if ($script:Replay -and $null -ne $mem) {
         Write-Host ("Domain controller: {0}  (as last time)" -f $(if ($mem) { $mem } else { 'automatic' })) -ForegroundColor DarkGray
@@ -445,11 +551,12 @@ function Get-IDWolfCheckCatalog {
 function Invoke-AdRun {
     param([bool]$Full)
     $script:SingleStep = -not $Full
+    Request-DefaultSettings -Kind ad -Full $Full
     $joined = Test-DomainJoined
     $s = [ordered]@{}
     if (-not $joined) {
         Write-Host "This computer is not joined to a domain. Collection needs the name of a domain controller and a domain account." -ForegroundColor Yellow
-        $s.Server = if ($script:ServerOverride) { $script:ServerOverride } else { Read-Remembered 'Server' "Domain controller or domain (e.g. dc01.corp.local; - to cancel)" }
+        $s.Server = if ($script:ServerOverride) { $script:ServerOverride } else { Read-Remembered 'Server' "Domain controller or domain (e.g. dc01.corp.local; - to cancel)" -Required }
         if (-not $s.Server) { Write-Host "Cancelled: no domain controller given." -ForegroundColor Yellow; return }
         Request-WorkgroupCredential
     }
@@ -462,7 +569,7 @@ function Invoke-AdRun {
     if ($Full -and $joined) { $s.Pq = ConvertTo-YN (Read-Remembered 'Pq' "Also collect password quality? Needs DSInternals and DCSync rights; run from the DC or a trusted admin host (y/n)" 'n') }
     elseif ($Full) { Write-Host "Password quality skipped: it needs a domain-joined machine (or the DC) to find the PDC. Run option 4 there." -ForegroundColor Yellow }
     $s.PqOut = "output\pwq_{0}_{1}.json" -f $(if ($joined) { Get-LocalDomainName } else { 'domain' }), (Ts)
-    $s.WeakList = "$($script:State.launcher.WeakList)"
+    $s.WeakList = Get-RunDefault 'WeakList'
     if ($s.Pq -eq 'y') {
         $s.PqOut = Read-NewPath "Password-quality output path" $s.PqOut
         $s.WeakList = Read-Remembered 'WeakList' "Weak/breached password list path (optional; - for none)" -Path
@@ -495,6 +602,7 @@ function Invoke-AdRun {
 function Invoke-EntraRun {
     param([bool]$Full)
     $script:SingleStep = -not $Full
+    Request-DefaultSettings -Kind entra -Full $Full
     $s = [ordered]@{}
     $s.OutFile = Read-NewPath "Entra snapshot output path" ("output\entrasnapshot_{0}.json" -f (Ts))
     $s.Tenant = Read-Remembered 'Tenant' "Tenant ID or domain (Enter = last one or the sign-in default; - for the sign-in default)"
@@ -570,10 +678,11 @@ while ($true) {
     Write-Host "  [6] Analyze a snapshot          (report, optional AI summary)" -ForegroundColor White
     Write-Host "  [7] Package for another machine (snapshot + password quality in one zip)" -ForegroundColor White
     Write-Host "  [D] Domain controllers and connection test" -ForegroundColor White
-    Write-Host "  [C] Forget remembered choices" -ForegroundColor White
+    Write-Host "  [S] Settings                    (default settings: $(if ($script:State.defaults.Count) { 'set' } else { 'not set' }); forget remembered answers)" -ForegroundColor White
     Write-Host "  [Q] Quit" -ForegroundColor White
     if ($script:QueuedChoice) { $choice = $script:QueuedChoice; $script:QueuedChoice = $null; Write-Host "`nChoice: $choice (repeating the last run)" }
     else { $script:Replay = $false; $choice = (Read-Host "`nChoice").Trim().ToUpper() }
+    $script:Preset = $null
     if (@('1', '2') -contains $choice) { $script:State.launcher['LastRun'] = $choice; Save-IDWolfState -Section launcher -Values @{ LastRun = $choice } }
     switch ($choice) {
         '1' { Invoke-AdRun -Full $true }
@@ -615,13 +724,21 @@ while ($true) {
                 Write-Host "The next AD collection will use $(if ($dc) { $dc } else { 'the DC the locator picks' })." -ForegroundColor Cyan
             }
         }
-        'C' {
-            Clear-IDWolfState
-            $script:State = Read-LauncherState
-            Write-Host "Remembered choices deleted ($(Get-IDWolfStatePath))." -ForegroundColor Green
+        'S' {
+            Write-Host ""
+            Write-Host "  [1] Default settings            ($(if ($script:State.defaults.Count) { 'set: each collection and analysis asks whether to use them' } else { 'not set' }))" -ForegroundColor White
+            Write-Host "  [2] Forget remembered answers   (DCs, tenants, paths, last run, pending snapshot; default settings kept)" -ForegroundColor White
+            switch ((Read-Host 'Choice (Enter = back)').Trim()) {
+                '1' { Edit-DefaultSettings }
+                '2' {
+                    Clear-IDWolfState -KeepDefaults
+                    $script:State = Read-LauncherState
+                    Write-Host "Remembered answers deleted ($(Get-IDWolfStatePath))$(if ($script:State.defaults.Count) { '; the default settings are kept' })." -ForegroundColor Green
+                }
+            }
         }
         'Q' { break }
-        default { Write-Host "Pick 1-7, D, C or Q." -ForegroundColor Yellow }
+        default { Write-Host "Pick 1-7, D, S or Q." -ForegroundColor Yellow }
     }
     if ($choice -eq 'Q') { break }
 }

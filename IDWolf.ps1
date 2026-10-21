@@ -228,7 +228,9 @@ function Invoke-AnalyzerSetup {
     # Choices of the last wizard run are the defaults (lib\Wizard.ps1); each answer is saved
     # as soon as it is given, so a Ctrl+C half way keeps what was already answered.
     $script:WizardMode = $true
-    $mem = (Read-IDWolfState).analyzer
+    $wizState = Read-IDWolfState
+    $mem = $wizState.analyzer
+    $dflt = $wizState.defaults; $useDefaults = $false
     $remember = { param([string]$Key, $Value) Save-IDWolfState -Section analyzer -Values @{ $Key = $Value } }
     $lastCsv = ''
     if ($mem.LastReport) { $c = [System.IO.Path]::ChangeExtension($mem.LastReport, '.csv'); if (Test-Path -LiteralPath $c) { $lastCsv = $c } }
@@ -337,19 +339,33 @@ function Invoke-AnalyzerSetup {
             }
             & $remember 'PasswordQualityFile' $cfg.PasswordQualityFile
         }
-        $aiLetter = switch ("$($mem.AiMode)") { 'send' { 'G' } 'dryrun' { 'D' } default { 'S' } }
-        Write-Host "`nAI step (Gemini): [S]kip, [D]ry-run (write prompt, send nothing), [G] send (you see the prompt and confirm first)" -ForegroundColor Cyan
-        $aiPick = Read-Host "Choice [$aiLetter]"
-        if ([string]::IsNullOrWhiteSpace($aiPick)) { $aiPick = $aiLetter }
-        switch ($aiPick.Trim().ToUpper()) {
-            'G' { $cfg.AiMode = 'send' }
-            'D' { $cfg.AiMode = 'dryrun' }
-            default { $cfg.AiMode = 'skip' }
+        # The launcher's default settings ([S]) carry an AI step: offered first. Taken, they are
+        # not remembered as this wizard's answers.
+        if ($dflt.Ai) {
+            $dMode = switch ("$($dflt.Ai)") { 'A' { 'send' } 'D' { 'dryrun' } default { 'skip' } }
+            $dDesc = switch ($dMode) { 'send' { "send to Gemini after you confirm ($(if ($dflt.Model) { $dflt.Model } else { $script:Model }))" } 'dryrun' { 'dry-run, write the prompt only' } default { 'skip' } }
+            Write-Host "`nDefault settings: AI step $dDesc." -ForegroundColor Cyan
+            if (Read-YesNo "Use the default settings?" $true) { $cfg.AiMode = $dMode; $useDefaults = $true }
         }
-        & $remember 'AiMode' $cfg.AiMode
+        if (-not $useDefaults) {
+            $aiLetter = switch ("$($mem.AiMode)") { 'send' { 'G' } 'dryrun' { 'D' } default { 'S' } }
+            Write-Host "`nAI step (Gemini): [S]kip, [D]ry-run (write prompt, send nothing), [G] send (you see the prompt and confirm first)" -ForegroundColor Cyan
+            $aiPick = Read-Host "Choice [$aiLetter]"
+            if ([string]::IsNullOrWhiteSpace($aiPick)) { $aiPick = $aiLetter }
+            switch ($aiPick.Trim().ToUpper()) {
+                'G' { $cfg.AiMode = 'send' }
+                'D' { $cfg.AiMode = 'dryrun' }
+                default { $cfg.AiMode = 'skip' }
+            }
+            & $remember 'AiMode' $cfg.AiMode
+        }
     }
     $cfg.Model = if ($mem.Model) { $mem.Model } else { $script:Model }
     $cfg.AiAttempts = if ($mem.AiAttempts -match '^\d+$') { $mem.AiAttempts } else { "$script:AiMaxAttempts" }
+    if ($useDefaults) {
+        if ($dflt.Model) { $cfg.Model = "$($dflt.Model)" }
+        if ($dflt.AiAttempts -match '^\d+$') { $cfg.AiAttempts = "$($dflt.AiAttempts)" }
+    }
     # Model, key and attempts for the AI step: asked after the AI choice, and again when the review
     # below switches AiMode to send. Ask = $false (same settings as last time) takes them as they are.
     $askAi = {
@@ -374,7 +390,7 @@ function Invoke-AnalyzerSetup {
             & $remember 'AiAttempts' $cfg.AiAttempts
         }
     }
-    & $askAi (-not $reuse)
+    & $askAi (-not $reuse -and -not $useDefaults)
 
     # Last look before running.
     while ($true) {
@@ -400,8 +416,10 @@ function Invoke-AnalyzerSetup {
     }
     # What runs is what the next wizard offers, edits in the review included. The output path is
     # not kept (each run gets a new one); an Entra run leaves the password-quality default alone.
+    # An AI step from the default settings stays theirs: this wizard's own answers are left as they were.
     $keep = @{}
-    foreach ($k in 'Snapshot', 'OutJson', 'ExceptionsFile', 'CompareTo', 'AiMode', 'Model', 'AiAttempts') { if ($cfg.Contains($k)) { $keep[$k] = "$($cfg[$k])" } }
+    $keepKeys = @('Snapshot', 'OutJson', 'ExceptionsFile', 'CompareTo') + $(if (-not $useDefaults) { @('AiMode', 'Model', 'AiAttempts') })
+    foreach ($k in $keepKeys) { if ($cfg.Contains($k)) { $keep[$k] = "$($cfg[$k])" } }
     if ($usePq) { $keep['PasswordQualityFile'] = "$($cfg.PasswordQualityFile)" }
     Save-IDWolfState -Section analyzer -Values $keep
 
@@ -480,7 +498,7 @@ if ("$($snap.meta.kind)" -eq 'entra') {
     $eAi = $null
     if (-not $SkipLLM -and $eActive.Count -gt 0) {
         $pz = New-EntraPseudonymizer -Snapshot $snap
-        $prompt = New-EntraAiPrompt -Findings $eActive -Pz $pz -Snapshot $snap -Score $eScore
+        $prompt = New-EntraAiPrompt -Findings $eActive -Pz $pz -Snapshot $snap -Score $eScore -NotEvaluated $eNotEval
         $leaks = @(Test-EntraLeak -Pz $pz -Text $prompt)
         if ($leaks.Count -gt 0) { Write-Host "AI step aborted: identifiers still present after pseudonymization: $($leaks -join ', '). Nothing sent." -ForegroundColor Red }
         elseif ($AiDryRun) {
@@ -493,17 +511,19 @@ if ("$($snap.meta.kind)" -eq 'entra') {
             $go = $SendToAI
             if (-not $go) {
                 Write-Host "Exactly what would be sent to Gemini: $promptFile" -ForegroundColor Cyan
+                Write-Host "The file is self-contained: to use another model instead, paste it whole into that model's chat; the answer is the same JSON."
                 $go = ((Read-Host "Open that file if you want, then: send $($eActive.Count) findings to Gemini (identifiers pseudonymized)? (y/N)") -match '^[Yy]')
             }
             else { Write-Host "AI prompt kept at $promptFile" }
             if ($go -and -not $ApiKey) { $ApiKey = Request-GeminiApiKey }
             if ($go -and $ApiKey) {
-                $raw = Invoke-GeminiAnalysis -UserPrompt $prompt -ApiKey $ApiKey -Model $Model -MaxAttempts $AiMaxAttempts
+                $call = Invoke-AiAnalysisWithFallback -UserPrompt $prompt -ApiKey $ApiKey -Model $Model -MaxAttempts $AiMaxAttempts -ReportPath $htmlFull
+                $raw = $call.Raw
                 if ($raw) {
                     $responseFile = Get-AiSidecarPath $htmlFull '_ai_response.json'
                     Write-AiResponseFile -Path $responseFile -Raw $raw
                     Write-Host "Gemini reply (still pseudonymized) kept at $responseFile"
-                    $eAi = ConvertFrom-AiResponse -Raw $raw -Pz $pz -Findings $eActive -Model $Model
+                    $eAi = ConvertFrom-AiResponse -Raw $raw -Pz $pz -Findings $eActive -Model $Model -Variant $call.Variant
                 }
             }
             elseif ($go) { Write-Host 'No API key given (-ApiKey / GEMINI_API_KEY), nothing sent; skipping AI.' -ForegroundColor Yellow }
@@ -619,7 +639,7 @@ function Invoke-AdAiStep {
     if ($active.Count -eq 0) { Write-Host 'No findings: AI step skipped (nothing to ground a summary on).'; return }
 
     $pz = New-Pseudonymizer -Snapshot $snap -Index $index
-    $userPrompt = New-AiPrompt -Findings $active -Pz $pz -Snapshot $snap -Score $score -Comparison $comparison
+    $userPrompt = New-AiPrompt -Findings $active -Pz $pz -Snapshot $snap -Score $score -Comparison $comparison -NotEvaluated $notEvaluated
     $leaks = @(Test-AiLeak -Pz $pz -Text $userPrompt)
     if ($leaks.Count -gt 0) {
         Write-Host "AI step aborted: identifiers still present after pseudonymization: $($leaks -join ', '). Nothing was sent. Please report this as a bug." -ForegroundColor Red
@@ -638,10 +658,11 @@ function Invoke-AdAiStep {
     if (-not $SendToAI) {
         Write-Host ''
         Write-Host "Optional AI step (Gemini, model $Model):" -ForegroundColor Cyan
-        Write-Host "  Sent: $($active.Count) findings grouped by check (max 12 objects per check), score, counts, comparison if any."
+        Write-Host "  Sent: $($active.Count) findings grouped by check (max 12 objects per check), score, counts, the checks not evaluated, comparison if any."
         Write-Host "  Pseudonymized: $($pz.Reverse.Count) identifiers (accounts, hosts, groups, DNs, SIDs, domain/trust names, paths). The map never leaves this machine."
         Write-Host "  Not sent: the snapshot, ACL dumps, descriptions, group memberships beyond what the finding text states."
         Write-Host "  Exactly what would be sent: $promptFile" -ForegroundColor Cyan
+        Write-Host "  The file is self-contained: to use another model instead, paste it whole into that model's chat; the answer is the same JSON."
         $answer = Read-Host 'Open that file if you want, then: send to Gemini for an executive summary and remediation plan? (y/N)'
         if ($answer -notmatch '^[Yy]') { Write-Host "Nothing sent. Deterministic report saved to $OutHtml."; return }
     }
@@ -649,12 +670,13 @@ function Invoke-AdAiStep {
     if (-not $ApiKey) { $ApiKey = Request-GeminiApiKey }
     if (-not $ApiKey) { Write-Host 'No API key given (-ApiKey or GEMINI_API_KEY), nothing sent. Deterministic report kept as is.' -ForegroundColor Yellow; return }
 
-    $raw = Invoke-GeminiAnalysis -UserPrompt $userPrompt -ApiKey $ApiKey -Model $Model -MaxAttempts $AiMaxAttempts
+    $call = Invoke-AiAnalysisWithFallback -UserPrompt $userPrompt -ApiKey $ApiKey -Model $Model -MaxAttempts $AiMaxAttempts -ReportPath $htmlFull
+    $raw = $call.Raw
     if (-not $raw) { Write-Host "AI step failed; deterministic report kept at $OutHtml." -ForegroundColor Yellow; return }
     $responseFile = Get-AiSidecarPath $htmlFull '_ai_response.json'
     Write-AiResponseFile -Path $responseFile -Raw $raw
     Write-Host "Gemini reply (still pseudonymized) kept at $responseFile"
-    $aiResult = ConvertFrom-AiResponse -Raw $raw -Pz $pz -Findings $active -Model $Model
+    $aiResult = ConvertFrom-AiResponse -Raw $raw -Pz $pz -Findings $active -Model $Model -Variant $call.Variant
 
     $html = ConvertTo-ReportHtml -Snapshot $snap -Index $index -PrivMap $privMap -Split $split -Score $score `
         -NotEvaluated $notEvaluated -Comparison $comparison -Config $config -ToolVersion $script:IDWolfVersion -ElapsedText $elapsedText -AiResult $aiResult

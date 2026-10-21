@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased
+
+- AI step, reasoning: the model now works in three passes (as an intruder from every realistic
+  starting point and across categories; as a reviewer trying to break each chain against the
+  findings; as a defender planning from the chains that survived) and returns only the
+  defensive result. Each chain in the compromise assessment lists its links, what each gives,
+  whether a finding shows it or it is assumed (with the assumption), a confidence and the link
+  whose fix breaks it; new `rejected_chains` and `verify_next` (what to check by hand). IDWolf
+  checks what comes back: a link cannot be "shown" by a check that didn't fire, and a chain with
+  assumed links cannot be high confidence. The report shows all of it.
+- AI step, input: the checks that couldn't be evaluated are sent too (ids and titles only), so a
+  collection gap is never read as a clean link. The instructions cover Entra as well as AD.
+- If Gemini refuses the instructions on safety grounds (`SAFETY`, `PROHIBITED_CONTENT`...), one
+  retry with a defensive-only variant, saved as `<report>_ai_prompt_defensive.txt` and noted in
+  the report.
+- The prompt file (`<report>_ai_prompt.txt`, `-AiDryRun`) is now one self-contained text, the
+  instructions then the input, to paste whole into another model's chat; the answer is the same
+  JSON. It replaces the `=== SYSTEM ===` / `=== USER ===` layout.
+- No temperature is sent any more: Gemini 3 is tuned for its default (1.0), and Google warns that
+  lower values can make it loop.
+- Launcher: default settings, under the new `[S] Settings` menu. Set once (DC, deep, password
+  quality, tenant, device-code sign-in, what to do after collecting, AI step, model, attempts)
+  and kept apart from the remembered answers in `wizard.json`. Each collection asks whether to
+  use them: yes skips the questions and opens the settings screen with them (a change there is
+  for that run only), no asks as before. Repeating the last run doesn't ask. The analyzer
+  wizard (option 6) offers their AI step, model and attempts in place of its AI question.
+- Launcher: `[C] Forget remembered choices` moved to `[S]`, option 2. It now keeps the default
+  settings.
+- Fix: in the Entra report the AI text kept tokens such as `UPN-3`, `APP-2` or `CAPOLICY-1`
+  instead of the real names; de-tokenization now covers every prefix the map knows.
+
 ## 1.5 - 2026-10-19
 
 - Session log: the launcher, and the analyzer wizard on its own, write a transcript to
