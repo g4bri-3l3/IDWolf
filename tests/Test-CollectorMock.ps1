@@ -12,7 +12,9 @@ $sep = [System.IO.Path]::PathSeparator
 $env:PSModulePath = (Join-Path $PSScriptRoot 'mock') + $sep + $env:PSModulePath
 
 $snapPath = Join-Path $tmp 'mock.json'
-& (Join-Path $root 'Collect-ADSnapshot.ps1') -Server mock.local -OutFile $snapPath -WarningAction SilentlyContinue | Out-Null
+# -Gentle -ThrottleMs exercises the pacing path (Start-CollectorPace); a tiny value keeps the
+# mock run quick while still proving it runs and is recorded.
+& (Join-Path $root 'Collect-ADSnapshot.ps1') -Server mock.local -OutFile $snapPath -Gentle -ThrottleMs 1 -WarningAction SilentlyContinue | Out-Null
 $snap = Get-Content -Raw -LiteralPath $snapPath | ConvertFrom-Json
 
 $fail = 0
@@ -23,6 +25,7 @@ Check ($errSections -contains 'domain.fineGrainedPolicies') 'FGPP access error r
 Check ($errSections -contains 'acl.DomainControllersOU') 'ACL access error recorded'
 Check ($errSections -contains 'adcs.caRegistry') 'unreadable CA host recorded (no CIM in the mock)'
 Check (@($snap.users).Count -eq 4) 'users collected after fallback'
+Check ($snap.meta.options.gentle -eq $true -and $snap.meta.options.throttleMs -eq 1) 'gentle pacing recorded in meta.options'
 $conn = $snap.meta.connection
 Check ($conn -and $conn.requestedServer -eq 'mock.local' -and $conn.port -eq 9389 -and $null -ne $conn.firstAnswerMs -and $conn.diagnostics.requestedServer -eq 'mock.local' -and $conn.diagnostics.ldap.error) 'connection record in meta: server asked for, ADWS timing, diagnostics with the failed LDAP bind'
 $svc = $snap.users | Where-Object samAccountName -eq 'svc_sql'

@@ -11,9 +11,9 @@
 
 $script:WizardStateKeys = @{
     analyzer = @('Snapshot', 'OutJson', 'ExceptionsFile', 'CompareTo', 'PasswordQualityFile', 'AiMode', 'Model', 'AiAttempts', 'LastReport')
-    launcher = @('LastRun', 'Server', 'Deep', 'Pq', 'WeakList', 'Next', 'Ai', 'Tenant', 'DeviceCode', 'Model', 'AiAttempts')
+    launcher = @('LastRun', 'Server', 'Deep', 'Gentle', 'ThrottleMs', 'Pq', 'WeakList', 'Next', 'Ai', 'Tenant', 'DeviceCode', 'Model', 'AiAttempts')
     pending  = @('Kind', 'Snapshot', 'PasswordQuality', 'CollectedAt')
-    defaults = @('Server', 'Deep', 'Pq', 'WeakList', 'Tenant', 'DeviceCode', 'Next', 'Ai', 'Model', 'AiAttempts')
+    defaults = @('Server', 'Deep', 'Gentle', 'ThrottleMs', 'Pq', 'WeakList', 'Tenant', 'DeviceCode', 'Next', 'Ai', 'Model', 'AiAttempts')
 }
 $script:WizardStateSections = @('analyzer', 'launcher', 'pending', 'defaults')
 

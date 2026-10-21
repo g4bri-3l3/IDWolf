@@ -110,6 +110,10 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Privileged account with password never expires'
         Description = 'DONT_EXPIRE_PASSWORD on a Tier 0 account removes the only built-in guarantee that its password is ever changed.'
         Remediation = 'Clear the flag, or document the exception (break-glass) with compensating controls.' }
+    privileged_logon_unrestricted = @{ Category = 'Privileged Access'; Severity = 'Medium'; Mitre = 'T1078.002'; Needs = @('users', 'groups')
+        Title = 'Privileged account logs on with a reusable password'
+        Description = 'An enabled Tier 0 account is neither in Protected Users nor required to log on with a smart card, so it authenticates with a reusable password (NTLM/Kerberos RC4 or AES long-term key) that can be phished, sprayed or replayed. Tier 0 logons should be bound to a smart card and/or Protected Users.'
+        Remediation = 'Add Tier 0 human accounts to Protected Users (after a pilot: it disables NTLM, DES/RC4 and delegation) and/or set "smart card is required for interactive logon". Keep break-glass accounts documented with compensating controls.' }
     privileged_disabled_member = @{ Category = 'Privileged Access'; Severity = 'Low'; Mitre = 'T1078.002'; Needs = @('users', 'groups')
         Title = 'Disabled account in privileged group'
         Description = 'A disabled account keeps its group memberships: re-enabling it (by anyone with that right) instantly restores Tier 0 access.'
@@ -266,6 +270,10 @@ $script:CheckCatalog = [ordered]@{
         Title = 'AD Recycle Bin not enabled'
         Description = 'Deleted objects cannot be restored with their attributes and group memberships, which slows recovery after an incident or an error.'
         Remediation = 'Enable-ADOptionalFeature ''Recycle Bin Feature''.' }
+    tombstone_lifetime_low = @{ Category = 'Domain Configuration'; Severity = 'Low'; Mitre = ''; Needs = @('domain.tombstoneLifetime')
+        Title = 'Tombstone lifetime below 180 days'
+        Description = 'The tombstone lifetime sets how long a deleted object (and an AD backup) stays restorable. Below 180 days the recovery window is short: a backup older than it can no longer be used for an authoritative restore, which hurts recovery after ransomware or a bad change. An unset value falls back to the legacy 60-day default.'
+        Remediation = 'Set tombstoneLifetime on CN=Directory Service,CN=Windows NT,CN=Services,<config NC> to at least 180 days (the modern default).' }
     anonymous_ldap_enabled = @{ Category = 'Domain Configuration'; Severity = 'High'; Mitre = 'T1087.002'; Needs = @('domain.dsHeuristics')
         Title = 'Anonymous LDAP operations allowed'
         Description = 'dSHeuristics 7th character is 2: anonymous users can perform LDAP operations and enumerate the directory.'
@@ -362,6 +370,10 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Active Directory backup overdue'
         Description = 'The last successful system-state / AD backup of the domain naming context is older than the expected window. Without a recent backup, recovery from ransomware or a bad change (or an authoritative restore) is not possible within objective.'
         Remediation = 'Restore a working, tested backup schedule for the domain controllers (system state), and store copies offline.' }
+    dsrm_logon_behavior = @{ Category = 'Operational Health'; Severity = 'High'; Mitre = 'T1078.003'; Needs = @('health', 'health.dcState', 'health.dcStatePartial', 'health.dsrm')
+        Title = 'DSRM administrator allowed to log on'
+        Description = 'DsrmAdminLogonBehavior is 2 on a domain controller: the Directory Services Restore Mode local administrator (a password that never expires and is not managed by AD) can log on while the DC runs normally. It is a classic Tier 0 persistence foothold that survives a domain password reset.'
+        Remediation = 'Set HKLM\System\CurrentControlSet\Control\Lsa\DsrmAdminLogonBehavior to 0 (or 1) on the DCs, and rotate the DSRM password (for example with ntdsutil "set dsrm password").' }
     dhcp_on_dc = @{ Category = 'Operational Health'; Severity = 'Medium'; Mitre = 'T1557'; Needs = @('health')
         Title = 'DHCP server running on a domain controller'
         Description = 'An authorized DHCP server is also a domain controller. DHCP on a DC runs dynamic DNS registration as the DC machine account (the DnsUpdateProxy / record-ownership problem) and widens the DC attack surface; it is a long-standing Microsoft anti-pattern.'
@@ -693,6 +705,9 @@ function Get-NotEvaluatedChecks {
         if (@($Snapshot.health.dcState | Where-Object { $_ -and -not $_.error -and -not $_.PSObject.Properties['webClientStartMode'] }).Count -gt 0) {
             $absentReasons['health.webClient'] = 'snapshot from an older collector (no WebClient service state on the DCs): re-collect'
         }
+        if (@($Snapshot.health.dcState | Where-Object { $_ -and -not $_.error -and -not $_.PSObject.Properties['dsrmAdminLogonBehavior'] }).Count -gt 0) {
+            $absentReasons['health.dsrm'] = 'snapshot from an older collector (no DSRM admin logon behavior on the DCs): re-collect'
+        }
         if (@($Snapshot.health.dcState | Where-Object { $_ -and -not $_.error -and -not $_.PSObject.Properties['coercionServices'] }).Count -gt 0) {
             $absentReasons['health.coercion'] = 'snapshot from an older collector (no coercion services or RPC filters on the DCs): re-collect'
         }
@@ -1010,6 +1025,11 @@ function Invoke-ADHygieneChecks {
             Add-Finding -Type privileged_password_never_expires -Object $p.samAccountName -ObjectType 'user' -ObjectDn $p.distinguishedName `
                 -Detail "Member of $groupsText."
         }
+        # Tier 0 logon not bound to a smart card nor to Protected Users: a reusable password.
+        if (-not $PrivMap.ProtectedUsersSet.ContainsKey($p.distinguishedName.ToLower()) -and -not (Test-Uac $p 'SMARTCARD_REQUIRED')) {
+            Add-Finding -Type privileged_logon_unrestricted -Object $p.samAccountName -ObjectType 'user' -ObjectDn $p.distinguishedName `
+                -Detail "Member of $groupsText; not in Protected Users and smart-card logon not required (authenticates with a reusable password)."
+        }
     }
 
     # Non-standard primaryGroupID
@@ -1271,6 +1291,15 @@ function Invoke-ADHygieneChecks {
     }
     if ($Snapshot.domain.recycleBinEnabled -eq $false) {
         Add-Finding -Type recycle_bin_disabled -Object $domObj -ObjectType 'domain' -ObjectDn $domDn -Detail 'Recycle Bin Feature has no enabled scope.'
+    }
+    # Tombstone lifetime: unset means the legacy 60-day default; below 180 the recovery window
+    # (and the usable age of a backup) is short.
+    if ($Snapshot.domain.PSObject.Properties['tombstoneLifetime']) {
+        $tsl = if ($null -eq $Snapshot.domain.tombstoneLifetime) { 60 } else { [int]$Snapshot.domain.tombstoneLifetime }
+        if ($tsl -lt 180) {
+            Add-Finding -Type tombstone_lifetime_low -Object $domObj -ObjectType 'domain' -ObjectDn $domDn `
+                -Detail "tombstoneLifetime = $(if ($null -eq $Snapshot.domain.tombstoneLifetime) { 'not set (defaults to 60)' } else { $tsl }) days (recommended >= 180)."
+        }
     }
     $dsh = "$($Snapshot.domain.dsHeuristics)"
     if ($dsh.Length -ge 7 -and $dsh[6] -eq '2') {
@@ -1813,6 +1842,12 @@ function Invoke-HealthChecks {
         if ($wm -eq 'absent' -or $wm -eq 'Disabled') { continue }
         $sev = if ("$($s.webClientState)" -eq 'Running') { 'High' } else { 'Medium' }
         Add-Finding -Type webclient_on_dc -Object "$($s.dc)" -ObjectType 'dc' -Severity $sev -Detail "WebClient service: start mode $wm, state $($s.webClientState)."
+    }
+    # DSRM administrator logon behavior (2 = can log on while the DC runs normally): Tier 0 persistence.
+    foreach ($s in @($h.dcState | Where-Object { $_ -and -not $_.error -and $_.PSObject.Properties['dsrmAdminLogonBehavior'] -and $null -ne $_.dsrmAdminLogonBehavior })) {
+        if ([int]$s.dsrmAdminLogonBehavior -eq 2) {
+            Add-Finding -Type dsrm_logon_behavior -Object "$($s.dc)" -ObjectType 'dc' -Detail 'DsrmAdminLogonBehavior = 2: the DSRM local administrator can log on while the DC runs normally.'
+        }
     }
     foreach ($s in @($h.dcState | Where-Object { $_ -and -not $_.error })) {
         if ($null -ne $s.freeGB -and $s.sizeGB) {

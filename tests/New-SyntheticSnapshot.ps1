@@ -504,7 +504,7 @@ $snapshot = [ordered]@{
     domain = [ordered]@{
         dnsRoot = 'moosebank.local'; netbios = 'MOOSEBANK'; distinguishedName = $dn; sid = $dom
         domainMode = 'Windows2012R2Domain'; forestName = 'moosebank.local'; forestRootDomain = 'moosebank.local'; forestRootSid = $dom; forestMode = 'Windows2012R2Forest'
-        machineAccountQuota = 10; dsHeuristics = '0000002'; smartcardPwdRotation = $false; recycleBinEnabled = $false; lapsLegacySchema = $false; lapsV2Schema = $true; javaSchemaClasses = @('javaSerializedObject', 'javaContainer'); possSuperiorClasses = @([ordered]@{ name = 'msExchStorageGroup'; possSuperiors = @('computer'); subClassChain = @('container'); inheritsContainer = $true }, [ordered]@{ name = 'mooseDevice'; possSuperiors = @('user'); subClassChain = @('device'); inheritsContainer = $false }); lapsAttrGuids = @($lapsGuid); authPolicySiloCount = 0; subnetCount = 0; sysvolReplication = 'FRS'
+        machineAccountQuota = 10; dsHeuristics = '0000002'; smartcardPwdRotation = $false; recycleBinEnabled = $false; tombstoneLifetime = 90; lapsLegacySchema = $false; lapsV2Schema = $true; javaSchemaClasses = @('javaSerializedObject', 'javaContainer'); possSuperiorClasses = @([ordered]@{ name = 'msExchStorageGroup'; possSuperiors = @('computer'); subClassChain = @('container'); inheritsContainer = $true }, [ordered]@{ name = 'mooseDevice'; possSuperiors = @('user'); subClassChain = @('device'); inheritsContainer = $false }); lapsAttrGuids = @($lapsGuid); authPolicySiloCount = 0; subnetCount = 0; sysvolReplication = 'FRS'
         passwordPolicy = [ordered]@{ minPasswordLength = 8; complexityEnabled = $true; reversibleEncryptionEnabled = $false; lockoutThreshold = 0
             lockoutDurationMinutes = 30; maxPasswordAgeDays = 90; minPasswordAgeDays = 1; passwordHistoryCount = 24 }
         fineGrainedPolicies = if ($Scenario -eq 'partial') { $null } else { @(
@@ -597,7 +597,7 @@ $snapshot = [ordered]@{
             [ordered]@{ dc = 'dc01.moosebank.local'; systemDrive = 'C:'; freeGB = 41.2; sizeGB = 99.4; stoppedServices = @(); webClientStartMode = 'absent'; webClientState = 'absent'
                 netbiosAdapters = @([ordered]@{ adapter = 'vmxnet3 Ethernet Adapter'; netbiosOption = 2 }); osBuild = '20348'; osUbr = 2849
                 # RPC filters deployed for every coercion interface: no coercion finding on DC01.
-                coercionServices = [ordered]@{ EFS = 'Manual/Stopped'; Dfs = 'Auto/Running'; EventLog = 'Auto/Running' }; rpcFilterInterfaces = @('MS-DFSNM', 'MS-EFSR', 'MS-EVEN'); error = '' }
+                coercionServices = [ordered]@{ EFS = 'Manual/Stopped'; Dfs = 'Auto/Running'; EventLog = 'Auto/Running' }; rpcFilterInterfaces = @('MS-DFSNM', 'MS-EFSR', 'MS-EVEN'); dsrmAdminLogonBehavior = 0; error = '' }
             # DC02 also runs WebClient (Desktop Experience installed) -> webclient_on_dc.
             [ordered]@{ dc = 'dc02.moosebank.local'; systemDrive = 'C:'; freeGB = 3.5; sizeGB = 59.4; stoppedServices = @('DFSR'); webClientStartMode = 'Manual'; webClientState = 'Running'
                 # NetBIOS left at the default on a static address -> nbtns_enabled_dc.
@@ -605,7 +605,8 @@ $snapshot = [ordered]@{
                 # Server 2019 still on an October 2021 build -> nopac_unpatched_dc (Critical: MAQ = 10).
                 osBuild = '17763'; osUbr = 2237
                 # No RPC filter: coercion_unfiltered_dc, High (LDAP signing not required, ESC8 on the CA).
-                coercionServices = [ordered]@{ EFS = 'Manual/Stopped'; Dfs = 'Auto/Running'; EventLog = 'Auto/Running' }; rpcFilterInterfaces = @(); error = '' }
+                # DsrmAdminLogonBehavior = 2 -> dsrm_logon_behavior (Tier 0 persistence).
+                coercionServices = [ordered]@{ EFS = 'Manual/Stopped'; Dfs = 'Auto/Running'; EventLog = 'Auto/Running' }; rpcFilterInterfaces = @(); dsrmAdminLogonBehavior = 2; error = '' }
             [ordered]@{ dc = 'rodc01.moosebank.local'; systemDrive = $null; freeGB = $null; sizeGB = $null; stoppedServices = @(); error = 'not reachable' })
     }
 }

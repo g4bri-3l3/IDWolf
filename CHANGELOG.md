@@ -2,6 +2,22 @@
 
 ## 1.6 - 2026-10-21
 
+- New AD checks (3): `dsrm_logon_behavior` (High) flags a DC where DsrmAdminLogonBehavior = 2, so
+  the DSRM local administrator can log on while the DC runs normally (Tier 0 persistence; read
+  over CIM, needs admin on the DCs); `tombstone_lifetime_low` (Low) flags a tombstone lifetime
+  below 180 days (short recovery/backup window); `privileged_logon_unrestricted` (Medium) flags
+  Tier 0 accounts that log on with a reusable password, i.e. not in Protected Users and not
+  required to use a smart card. The collector records `domain.tombstoneLifetime` and per-DC
+  `dsrmAdminLogonBehavior`; the demo now gives 211 findings (216 deep, 201 partial).
+- Report header: when the AI step ran, the top line also shows the model used and how long
+  Gemini took (retries and the defensive fallback included), e.g. `... analysis 2.8s &middot; AI
+  gemini-3.8-flash in 12.4s`. Nothing is added when no AI step ran.
+- Collector: gentle pacing. `-Gentle` (or `-ThrottleMs <n>`) pauses between the heavy reads
+  and every few hundred per-object reads, so a large, busy or closely-monitored domain is read
+  more slowly and evenly: lighter on the DC and kinder to rate-based monitoring of a sanctioned
+  scan. It only changes the pace (same objects, still read-only over ADWS) and is recorded in
+  `meta.options` (`gentle`, `throttleMs`). The launcher offers it on an AD run and in the
+  default settings.
 - AI step, reasoning: the model now works in three passes (as an intruder from every realistic
   starting point and across categories; as a reviewer trying to break each chain against the
   findings; as a defender planning from the chains that survived) and returns only the

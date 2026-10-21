@@ -50,8 +50,13 @@ $demo = Import-ADSnapshot (Join-Path $tmp 'demo.json')
 $r = Invoke-Analysis $demo
 $bySev = @{}; foreach ($s in 'Critical', 'High', 'Medium', 'Low') { $bySev[$s] = @($r.Findings | Where-Object { $_.Severity -eq $s }).Count }
 Write-Host ("  {0} findings (C {1} / H {2} / M {3} / L {4}), {5} Tier 0 principals" -f $r.Findings.Count, $bySev.Critical, $bySev.High, $bySev.Medium, $bySev.Low, $r.PrivMap.Principals.Count)
-Assert-True ($r.Findings.Count -eq 195) "demo total findings: expected 195, got $($r.Findings.Count)"
-Assert-True ($bySev.Critical -eq 25 -and $bySev.High -eq 77 -and $bySev.Medium -eq 67 -and $bySev.Low -eq 26) "demo severity split: expected 25/77/67/26 (got $($bySev.Critical)/$($bySev.High)/$($bySev.Medium)/$($bySev.Low))"
+Assert-True ($r.Findings.Count -eq 211) "demo total findings: expected 211, got $($r.Findings.Count)"
+Assert-True ($bySev.Critical -eq 25 -and $bySev.High -eq 78 -and $bySev.Medium -eq 81 -and $bySev.Low -eq 27) "demo severity split: expected 25/78/81/27 (got $($bySev.Critical)/$($bySev.High)/$($bySev.Medium)/$($bySev.Low))"
+# New checks: DSRM logon behavior on a DC, tombstone lifetime below 180, Tier 0 accounts
+# that log on with a reusable password (not in Protected Users, no smart card).
+Assert-True ((Has $r 'dsrm_logon_behavior' 'dc02.moosebank.local' 'High') -and @($r.Findings | Where-Object { $_.Type -eq 'dsrm_logon_behavior' }).Count -eq 1) 'demo: DsrmAdminLogonBehavior=2 on DC02 flagged, DC01 (0) clean'
+Assert-True (Has $r 'tombstone_lifetime_low' 'moosebank.local' 'Low') 'demo: tombstone lifetime below 180 days flagged'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'privileged_logon_unrestricted' -and $_.Severity -eq 'Medium' }).Count -eq 14) "demo: Tier 0 accounts with a reusable password (expected 14, got $(@($r.Findings | Where-Object { $_.Type -eq 'privileged_logon_unrestricted' }).Count))"
 Assert-True ($r.PrivMap.Principals.Count -eq 17) "demo Tier 0 principals: expected 17, got $($r.PrivMap.Principals.Count)"
 $demoNE = @($r.NotEvaluated | ForEach-Object { $_.Type })
 Assert-True (($demoNE -contains 'dangerous_ace_anywhere') -and ($demoNE -contains 'laps_readers') -and ($demoNE -contains 'kds_root_key_readable') -and ($demoNE -contains 'pwq_empty_password') -and ($demoNE.Count -eq 8)) "demo (non-deep): dangerous_ace_anywhere + kds_root_key_readable + laps_readers + 5 pwq not evaluated (got $($demoNE -join ','))"
@@ -418,7 +423,7 @@ $deep = Import-ADSnapshot (Join-Path $tmp 'deep.json')
 $rd = Invoke-Analysis $deep
 Assert-True (@($rd.NotEvaluated | Where-Object { $_.Type -eq 'dangerous_ace_anywhere' }).Count -eq 0) 'deep run evaluates dangerous_ace_anywhere'
 Assert-True (Has $rd 'dangerous_ace_anywhere' 'MOOSEBANK\Helpdesk' 'High') 'deep: non-priv GenericAll over a DA'
-Assert-True ($rd.Findings.Count -eq 200) "deep total findings: expected 200, got $($rd.Findings.Count)"
+Assert-True ($rd.Findings.Count -eq 216) "deep total findings: expected 216, got $($rd.Findings.Count)"
 Assert-True (Has $rd 'kds_root_key_readable' 'MOOSEBANK\Helpdesk' 'High') 'deep: Helpdesk can read the KDS root key (Golden gMSA)'
 Assert-True (-not (Has $rd 'kds_root_key_readable' 'MOOSEBANK\Domain Admins')) 'deep: Domain Admins on the KDS root key is the default'
 Assert-True (@($r.NotEvaluated | Where-Object { $_.Type -eq 'kds_root_key_readable' }).Count -eq 1) 'kds_root_key_readable not evaluated without -Deep'
@@ -470,7 +475,7 @@ Write-Host "[partial]"
 $partial = Import-ADSnapshot (Join-Path $tmp 'partial.json')
 $rp = Invoke-Analysis $partial
 $ne = @($rp.NotEvaluated | ForEach-Object { $_.Type })
-Assert-True ($rp.Findings.Count -eq 185) "partial total findings: expected 185, got $($rp.Findings.Count)"
+Assert-True ($rp.Findings.Count -eq 201) "partial total findings: expected 201, got $($rp.Findings.Count)"
 Assert-True (($ne -join ',') -eq 'fgpp_weak,dcsync_rights,sync_laps_rights,dangerous_ace_tier0,nonstandard_owner_tier0,gpp_cpassword,sysvol_writable,sysvol_script_secrets,dangerous_ace_anywhere,kds_root_key_readable,badsuccessor_dmsa_create,laps_readers,gpo_autologon_password,pwq_duplicate_passwords,pwq_default_password,pwq_empty_password,pwq_breached_password,pwq_cleartext_stored') "partial not-evaluated set: got $($ne -join ',')"
 
 # ------------------------------------------------------------- mutations
@@ -679,8 +684,13 @@ Assert-True (@($script:RecentAttackVectors.Keys | Where-Object { $allChecks -not
 $unnamedMitre = @(@($script:CheckCatalog.Values) + @($script:EntraCheckCatalog.Values) | ForEach-Object { "$($_.Mitre)" } | Where-Object { $_ -and -not $script:MitreTechniqueNames.ContainsKey($_) } | Sort-Object -Unique)
 Assert-True ($unnamedMitre.Count -eq 0) "every MITRE ID in the catalogs has a technique name (missing: $($unnamedMitre -join ', '))"
 Assert-True ($html -match '<b>Attack it enables\.</b> <a [^>]+>T1558\.003</a> Steal or Forge Kerberos Tickets: Kerberoasting<br>Seen in attacks: Kerberoasting, seen in ransomware') 'report shows the technique name and the recent attack for a check'
+$ai | Add-Member -NotePropertyName AiElapsedText -NotePropertyValue '1.5s' -Force
 $html2 = ConvertTo-ReportHtml -Snapshot $demo -Index $r.Index -PrivMap $r.PrivMap -Split $split -Score $score -NotEvaluated @() -Comparison $null -Config $config -ToolVersion 'test' -ElapsedText '0s' -AiResult $ai
 Assert-True ($html2 -match 'ai-section' -and $html2 -match 'chart-row' -and ([regex]::Matches($html2, "class='pie-chart-wrap'")).Count -ge 4) 'HTML with AI section and the donut charts'
+Assert-True ($html2 -match '&middot; AI test in 1\.5s</div>') 'report header names the AI model and the Gemini time when AI ran'
+# No AI: the header carries neither (the first render, before the AI step).
+$htmlNoAi = ConvertTo-ReportHtml -Snapshot $demo -Index $r.Index -PrivMap $r.PrivMap -Split $split -Score $score -NotEvaluated @() -Comparison $null -Config $config -ToolVersion 'test' -ElapsedText '0s'
+Assert-True ($htmlNoAi -notmatch '&middot; AI ') 'report header omits the AI model when no AI step ran'
 Assert-True (([regex]::Matches($html2, "pie-chart-title'>(All accounts|Password age|Password settings|Computers by operating system|Enabled computers by activity|Groups by scope)")).Count -ge 5) 'HTML has the directory donuts (accounts, password age and settings, computers, groups)'
 Assert-True (($html2 -match 'Tier 0 members \(\d+\)') -and ($html2 -match '<b>Administrator</b>')) 'attack map section lists the Tier 0 members, Administrator included'
 # With a password-quality report attached, one more donut shows the weak accounts.
@@ -1270,7 +1280,7 @@ $tempBefore = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Di
 $bz = New-IDWolfBundle -Snapshot (Join-Path $tmp 'demo.json') -PasswordQuality (Join-Path $root 'examples\passwordquality.example.json') -OutFile (Join-Path $tmp 'bundle.zip')
 $bzCsv = Join-Path $tmp 'bundle.csv'
 & (Join-Path $root 'IDWolf.ps1') -Snapshot $bz -OutHtml (Join-Path $tmp 'bundle.html') -OutCsv $bzCsv -SkipLLM 6>&1 2>&1 | Out-Null
-Assert-True ((Test-Path $bzCsv) -and @(Import-Csv $bzCsv).Count -eq 203) "zip with snapshot + password quality analyzes like the two files (203 findings, got $(if (Test-Path $bzCsv) { @(Import-Csv $bzCsv).Count }))"
+Assert-True ((Test-Path $bzCsv) -and @(Import-Csv $bzCsv).Count -eq 219) "zip with snapshot + password quality analyzes like the two files (219 findings, got $(if (Test-Path $bzCsv) { @(Import-Csv $bzCsv).Count }))"
 $tempAfter = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Directory -Filter 'idwolf_bundle_*' -ErrorAction SilentlyContinue).Count
 Assert-True ($tempAfter -eq $tempBefore) 'extracted bundle removed from TEMP after the analysis'
 # A file changed inside the zip no longer matches the manifest.
@@ -1296,7 +1306,7 @@ $encRaw = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes(
 Assert-True ($encHead -eq 'IDWOLFENC1' -and $encZipMsg -and $encRaw -notmatch 'moosebank|snapshot\.json') 'encrypted bundle: IDWolf header, not readable as a zip, no plain names inside'
 $encCsv = Join-Path $tmp 'bundle_enc.csv'
 & (Join-Path $root 'IDWolf.ps1') -Snapshot $encBz -BundlePassword $encPw -OutHtml (Join-Path $tmp 'bundle_enc.html') -OutCsv $encCsv -SkipLLM 6>&1 2>&1 | Out-Null
-Assert-True ((Test-Path $encCsv) -and @(Import-Csv $encCsv).Count -eq 203) "encrypted bundle analyzes like the plain one with the right password (got $(if (Test-Path $encCsv) { @(Import-Csv $encCsv).Count }))"
+Assert-True ((Test-Path $encCsv) -and @(Import-Csv $encCsv).Count -eq 219) "encrypted bundle analyzes like the plain one with the right password (got $(if (Test-Path $encCsv) { @(Import-Csv $encCsv).Count }))"
 $wrongMsg = ''; try { Expand-IDWolfBundle -Path $encBz -Password (ConvertTo-SecureString 'wrong password here' -AsPlainText -Force) | Out-Null } catch { $wrongMsg = $_.Exception.Message }
 $tamper2 = Join-Path $tmp 'tampered.idwolf'; $tb = [System.IO.File]::ReadAllBytes($encBz); $tb[100] = $tb[100] -bxor 1; [System.IO.File]::WriteAllBytes($tamper2, $tb)
 $tamperMsg = ''; try { Expand-IDWolfBundle -Path $tamper2 -Password $encPw | Out-Null } catch { $tamperMsg = $_.Exception.Message }
@@ -1314,8 +1324,8 @@ $jl = Join-Path $tmp 'demo.jsonl'
 $jlRows = @([System.IO.File]::ReadAllLines($jl) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
 $jlFind = @($jlRows | Where-Object { $_.event_type -eq 'finding' })
 $jlSum = @($jlRows | Where-Object { $_.event_type -eq 'summary' })
-Assert-True ($jlFind.Count -eq 195 -and $jlSum.Count -eq 1) "jsonl: 195 findings + 1 summary (got $($jlFind.Count) + $($jlSum.Count))"
-Assert-True ($jlSum[0].critical -eq 25 -and $jlSum[0].findings -eq 195 -and $jlSum[0].score -ge 0 -and $jlSum[0].domain -eq 'moosebank.local') 'jsonl summary: counts, score, domain'
+Assert-True ($jlFind.Count -eq 211 -and $jlSum.Count -eq 1) "jsonl: 211 findings + 1 summary (got $($jlFind.Count) + $($jlSum.Count))"
+Assert-True ($jlSum[0].critical -eq 25 -and $jlSum[0].findings -eq 211 -and $jlSum[0].score -ge 0 -and $jlSum[0].domain -eq 'moosebank.local') 'jsonl summary: counts, score, domain'
 Assert-True (@($jlFind | Where-Object { $_.finding_id -notmatch '^[0-9a-f]{16}$' -or $_.severity_score -lt 1 }).Count -eq 0) 'jsonl: every finding has a finding_id and a severity_score'
 Assert-True (@($jlFind | ForEach-Object { $_.finding_id } | Select-Object -Unique).Count -eq $jlFind.Count) 'jsonl: finding_id unique within a run'
 Assert-True ((Get-FindingId 'x_check' 'Bob') -eq (Get-FindingId 'X_CHECK' 'bob')) 'finding_id ignores case, so it survives renames in case only'
@@ -1475,7 +1485,7 @@ try {
     # What the rights leave out, named from the catalog's Needs.
     $uacDa = [PSCustomObject]@{ DomainAdmin = $false; EnterpriseAdmin = $false; Replication = $false; FilteredByUac = $true; Error = '' }
     $gapTypes = @(Get-RightsGaps -Rights $uacDa -Deep $true | ForEach-Object { Get-ChecksNeeding -Catalog $script:CheckCatalog -Sections $_.Sections })
-    Assert-True ($gapTypes.Count -eq 21 -and $gapTypes -contains 'fgpp_weak' -and $gapTypes -contains 'adcs_esc7' -and $gapTypes -contains 'laps_readers' -and $gapTypes -contains 'pwq_empty_password' -and @(Get-RightsGaps -Rights $uacDa)[0].Reason -match 'filtered by UAC') "rights gaps: a UAC-filtered admin with -Deep misses 21 checks, named by reason (got $($gapTypes.Count))"
+    Assert-True ($gapTypes.Count -eq 22 -and $gapTypes -contains 'fgpp_weak' -and $gapTypes -contains 'adcs_esc7' -and $gapTypes -contains 'laps_readers' -and $gapTypes -contains 'pwq_empty_password' -and @(Get-RightsGaps -Rights $uacDa)[0].Reason -match 'filtered by UAC') "rights gaps: a UAC-filtered admin with -Deep misses 22 checks, named by reason (got $($gapTypes.Count))"
     $fullDa = [PSCustomObject]@{ DomainAdmin = $true; EnterpriseAdmin = $false; Replication = $true; FilteredByUac = $false; Error = '' }
     Assert-True (@(Get-RightsGaps -Rights $fullDa -Deep $true).Count -eq 0 -and @(Get-RightsGaps -Rights $rights).Count -eq 0) 'rights gaps: none for a Domain Admin with replication rights, none claimed when the rights could not be read'
 
@@ -1556,9 +1566,15 @@ try {
         Assert-True ($oC -match 'Remembered answers deleted' -and -not (Test-Path -LiteralPath $statePath)) 'launcher [S] 2 deletes the remembered answers'
 
         # Default settings [S]: set on their screen (Enter saves), kept apart from the answers.
-        $oS = (@('S', '1', '4', 'contoso.example', '6', 'S', '', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
+        $oS = (@('S', '1', '5', 'contoso.example', '7', 'S', '', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
         $st = Read-IDWolfState
         Assert-True ($oS -match 'Default settings saved' -and $st.defaults.Tenant -eq 'contoso.example' -and $st.defaults.Next -eq 'S' -and $st.defaults.Ai -eq 'A' -and -not $st.launcher.ContainsKey('Tenant')) "[S] saves the default settings, not as remembered answers: $(if ($oS -notmatch 'Default settings saved') { $oS })"
+        # Gentle pacing: turning it on ([3]) reveals the millisecond field ([4]); labels carry
+        # the [AD] / [Entra] prefix. Leaves Tenant/Next from $oS as they were.
+        $oG = (@('S', '1', '', '3', 'y', '4', '350', '', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
+        $st = Read-IDWolfState
+        Assert-True ($st.defaults.Gentle -eq 'y' -and $st.defaults.ThrottleMs -eq '350' -and $oG -match '\[AD\] Gentle pacing' -and $oG -match '\[AD\] Gentle pause \(ms\)' -and $oG -match '\[Entra\] Tenant' -and $st.defaults.Tenant -eq 'contoso.example') "gentle pause field appears when gentle is on, labels are prefixed [AD]/[Entra]: $(if ($st.defaults.ThrottleMs -ne '350') { $oG })"
+
         # A collection asks whether to use them: yes skips the questions, the settings screen
         # shows them, and nothing is saved as a remembered answer.
         $oU = (@('2', '', 'Q', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String

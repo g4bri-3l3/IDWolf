@@ -23,6 +23,12 @@
     Snapshot path. Default: output\adsnapshot_<domain>_<timestamp>.json
 .PARAMETER Deep
     Also read the ACL of every user, computer, group and OU. Slow; needs broad read rights.
+.PARAMETER Gentle
+    Pace the collection: pause between the heavy reads and every few hundred per-object reads,
+    so a large or busy domain is read more slowly and evenly. Sets a 200 ms pause unless
+    -ThrottleMs gives one. It only slows the collection; the same objects are read either way.
+.PARAMETER ThrottleMs
+    Milliseconds to pause at each pacing point (implies -Gentle). 0 (default) is no pacing.
 .PARAMETER Credential
     Account for the AD queries and SYSVOL (for example a delegated auditor).
 .PARAMETER SkipSysvol
@@ -46,6 +52,8 @@
     .\Collect-ADSnapshot.ps1 -Server dc01.corp.local -OutFile .\snap.json
 .EXAMPLE
     .\Collect-ADSnapshot.ps1 -ListDomainControllers
+.EXAMPLE
+    .\Collect-ADSnapshot.ps1 -Gentle -Deep   # slower, evener reads on a large or watched domain
 #>
 
 [CmdletBinding()]
@@ -61,6 +69,8 @@ Param(
     [switch]$SkipDns,
     [switch]$SkipHealth,
     [switch]$Deep,
+    [switch]$Gentle,
+    [int]$ThrottleMs = 0,
     [switch]$InstallModules,
     [System.Management.Automation.PSCredential]$Credential
 )
@@ -70,7 +80,7 @@ Param(
 # account with broad read rights. Without it those checks show up as
 # "not evaluated".
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.5"
+$script:CollectorVersion = "1.6"
 $script:Errors = New-Object System.Collections.Generic.List[object]
 
 # Connection diagnostics and the DC list (lib\Connection.ps1). Optional: a collector copied
@@ -91,6 +101,16 @@ function Add-CollectionError {
     param([string]$Section, [string]$Message)
     $script:Errors.Add([PSCustomObject]@{ section = $Section; message = $Message })
     Write-Warning "[$Section] $Message"
+}
+
+# Gentle collection: a pause at each heavy read and every few hundred per-object reads, so a
+# large or closely-watched domain is read more slowly and evenly (lighter on the DC, kinder to
+# rate-based monitoring of a sanctioned scan). It only slows the collection down; the objects
+# read are exactly the same. $script:ThrottleMs and $script:PaceEvery are set once below.
+function Start-CollectorPace {
+    param([int]$Steps = 1)
+    if ($script:ThrottleMs -le 0) { return }
+    Start-Sleep -Milliseconds ($script:ThrottleMs * $Steps)
 }
 
 # FILETIME (int64) -> ISO 8601 UTC string, or $null for "never" / unset.
@@ -307,6 +327,11 @@ if ($Server) { $common['Server'] = $Server }
 # a mapped drive with the same account further down.
 if ($Credential) { $common['Credential'] = $Credential }
 
+# -ThrottleMs implies -Gentle; -Gentle alone uses 200 ms. See Start-CollectorPace.
+$script:ThrottleMs = if ($ThrottleMs -gt 0) { $ThrottleMs } elseif ($Gentle) { 200 } else { 0 }
+$script:PaceEvery = 200
+if ($script:ThrottleMs -gt 0) { Write-Host "Gentle collection: pausing $($script:ThrottleMs) ms between heavy reads and every $($script:PaceEvery) objects." -ForegroundColor DarkGray }
+
 $startedAt = Get-Date
 Write-Host "IDWolf collector v$script:CollectorVersion (read-only)" -ForegroundColor Yellow
 
@@ -484,8 +509,10 @@ try {
 catch { Add-CollectionError 'domain.smartcardPwdRotation' $_.Exception.Message }
 
 try {
-    $ds = Get-ADObject -Identity "CN=Directory Service,CN=Windows NT,CN=Services,$configNC" -Properties dSHeuristics @common
+    $ds = Get-ADObject -Identity "CN=Directory Service,CN=Windows NT,CN=Services,$configNC" -Properties dSHeuristics, tombstoneLifetime @common
     $domainInfo.dsHeuristics = $ds.dSHeuristics
+    # Unset = the legacy 60-day default; kept as $null so the analyzer can say "not set".
+    $domainInfo.tombstoneLifetime = if ($null -ne $ds.tombstoneLifetime) { [int]$ds.tombstoneLifetime } else { $null }
 }
 catch { Add-CollectionError 'domain.dsHeuristics' $_.Exception.Message }
 
@@ -621,6 +648,7 @@ $script:OptionalExtProps = @('PrincipalsAllowedToDelegateToAccount', 'Principals
 function Get-WithPropertyFallback {
     param([scriptblock]$Query, [string[]]$Props, [string]$Section)
     $label = 'Reading ' + ($Section -creplace '([A-Z])', ' $1').ToLower()
+    Start-CollectorPace
     try { return @(Invoke-WithSpinner -Message $label -ScriptBlock $Query -ArgumentList $Props, $common -Modules ActiveDirectory) }
     catch {
         $reduced = @($Props | Where-Object { $script:OptionalExtProps -notcontains $_ })
@@ -733,6 +761,7 @@ catch { Add-CollectionError 'computers' $_.Exception.Message }
 $groups = @()
 try {
     Write-Host "Reading groups..."
+    Start-CollectorPace
     $rawGroups = Invoke-WithSpinner -Message 'Reading groups' -ScriptBlock { param($c) Get-ADGroup -Filter * -Properties member, adminCount, description @c } -ArgumentList @(, $common) -Modules ActiveDirectory
     $groups = @($rawGroups | ForEach-Object {
             [ordered]@{
@@ -834,7 +863,9 @@ if (-not $SkipAcl) {
     try {
         $ouObjs = @(Get-ADObject -LDAPFilter '(objectClass=organizationalUnit)' @common | Where-Object { $_ })
         $ouObjs += @(Get-ADObject -SearchBase $domainDN -SearchScope OneLevel -LDAPFilter '(objectClass=container)' @common | Where-Object { $_ })
+        $seen = 0
         foreach ($o in $ouObjs) {
+            if ((++$seen % $script:PaceEvery) -eq 0) { Start-CollectorPace }
             $rec = Read-ObjectSecurity -Dn $o.DistinguishedName -Target "ou:$($o.DistinguishedName)" -ObjectClass "$($o.ObjectClass)" -ErrorSection 'ouAcls'
             if (-not $rec) { continue }
             $rec.aces = @($rec.aces | Where-Object { -not $_.isInherited -and $_.accessType -eq 'Allow' -and $_.rights -match 'CreateChild|GenericAll|WriteDacl|WriteOwner' })
@@ -881,6 +912,7 @@ if ($Deep -and -not $SkipAcl) {
             $rec = Read-ObjectSecurity -Dn $o.DistinguishedName -Target "obj:$($o.DistinguishedName)" -ObjectClass "$($o.ObjectClass)"
             if ($rec) { $deepAcls += $rec }
             $done++
+            if (($done % $script:PaceEvery) -eq 0) { Start-CollectorPace }
             if ($done % 500 -eq 0) { Write-Progress -Activity 'Deep ACL sweep' -Status "$done of $($sweep.Count)" -PercentComplete ([int](($done / [Math]::Max(1, $sweep.Count)) * 100)) }
         }
         Write-Progress -Activity 'Deep ACL sweep' -Completed
@@ -1692,7 +1724,7 @@ if (-not $SkipHealth) {
     # (or remote WMI rights); without them this part is "not evaluated".
     $svcNames = 'NTDS', 'ADWS', 'Kdc', 'Netlogon', 'W32Time', 'DFSR', 'IsmServ', 'LanmanServer', 'LanmanWorkstation', 'SamSs', 'RpcSs', 'EventSystem', 'DNS', 'Dnscache'
     $state = @(foreach ($dc in $dcs) {
-            $rec = [ordered]@{ dc = "$($dc.hostName)"; systemDrive = $null; freeGB = $null; sizeGB = $null; stoppedServices = @(); spoolerStartMode = $null; spoolerState = $null; webClientStartMode = $null; webClientState = $null; netbiosAdapters = $null; osBuild = $null; osUbr = $null; coercionServices = $null; rpcFilterInterfaces = $null; error = '' }
+            $rec = [ordered]@{ dc = "$($dc.hostName)"; systemDrive = $null; freeGB = $null; sizeGB = $null; stoppedServices = @(); spoolerStartMode = $null; spoolerState = $null; webClientStartMode = $null; webClientState = $null; netbiosAdapters = $null; osBuild = $null; osUbr = $null; coercionServices = $null; rpcFilterInterfaces = $null; dsrmAdminLogonBehavior = $null; error = '' }
             $reach = @($healthData.dcReachability | Where-Object { $_.dc -eq "$($dc.hostName)" })[0]
             if ($reach -and -not $reach.reachable) { $rec.error = 'not reachable'; $rec; continue }
             $cs = $null
@@ -1709,6 +1741,13 @@ if (-not $SkipHealth) {
                 try {
                     $ubr = Invoke-CimMethod -CimSession $cs -Namespace 'root/default' -ClassName StdRegProv -MethodName GetDWORDValue -Arguments @{ hDefKey = [uint32]2147483650; sSubKeyName = 'SOFTWARE\Microsoft\Windows NT\CurrentVersion'; sValueName = 'UBR' } -OperationTimeoutSec 20 -ErrorAction Stop
                     if ($ubr -and $ubr.ReturnValue -eq 0) { $rec.osUbr = [int]$ubr.uValue }
+                }
+                catch { }
+                # DSRM admin logon behavior (0/unset = DSRM only, 1 = when AD is stopped, 2 = always).
+                # Read-only registry read; a missing value stays $null (default behavior).
+                try {
+                    $dsrm = Invoke-CimMethod -CimSession $cs -Namespace 'root/default' -ClassName StdRegProv -MethodName GetDWORDValue -Arguments @{ hDefKey = [uint32]2147483650; sSubKeyName = 'SYSTEM\CurrentControlSet\Control\Lsa'; sValueName = 'DsrmAdminLogonBehavior' } -OperationTimeoutSec 20 -ErrorAction Stop
+                    if ($dsrm -and $dsrm.ReturnValue -eq 0) { $rec.dsrmAdminLogonBehavior = [int]$dsrm.uValue }
                 }
                 catch { }
                 $rec.freeGB = [Math]::Round($disk.FreeSpace / 1GB, 1); $rec.sizeGB = [Math]::Round($disk.Size / 1GB, 1)
@@ -1775,7 +1814,7 @@ $snapshot = [ordered]@{
             firstAnswerMs   = $adwsMs
             diagnostics     = $connDiag
         }
-        options         = [ordered]@{ skipSysvol = [bool]$SkipSysvol; skipAcl = [bool]$SkipAcl; skipAdcs = [bool]$SkipAdcs; skipGpo = [bool]$SkipGpo; skipDns = [bool]$SkipDns; skipHealth = [bool]$SkipHealth; deep = [bool]$Deep }
+        options         = [ordered]@{ skipSysvol = [bool]$SkipSysvol; skipAcl = [bool]$SkipAcl; skipAdcs = [bool]$SkipAdcs; skipGpo = [bool]$SkipGpo; skipDns = [bool]$SkipDns; skipHealth = [bool]$SkipHealth; deep = [bool]$Deep; gentle = ($script:ThrottleMs -gt 0); throttleMs = $script:ThrottleMs }
         collectionErrors = $script:Errors.ToArray()
         synthetic        = $false
     }

@@ -85,14 +85,14 @@ works that out by itself.
 | Area | Checks | What's in it |
 |---|---|---|
 | Kerberos | 14 | Kerberoasting, AS-REP roasting, RC4/DES, delegation (unconstrained, constrained, RBCD, orphan targets open to SPN-jacking), krbtgt age, Protected Users |
-| Privileged access | 18 | Tier 0 membership by SID through nesting and primary group, dormant / foreign / computer admins, operator groups, DnsAdmins, RID 500, silos, GPOs making everyone local admin, RODC password replication policy and Tier 0 credentials cached on RODCs |
+| Privileged access | 19 | Tier 0 membership by SID through nesting and primary group, dormant / foreign / computer admins, accounts logging on with a reusable password (no Protected Users, no smart card), operator groups, DnsAdmins, RID 500, silos, GPOs making everyone local admin, RODC password replication policy and Tier 0 credentials cached on RODCs |
 | Account hygiene | 19 | inactive and never-used accounts, passwords not required / never expiring / in descriptions, sIDHistory, LAPS deployment and rotation, obsolete OS |
-| Domain configuration | 28 | password policies and FGPPs, functional level, Recycle Bin, anonymous LDAP, trusts, DNS zones and WPAD records, DC hygiene |
+| Domain configuration | 29 | password policies and FGPPs, functional level, Recycle Bin, tombstone lifetime, anonymous LDAP, trusts, DNS zones and WPAD records, DC hygiene |
 | Permissions | 17 | DCSync rights, dangerous ACEs on Tier 0 (or anywhere with `-Deep`: including write access to logon script, profile path, certificate mapping, account flags and account restrictions, the RBCD attribute), owners, DirSync readers of confidential attributes (SyncLAPSPassword), GPP passwords, script secrets, gMSA and LAPS readers, Shadow Credentials, dMSA creation rights (BadSuccessor), write access to the SCCM System Management container, GPO takeover, GPO scripts and tasks run from shares |
 | Certificate services | 19 | ESC1-5, 9, 10, 13, 15, 17 (WSUS over HTTPS), weak CA keys, expiring CAs; ESC6, 7, 8, 11 and 16 read on the CA itself (admin rights on the CA host), with a manual-look note for any CA that could not be read |
 | Host hardening (GPO) | 40 | SMB/LDAP signing and channel binding, NTLM/LM, WDigest, LSA protection, audit policy, logging, ZeroLogon, LLMNR, mDNS, NBT-NS (live on DCs), null sessions, Spooler, WebClient (GPO and live on DCs), noPac patch level and coercion interfaces (live on DCs), Point and Print (PrintNightmare), cached logons, AlwaysInstallElevated, autologon passwords in GPOs, WSUS over HTTP, RDP (NLA, Restricted Admin), Credential Guard, application control, IPv6 / mitm6, WPAD auto-discovery, Windows Script Host, force logoff |
 | Password quality | 5 | duplicate, empty, default, breached and reversible passwords, without ever handling a hash |
-| Operational health | 9 | replication, backups, DHCP on a DC, FSMO holders, unreachable DCs, clock skew between DCs, disk space and stopped services on DCs |
+| Operational health | 10 | replication, backups, DHCP on a DC, FSMO holders, unreachable DCs, clock skew between DCs, disk space and stopped services on DCs, DSRM administrator logon behavior |
 | **Entra ID** | 90 | MFA (registration, strength, Authenticator settings), Conditional Access (legacy auth, device code, risk, managed devices, locations, token protection, session limits), PIM (standing access, approval, activation and assignment settings, PIM for Groups owners), admins (cloud-only, licences, inactive, emergency access), devices (join, local admins, LAPS, BitLocker), guests, apps (consent, permissions, credential policy), password settings, risky app consents, app owners, groups behind Conditional Access exclusions and admin roles, the Entra Connect app, look-alike app names, credentials on Microsoft apps, sync health, federation, B2B direct connect, access packages and the roles on their catalogs, apps still on the retired Azure AD Graph, workload identity Conditional Access, Intune roles that can run code on devices and Multi Admin Approval for device wipes and scripts (not yet verified on a real tenant); every CIS Microsoft 365 v7 control that Graph can read |
 
 The full list of checks is further down. How they map to CIS, PingCastle, the
@@ -368,10 +368,22 @@ different channel than the file.
 .\Collect-ADSnapshot.ps1 -ListDomainControllers        # the DCs (site, PDC / GC / RODC, ADWS latency), then exit
 .\Collect-ADSnapshot.ps1 -Deep -Credential (Get-Credential)
 .\Collect-ADSnapshot.ps1 -SkipSysvol -SkipAcl -SkipAdcs -SkipGpo -SkipDns -SkipHealth   # lighter
+.\Collect-ADSnapshot.ps1 -Gentle -Deep                 # slower, evener reads on a large or watched domain
 ```
 
 You don't need to run it on a DC. Any domain-joined machine that can reach a DC
 over ADWS (TCP 9389) and SYSVOL over SMB will do. Slow steps show a spinner.
+
+**Gentle pacing (`-Gentle`, or `-ThrottleMs <n>`).** On a large, busy or closely
+monitored domain, `-Gentle` pauses between the heavy reads and every few hundred
+per-object reads, so the collection is read more slowly and evenly: lighter on
+the DC, and kinder to rate-based monitoring of a sanctioned scan. `-ThrottleMs`
+sets the pause (default 200 ms with `-Gentle`). It only changes the pace — the
+same objects are read either way, still read-only over ADWS, and the snapshot
+records it in `meta.options`. It does not change *which* queries are made, so a
+detection keyed on a query's shape rather than its rate is unaffected. The
+launcher offers it as a yes/no on an AD run and in the default settings (`[S]`),
+with the pause in milliseconds as a follow-up field.
 
 `-Server` (alias `-DomainController`) picks the DC, for example the one in your
 site out of twenty; `-ListDomainControllers` shows them, and the guided setup
@@ -692,6 +704,7 @@ particular object.
 | `privileged_inactive` | High | T1078.002 | Inactive privileged account still enabled |
 | `privileged_password_old` | High | T1078.002 | Privileged account password not changed |
 | `privileged_password_never_expires` | Medium | T1078.002 | Privileged account with password never expires |
+| `privileged_logon_unrestricted` | Medium | T1078.002 | Privileged account logs on with a reusable password |
 | `privileged_disabled_member` | Low | T1078.002 | Disabled account in privileged group |
 | `privileged_computer_member` | High | T1078.002 | Computer account in privileged group |
 | `privileged_foreign_member` | High | T1078.002 | Foreign or unresolved principal in privileged group |
@@ -741,6 +754,7 @@ particular object.
 | `sysvol_frs` | Medium |  | SYSVOL still replicated by FRS |
 | `functional_level_outdated` | Medium |  | Outdated domain functional level |
 | `recycle_bin_disabled` | Low |  | AD Recycle Bin not enabled |
+| `tombstone_lifetime_low` | Low |  | Tombstone lifetime below 180 days |
 | `anonymous_ldap_enabled` | High | T1087.002 | Anonymous LDAP operations allowed |
 | `single_dc` | Medium |  | Single domain controller |
 | `dc_obsolete_os` | High | T1210 | Domain controller on old operating system |
@@ -770,6 +784,7 @@ particular object.
 | `replication_stale` | Medium |  | Active Directory replication stale |
 | `ad_backup_overdue` | High |  | Active Directory backup overdue |
 | `dhcp_on_dc` | Medium | T1557 | DHCP server running on a domain controller |
+| `dsrm_logon_behavior` | High | T1078.003 | DSRM administrator allowed to log on |
 
 **Permissions**
 
@@ -1249,10 +1264,10 @@ collections run there, and some bugs only show up there.
   fake Graph.
 - The AI layer is tested offline: no real name in the prompt, the token round
   trip, and invented check IDs being dropped.
-- Reference results: the AD `demo` gives **195 findings** (25 Critical, 77 High,
-  67 Medium, 26 Low) and 17 Tier 0 principals, and 203 with the example
-  password report. `-Deep` gives 200. `partial` gives 185. The Entra tenant
-  gives 93. In total there are **612 assertions**.
+- Reference results: the AD `demo` gives **211 findings** (25 Critical, 78 High,
+  81 Medium, 27 Low) and 17 Tier 0 principals, and 219 with the example
+  password report. `-Deep` gives 216. `partial` gives 201. The Entra tenant
+  gives 93. In total there are **626 assertions**.
 - `tests/lab/` is for a throw-away lab domain, never for production.
   `New-LabAttackPaths.ps1` plants a four-step ACL chain and a few delegation
   findings. It **writes to AD**, asks you to type the domain name first, and has

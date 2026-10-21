@@ -1523,7 +1523,7 @@ function ConvertTo-EntraReportHtml {
     & $w "<title>IDWolf Entra report - $(& $H $tenant)</title>"
     & $w (Get-IDWolfReportCss)
     & $w "<h1 class=`"title`">$(Get-WolfLogoHtml)<span>IDWolf: Entra ID Hygiene Report</span></h1>"
-    & $w "<div class=`"meta`">Tenant <b>$(& $H $tenant)</b> ($(& $H $Snapshot.meta.tenantId)) &middot; snapshot $(& $H $collected.ToString('yyyy-MM-dd HH:mm')) UTC &middot; IDWolf v$ToolVersion &middot; analysis $ElapsedText</div>"
+    & $w "<div class=`"meta`">Tenant <b>$(& $H $tenant)</b> ($(& $H $Snapshot.meta.tenantId)) &middot; snapshot $(& $H $collected.ToString('yyyy-MM-dd HH:mm')) UTC &middot; IDWolf v$ToolVersion &middot; analysis $ElapsedText$(if ($AiResult -and $AiResult.Model) { " &middot; AI $(& $H $AiResult.Model)$(if ($AiResult.AiElapsedText) { " in $(& $H $AiResult.AiElapsedText)" })" })</div>"
     if ($Snapshot.meta.synthetic) { & $w '<blockquote>Synthetic snapshot for testing. No real tenant data.</blockquote>' }
     & $w (Get-ReportTabsHtml)
 

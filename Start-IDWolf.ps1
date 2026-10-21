@@ -209,15 +209,20 @@ function ConvertTo-YN { param($Answer) if (Test-Yes $Answer) { return 'y' } retu
 
 # Collections (1, 2, 3, 5): the questions first, then every answer on one screen
 # (Edit-RunSettings, lib\Wizard.ps1) to check or change before anything runs. Enter starts.
+# Labels carry an [AD] / [Entra] prefix for the settings that apply to one kind of collection
+# only; the shared ones (output, "then", AI step) have none. It reads clearest on the default-
+# settings screen ([S]), where AD and Entra settings sit together.
 $script:RunLabels = @{
-    Server     = 'Domain controller (empty = auto)'
+    Server     = '[AD] Domain controller (empty = auto)'
     OutFile    = 'Snapshot output path'
-    Deep       = 'Deep collection'
-    Pq         = 'Password quality (DCSync rights)'
-    PqOut      = 'Password-quality output path'
-    WeakList   = 'Weak/breached password list'
-    Tenant     = 'Tenant (empty = sign-in default)'
-    DeviceCode = 'Device-code sign-in'
+    Deep       = '[AD] Deep collection'
+    Gentle     = '[AD] Gentle pacing (slower, lighter on the DC)'
+    ThrottleMs = '[AD] Gentle pause (ms)'
+    Pq         = '[AD] Password quality (DCSync rights)'
+    PqOut      = '[AD] Password-quality output path'
+    WeakList   = '[AD] Weak/breached password list'
+    Tenant     = '[Entra] Tenant (empty = sign-in default)'
+    DeviceCode = '[Entra] Device-code sign-in'
     Next       = 'Then (A analyze, Z zip, S stop)'
     OutHtml    = 'Report HTML path'
     Ai         = 'AI summary (S skip, A ask, D dry-run)'
@@ -226,7 +231,7 @@ $script:RunLabels = @{
 }
 # Settings that are remembered for next time; output paths are new on every run. A single
 # collection (3, 5) starts from "Then = S" whatever was answered last, and doesn't save it.
-$script:RunRemembered = @('Server', 'Deep', 'Pq', 'WeakList', 'Tenant', 'DeviceCode', 'Next', 'Ai', 'Model', 'AiAttempts')
+$script:RunRemembered = @('Server', 'Deep', 'Gentle', 'ThrottleMs', 'Pq', 'WeakList', 'Tenant', 'DeviceCode', 'Next', 'Ai', 'Model', 'AiAttempts')
 $script:SingleStep = $false
 function Save-RunSetting {
     param([string]$Key, $Value)
@@ -266,9 +271,10 @@ function Confirm-RunSettings {
     param($S, [bool]$Joined = $true)
     # The DC is picked from the list (or typed there); a new one gets its connection tested.
     $pickers = @{ Server = { param($Cur) Select-DomainController -Current $Cur -Credential $script:Credential } }
-    return Edit-RunSettings -Settings $S -Labels $script:RunLabels -YesNo @('Deep', 'Pq', 'DeviceCode') -Choices @{ Next = @('A', 'Z', 'S'); Ai = @('S', 'A', 'D') } -Pickers $pickers `
+    return Edit-RunSettings -Settings $S -Labels $script:RunLabels -YesNo @('Deep', 'Gentle', 'Pq', 'DeviceCode') -Choices @{ Next = @('A', 'Z', 'S'); Ai = @('S', 'A', 'D') } -Pickers $pickers `
         -Visible ({ param($Key, $Set)
             if (@('Pq', 'PqOut', 'WeakList') -contains $Key -and -not $Joined) { return $false }
+            if ($Key -eq 'ThrottleMs' -and $Set.Gentle -ne 'y') { return $false }
             if (@('PqOut', 'WeakList') -contains $Key -and $Set.Pq -ne 'y') { return $false }
             if (@('OutHtml', 'Ai', 'Model', 'AiAttempts') -contains $Key -and $Set.Next -ne 'A') { return $false }
             if (@('Model', 'AiAttempts') -contains $Key -and $Set.Ai -ne 'A') { return $false }
@@ -296,6 +302,8 @@ function Edit-DefaultSettings {
     $s = [ordered]@{
         Server     = & $get 'Server' ''
         Deep       = ConvertTo-YN (& $get 'Deep' 'n')
+        Gentle     = ConvertTo-YN (& $get 'Gentle' 'n')
+        ThrottleMs = & $get 'ThrottleMs' '200'
         Pq         = ConvertTo-YN (& $get 'Pq' 'n')
         WeakList   = & $get 'WeakList' ''
         Tenant     = & $get 'Tenant' ''
@@ -307,8 +315,9 @@ function Edit-DefaultSettings {
     }
     Write-Host "`nDefault settings: every collection asks whether to use them, then shows them on its settings screen; an analysis on its own (6) offers their AI step. Output paths are new on every run." -ForegroundColor Cyan
     $pickers = @{ Server = { param($Cur) Select-DomainController -Current $Cur -Credential $script:Credential } }
-    $ok = Edit-RunSettings -Settings $s -Labels $script:RunLabels -YesNo @('Deep', 'Pq', 'DeviceCode') -Choices @{ Next = @('A', 'Z', 'S'); Ai = @('S', 'A', 'D') } -Pickers $pickers -Confirm 'save' `
+    $ok = Edit-RunSettings -Settings $s -Labels $script:RunLabels -YesNo @('Deep', 'Gentle', 'Pq', 'DeviceCode') -Choices @{ Next = @('A', 'Z', 'S'); Ai = @('S', 'A', 'D') } -Pickers $pickers -Confirm 'save' `
         -Visible { param($Key, $Set)
+            if ($Key -eq 'ThrottleMs' -and $Set.Gentle -ne 'y') { return $false }
             if ($Key -eq 'WeakList' -and $Set.Pq -ne 'y') { return $false }
             if (@('Ai', 'Model', 'AiAttempts') -contains $Key -and $Set.Next -ne 'A') { return $false }
             if (@('Model', 'AiAttempts') -contains $Key -and $Set.Ai -ne 'A') { return $false }
@@ -331,6 +340,7 @@ function Format-DefaultSettings {
     else {
         $parts += "DC $(if ($D.Server) { $D.Server } else { 'automatic' })"
         $parts += "deep $(& $yn $D.Deep)"
+        if (Test-Yes $D.Gentle) { $parts += "gentle pacing$(if ($D.ThrottleMs) { " ($($D.ThrottleMs) ms)" })" }
         $parts += "password quality $(& $yn $D.Pq)"
     }
     $next = ConvertTo-NextChoice $D.Next
@@ -564,6 +574,8 @@ function Invoke-AdRun {
     # Timestamped file, so a re-run never overwrites the last snapshot.
     $s.OutFile = Read-NewPath "AD snapshot output path" ("output\adsnap_{0}.json" -f (Ts))
     $s.Deep = ConvertTo-YN (Read-Remembered 'Deep' "Deep collection? (y/n)" 'n')
+    $s.Gentle = ConvertTo-YN (Read-Remembered 'Gentle' "Gentle pacing? Slower, but lighter on the DC and kinder to rate-based monitoring (y/n)" 'n')
+    $s.ThrottleMs = if ($s.Gentle -eq 'y') { Read-Remembered 'ThrottleMs' "  Pause in milliseconds at each pacing point" '200' } else { $tms = Get-RunDefault 'ThrottleMs'; if ($tms) { $tms } else { '200' } }
     # Separate on purpose: it reads password hashes, the AD collection never does.
     $s.Pq = 'n'
     if ($Full -and $joined) { $s.Pq = ConvertTo-YN (Read-Remembered 'Pq' "Also collect password quality? Needs DSInternals and DCSync rights; run from the DC or a trusted admin host (y/n)" 'n') }
@@ -584,6 +596,7 @@ function Invoke-AdRun {
     $p = @{ OutFile = $s.OutFile } + (Get-CredParams)
     if ($s.Server) { $p['Server'] = $s.Server }
     if ($s.Deep -eq 'y') { $p['Deep'] = $true }
+    if ($s.Gentle -eq 'y') { $t = 0; [void][int]::TryParse("$($s.ThrottleMs)", [ref]$t); if ($t -gt 0) { $p['ThrottleMs'] = $t } else { $p['Gentle'] = $true } }
     Invoke-Sub 'Collect-ADSnapshot.ps1' $p
     if (-not (Test-Path -LiteralPath $s.OutFile)) { Write-Host "Snapshot not produced; see messages above." -ForegroundColor Red; return }
     Write-Host "`nSnapshot ready: $($s.OutFile)" -ForegroundColor Green

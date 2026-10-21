@@ -902,7 +902,7 @@ function ConvertTo-ReportHtml {
     & $w (Get-IDWolfReportScript)
     & $w '</head><body>'
     & $w "<h1 class=`"title`">$(Get-WolfLogoHtml)<span>IDWolf: Active Directory Hygiene Report</span></h1>"
-    & $w "<div class=`"meta`">Domain <b>$(& $H $Snapshot.domain.dnsRoot)</b> ($(& $H $Snapshot.domain.netbios)) &middot; forest $(& $H $Snapshot.domain.forestName) &middot; snapshot $(& $H $collected.ToString('yyyy-MM-dd HH:mm')) UTC by $(& $H $Snapshot.meta.collectedBy) from $(& $H $Snapshot.meta.collectedFrom)$(if ($Snapshot.meta.connection -and $Snapshot.meta.connection.servedBy) { " via $(& $H $Snapshot.meta.connection.servedBy)" }) &middot; IDWolf v$ToolVersion &middot; analysis $ElapsedText</div>"
+    & $w "<div class=`"meta`">Domain <b>$(& $H $Snapshot.domain.dnsRoot)</b> ($(& $H $Snapshot.domain.netbios)) &middot; forest $(& $H $Snapshot.domain.forestName) &middot; snapshot $(& $H $collected.ToString('yyyy-MM-dd HH:mm')) UTC by $(& $H $Snapshot.meta.collectedBy) from $(& $H $Snapshot.meta.collectedFrom)$(if ($Snapshot.meta.connection -and $Snapshot.meta.connection.servedBy) { " via $(& $H $Snapshot.meta.connection.servedBy)" }) &middot; IDWolf v$ToolVersion &middot; analysis $ElapsedText$(if ($AiResult -and $AiResult.Model) { " &middot; AI $(& $H $AiResult.Model)$(if ($AiResult.AiElapsedText) { " in $(& $H $AiResult.AiElapsedText)" })" })</div>"
     if ($Snapshot.meta.synthetic) {
         & $w '<blockquote>Synthetic snapshot generated for testing and demonstration. No real directory data.</blockquote>'
     }

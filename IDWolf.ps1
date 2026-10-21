@@ -517,13 +517,16 @@ if ("$($snap.meta.kind)" -eq 'entra') {
             else { Write-Host "AI prompt kept at $promptFile" }
             if ($go -and -not $ApiKey) { $ApiKey = Request-GeminiApiKey }
             if ($go -and $ApiKey) {
+                $aiSw = [System.Diagnostics.Stopwatch]::StartNew()
                 $call = Invoke-AiAnalysisWithFallback -UserPrompt $prompt -ApiKey $ApiKey -Model $Model -MaxAttempts $AiMaxAttempts -ReportPath $htmlFull
+                $aiSw.Stop()
                 $raw = $call.Raw
                 if ($raw) {
                     $responseFile = Get-AiSidecarPath $htmlFull '_ai_response.json'
                     Write-AiResponseFile -Path $responseFile -Raw $raw
                     Write-Host "Gemini reply (still pseudonymized) kept at $responseFile"
                     $eAi = ConvertFrom-AiResponse -Raw $raw -Pz $pz -Findings $eActive -Model $Model -Variant $call.Variant
+                    $eAi | Add-Member -NotePropertyName AiElapsedText -NotePropertyValue ("{0:N1}s" -f $aiSw.Elapsed.TotalSeconds) -Force
                 }
             }
             elseif ($go) { Write-Host 'No API key given (-ApiKey / GEMINI_API_KEY), nothing sent; skipping AI.' -ForegroundColor Yellow }
@@ -670,13 +673,17 @@ function Invoke-AdAiStep {
     if (-not $ApiKey) { $ApiKey = Request-GeminiApiKey }
     if (-not $ApiKey) { Write-Host 'No API key given (-ApiKey or GEMINI_API_KEY), nothing sent. Deterministic report kept as is.' -ForegroundColor Yellow; return }
 
+    # Total Gemini wall time, retries and defensive fallback included: shown in the report header.
+    $aiSw = [System.Diagnostics.Stopwatch]::StartNew()
     $call = Invoke-AiAnalysisWithFallback -UserPrompt $userPrompt -ApiKey $ApiKey -Model $Model -MaxAttempts $AiMaxAttempts -ReportPath $htmlFull
+    $aiSw.Stop()
     $raw = $call.Raw
     if (-not $raw) { Write-Host "AI step failed; deterministic report kept at $OutHtml." -ForegroundColor Yellow; return }
     $responseFile = Get-AiSidecarPath $htmlFull '_ai_response.json'
     Write-AiResponseFile -Path $responseFile -Raw $raw
     Write-Host "Gemini reply (still pseudonymized) kept at $responseFile"
     $aiResult = ConvertFrom-AiResponse -Raw $raw -Pz $pz -Findings $active -Model $Model -Variant $call.Variant
+    $aiResult | Add-Member -NotePropertyName AiElapsedText -NotePropertyValue ("{0:N1}s" -f $aiSw.Elapsed.TotalSeconds) -Force
 
     $html = ConvertTo-ReportHtml -Snapshot $snap -Index $index -PrivMap $privMap -Split $split -Score $score `
         -NotEvaluated $notEvaluated -Comparison $comparison -Config $config -ToolVersion $script:IDWolfVersion -ElapsedText $elapsedText -AiResult $aiResult

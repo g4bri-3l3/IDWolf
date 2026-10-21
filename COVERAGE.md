@@ -114,6 +114,8 @@ by score. Rule list: pingcastle.com, engine 3.3.
 | Exchange privileges (PrivExchange, Exchange Windows Permissions) | Yes `dangerous_ace_tier0` (WriteDacl on the domain head or on Tier 0 groups, as for any non-Tier 0 principal) |
 | SID history abuse, cross-forest trust tickets | Yes `sid_history`, `trust_sid_filtering_disabled`, `trust_tgt_delegation`, `trust_no_selective_auth`, `trust_rc4` |
 | Golden / Silver Ticket | Yes `krbtgt_password_old`, `dc_password_old`; the forging itself Out |
+| DSRM admin persistence (DC local admin logon) | Live `dsrm_logon_behavior` (DsrmAdminLogonBehavior=2 on a DC) |
+| Tier 0 accounts authenticating with a reusable password | Yes `privileged_logon_unrestricted` (not in Protected Users, no smart card required) |
 | Local admin password reuse | Partial `laps_not_deployed`, `laps_missing` (the condition, not the reuse) |
 | Writable shares | Yes `sysvol_writable` (NETLOGON and SYSVOL Policies); Partial `gpo_runs_code_from_share`; other shares Out (they need a connection to every machine) |
 | MSSQL, DCOM, RDP and WinRM rights, sessions on each host | Out (a live connection to every host); accounts with MSSQLSvc SPNs are covered by the Kerberoasting checks |
@@ -133,6 +135,8 @@ The DC health checks that fit a read-only snapshot taken from a workstation:
 | Free disk space | Yes `dc_low_disk` (CIM, needs admin rights on the DCs) |
 | Critical services running | Yes `dc_service_stopped` (CIM, needs admin rights on the DCs) |
 | Last backup | Yes `ad_backup_overdue` |
+| Recovery window (tombstone lifetime) | Yes `tombstone_lifetime_low` (below 180 days, so an older backup can no longer be restored authoritatively) |
+| DSRM administrator logon behavior | Yes `dsrm_logon_behavior` (CIM registry read, needs admin rights on the DCs) |
 | `dcdiag` | Not used: its output is translated (Italian, German...) and too fragile to parse reliably |
 | Uptime, NTDS.dit size, DNS client settings of the DC | Not used: little security value, or needs remote registry |
 
