@@ -45,6 +45,11 @@
     AD collections ask, with L to pick from the list of DCs. [D] in the menu lists the DCs and
     tests the connection to one.
 
+.PARAMETER NoUpdateCheck
+    Don't ask GitHub whether a newer IDWolf is out (IDWOLF_NO_UPDATE_CHECK=1 does the same).
+    The check is one GET to the public tag list at start, a few seconds at most and silent
+    offline; it only says so, it never downloads or changes anything.
+
 .EXAMPLE
     .\Start-IDWolf.ps1 -Credential (Get-Credential)
 .EXAMPLE
@@ -55,7 +60,8 @@
 Param(
     [System.Management.Automation.PSCredential]$Credential,
     [Alias('DomainController')]
-    [string]$Server = ''
+    [string]$Server = '',
+    [switch]$NoUpdateCheck
 )
 
 $ErrorActionPreference = 'Stop'
@@ -63,6 +69,7 @@ $root = $PSScriptRoot
 . (Join-Path $root 'lib\Bundle.ps1')
 . (Join-Path $root 'lib\Wizard.ps1')
 . (Join-Path $root 'lib\Connection.ps1')
+. (Join-Path $root 'lib\Update.ps1')
 $script:ServerOverride = $Server
 
 # "Run as administrator" starts in C:\Windows\System32, and the default paths below are
@@ -72,13 +79,15 @@ if ($env:windir -and (Get-Location).Path.TrimEnd('\').StartsWith($env:windir.Tri
     Write-Host "Working folder: $root (started in the Windows folder, as an elevated window does)." -ForegroundColor DarkGray
 }
 
+# The version lives in IDWolf.ps1 only; read it from there so the two never drift.
+$script:LauncherVersion = ''
+try {
+    $m = Select-String -LiteralPath (Join-Path $root 'IDWolf.ps1') -Pattern '^\s*\$script:IDWolfVersion\s*=\s*"([^"]+)"' | Select-Object -First 1
+    if ($m) { $script:LauncherVersion = $m.Matches[0].Groups[1].Value }
+} catch { }
+
 function Show-Banner {
-    # The version lives in IDWolf.ps1 only; read it from there so the two never drift.
-    $ver = ''
-    try {
-        $m = Select-String -LiteralPath (Join-Path $root 'IDWolf.ps1') -Pattern '^\s*\$script:IDWolfVersion\s*=\s*"([^"]+)"' | Select-Object -First 1
-        if ($m) { $ver = 'v' + $m.Matches[0].Groups[1].Value }
-    } catch { }
+    $ver = if ($script:LauncherVersion) { 'v' + $script:LauncherVersion } else { '' }
     $b = @'
 ######################################################################
 #                      .
@@ -634,6 +643,7 @@ function Invoke-EntraRun {
 }
 
 Show-Banner
+Show-IDWolfUpdateNotice -Current $script:LauncherVersion -Root $root -Disabled:$NoUpdateCheck
 
 # This window, checked once: on a DC a window that is not elevated collects like a standard
 # user, whatever the account (UAC filters the admin groups out of its token). The launcher

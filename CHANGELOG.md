@@ -2,6 +2,12 @@
 
 ## 1.7 - 2026-10-23
 
+- Launcher: version check at start. `Start-IDWolf.ps1` asks GitHub for the repository's tag
+  list (one GET to `api.github.com`, no account, at most 3 seconds, silent offline) and, when a
+  newer `vX.Y` is out, says which and how to get it: `git pull` on a clone, the release page
+  otherwise. It never downloads or changes anything (the reviewed copy is the one that runs).
+  Off with `-NoUpdateCheck` or `IDWOLF_NO_UPDATE_CHECK=1`; the analyzer, the collectors and
+  `Invoke-IDWolfScheduled.ps1` never check. The safety review now allows `api.github.com`.
 - New AD checks (3): `dsrm_logon_behavior` (High) flags a DC where DsrmAdminLogonBehavior = 2, so
   the DSRM local administrator can log on while the DC runs normally (Tier 0 persistence; read
   over CIM, needs admin on the DCs); `tombstone_lifetime_low` (Low) flags a tombstone lifetime

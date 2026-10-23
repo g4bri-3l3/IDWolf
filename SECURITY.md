@@ -54,7 +54,10 @@ real directory data in the report.
   connect to the ports a collection uses, closed at once without sending anything; these LDAP
   reads use 389, or LDAPS on 636 when only that port answers, with the DC's certificate checked
   by Windows, never ignored),
-  `graph.microsoft.com` for the Entra collector, and
+  `graph.microsoft.com` for the Entra collector, `api.github.com` for the
+  launcher's version check (one GET of the public tag list at start, nothing about
+  you or the directory in it; off with `-NoUpdateCheck` or
+  `IDWOLF_NO_UPDATE_CHECK=1`), and
   Gemini only if you say yes (or pass `-SendToAI`), after every name has been
   replaced by a token. The exact text is saved next to the report
   (`<report>_ai_prompt.txt`) before you're asked, and the reply after
@@ -68,6 +71,10 @@ real directory data in the report.
   snapshot. They never run on their own, nothing else calls them, they ask you
   to type the domain name before changing anything, and the safety review
   doesn't cover `tests\`. Delete the folder if you don't want them on a server.
+- **Never updates itself.** The version check only says that a newer
+  release exists and how to get it (`git pull`, or the release zip); it
+  downloads nothing, so the copy you reviewed is the one that runs. Review the
+  new copy again after updating.
 - **Installs something only if you ask**: RSAT, the Graph authentication module
   or DSInternals, each with a prompt or `-InstallModules`.
 - **No secrets in the output.** Passwords found in descriptions are masked at
@@ -98,8 +105,9 @@ real directory data in the report.
    It flags any command that would change AD, Entra, DNS, DHCP or GPOs, any
    command nobody reviewed, run-time code tricks (`iex`, Base64, encoded
    commands, downloads, `Start-Process`, scheduled tasks), Graph requests that
-   aren't GET, and web addresses other than Microsoft Graph, Gemini and the
-   MITRE links in the report. The one command that opens a file with its
+   aren't GET, and web addresses other than Microsoft Graph, Gemini, the
+   GitHub tag list (the launcher's version check) and the MITRE links in the
+   report. The one command that opens a file with its
    default program, `Invoke-Item`, is allowed only in `lib\Wizard.ps1`, which
    uses it to open the `.html` report the run has just written, after asking.
    The regression suite checks that it really catches these, on a
@@ -142,7 +150,8 @@ real directory data in the report.
   the DCs, any change shows up as event 5136, 5137, 5139 or 5141. Filter by the
   account that ran IDWolf: there should be none.
 - **Network.** Firewall or EDR logs should show only the DC, plus
-  `graph.microsoft.com` for Entra and Gemini if you agreed to it. The connection
+  `graph.microsoft.com` for Entra, Gemini if you agreed to it, and one
+  request to `api.github.com` each time the launcher starts (unless turned off). The connection
   test before a collection opens and closes a TCP connection to nine ports of that
   DC (and to 9389 on every DC when you ask for the list): expect those, a network
   sensor may report them as a small port probe.

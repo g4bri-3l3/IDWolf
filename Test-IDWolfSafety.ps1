@@ -17,7 +17,8 @@
       - a Graph request that isn't a GET;
       - a CIM method call other than reading the registry (StdRegProv Get*/Enum*);
       - Invoke-Item anywhere but lib\Wizard.ps1 (which only opens the .html report);
-      - a web address in the code other than Microsoft Graph, Gemini and the
+      - a web address in the code other than Microsoft Graph, Gemini, the
+        GitHub tag list (the launcher's version check) and the
         MITRE links in the report.
 
 .PARAMETER Path
@@ -71,7 +72,7 @@ $bannedText = [ordered]@{
     'Compiled C# at run time'  = '(?i)Add-Type\s+-TypeDefinition|Add-Type\s+-MemberDefinition'
     'Hidden window'            = '(?i)-WindowStyle\s+Hidden'
 }
-$allowedHosts = @('graph.microsoft.com', 'generativelanguage.googleapis.com', 'attack.mitre.org')
+$allowedHosts = @('graph.microsoft.com', 'generativelanguage.googleapis.com', 'attack.mitre.org', 'api.github.com')
 
 $root = (Resolve-Path -LiteralPath $Path).Path
 $files = @(Get-ScriptFiles $root | Where-Object { $_.FullName -notmatch '\\(tests|examples)\\' -and $_.Name -ne 'Test-IDWolfSafety.ps1' })
@@ -156,7 +157,7 @@ if (-not $Quiet) {
     foreach ($w in $writes) { Write-Host "  $w" -ForegroundColor DarkGray }
     Write-Host "`nWeb addresses in the code:" -ForegroundColor Cyan
     foreach ($h in $urls.Keys | Sort-Object) { Write-Host ("  {0,-36} {1}" -f $h, ($urls[$h] -join ', ')) -ForegroundColor DarkGray }
-    Write-Host "  (Graph only from Collect-EntraSnapshot.ps1; Gemini only after you agree, or with -SendToAI.)" -ForegroundColor DarkGray
+    Write-Host "  (Graph only from Collect-EntraSnapshot.ps1; Gemini only after you agree, or with -SendToAI; GitHub only for the launcher's version check, GET, off with -NoUpdateCheck.)" -ForegroundColor DarkGray
     Write-Host ""
 }
 

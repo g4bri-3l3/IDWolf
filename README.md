@@ -225,6 +225,13 @@ Secure Score are the closest free point-in-time comparisons.
 .\Start-IDWolf.ps1 -Server dc07.corp.local      # same, collecting from that domain controller
 ```
 
+On start the launcher asks GitHub whether a newer IDWolf is out (one GET to the
+repository's public tag list, at most 3 seconds, silent offline) and, if so, says
+which version and how to get it: `git pull` on a clone, the release page otherwise.
+It never downloads or changes anything itself, so the copy you reviewed stays the
+one that runs. `-NoUpdateCheck` or `IDWOLF_NO_UPDATE_CHECK=1` turns it off; the
+analyzer, the collectors and scheduled runs never check.
+
 Snapshots, reports and packages go to an `output` folder under the current
 directory unless you give a path yourself. The menu and the analyzer also look
 there for snapshots to offer, newest first. Started "as administrator", a window
@@ -441,6 +448,7 @@ collectors talk to anything. `IDWolf.ps1`, the analysis, needs no network at all
 | a DC (or any host with the rights) | a DC | RPC (TCP 135 and the dynamic range) | `Export-PasswordQuality.ps1`: replication (DCSync) of the account data. Not needed with an offline `ntds.dit` | no password-quality report |
 | the Entra collector | `login.microsoftonline.com`, `graph.microsoft.com` | TCP 443 | sign-in and read-only Graph (`-UseDeviceCode` also needs a browser on any machine to `microsoft.com/devicelogin`) | no Entra snapshot |
 | the analysis machine | `generativelanguage.googleapis.com` (or `IDWOLF_GEMINI_BASEURL`) | TCP 443 | the optional Gemini step, only if you answer yes | no AI summary; the report is unaffected |
+| the launcher | `api.github.com` | TCP 443 | version check at start: one GET of the public tag list (off with `-NoUpdateCheck`) | no update notice; nothing else changes |
 | the machine installing modules | the PowerShell Gallery | TCP 443 | RSAT, Graph or DSInternals, only if you ask for the install | install by hand, or copy the module over |
 
 A proxy that asks for credentials will stop the Gemini and Graph calls, so set

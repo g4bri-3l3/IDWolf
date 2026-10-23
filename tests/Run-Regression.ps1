@@ -1445,6 +1445,24 @@ Assert-True (@($jlFind | Where-Object { @($_.controls).Count -eq 0 }).Count -eq 
 $jlCsv = @(Import-Csv (Join-Path $tmp 'jl.csv'))
 Assert-True (@($jlCsv | Where-Object { -not $_.Controls }).Count -eq 0) 'csv: Controls column filled'
 
+# ------------------------------------------------------------ launcher version check (no network here)
+Write-Host "[update]"
+. (Join-Path $root 'lib\Update.ps1')
+$tagsJson = '[{"name":"v1.6"},{"name":"v1.10"},{"name":"v1.9"},{"name":"latest"},{"name":"v2.0-beta"}]'
+Assert-True ((Get-IDWolfLatestTag -TagsJson $tagsJson) -eq [version]'1.10') 'update: highest vX.Y tag wins, compared as a version (1.10 > 1.9), other tags ignored'
+Assert-True ((Get-IDWolfLatestTag -TagsJson '[{"name":"v1.7"}]') -eq [version]'1.7' -and $null -eq (Get-IDWolfLatestTag -TagsJson 'not json') -and $null -eq (Get-IDWolfLatestTag -TagsJson '[]')) 'update: one tag, no tag and an unreadable answer'
+$nGit = @(Get-IDWolfUpdateNotice -Current '1.7' -Latest ([version]'1.8') -IsGitClone $true)
+$nZip = @(Get-IDWolfUpdateNotice -Current '1.7' -Latest ([version]'1.8'))
+Assert-True ($nGit.Count -eq 2 -and $nGit[0] -match 'v1\.8 \(this copy is v1\.7\)' -and $nGit[1] -match 'git pull' -and $nZip[1] -match 'releases/tag/v1\.8' -and $nZip[1] -notmatch 'git pull') 'update: a newer tag is announced, with git pull on a clone and the release page otherwise'
+Assert-True (@(Get-IDWolfUpdateNotice -Current '1.7' -Latest ([version]'1.7')).Count -eq 0 -and @(Get-IDWolfUpdateNotice -Current '1.8' -Latest ([version]'1.7')).Count -eq 0 -and @(Get-IDWolfUpdateNotice -Current '1.7' -Latest $null).Count -eq 0) 'update: same, older or unknown latest version says nothing'
+$swU = [System.Diagnostics.Stopwatch]::StartNew()
+$deadU = Get-IDWolfLatestVersion -Uri 'http://127.0.0.1:9/' -TimeoutMs 1500
+Assert-True ($null -eq $deadU -and $swU.ElapsedMilliseconds -lt 5000) "update: no answer is silent and bounded ($($swU.ElapsedMilliseconds) ms)"
+$oldNoUpd = $env:IDWOLF_NO_UPDATE_CHECK; $env:IDWOLF_NO_UPDATE_CHECK = '1'
+$updOut = Show-IDWolfUpdateNotice -Current '0.1' -Root $root 6>&1 | Out-String
+Assert-True (-not $updOut.Trim()) 'update: IDWOLF_NO_UPDATE_CHECK=1 turns the check off'
+# Left on for the launcher runs below: they must not depend on GitHub.
+
 # ------------------------------------------------------------ wizard: remembered choices, open the report
 Write-Host "[wizard]"
 $oldStateDir = $env:IDWOLF_STATE_DIR
@@ -1672,7 +1690,7 @@ try {
     }
     finally { Pop-Location }
 }
-finally { $env:IDWOLF_STATE_DIR = $oldStateDir; $env:GEMINI_API_KEY = $oldGeminiKey }
+finally { $env:IDWOLF_STATE_DIR = $oldStateDir; $env:GEMINI_API_KEY = $oldGeminiKey; $env:IDWOLF_NO_UPDATE_CHECK = $oldNoUpd }
 
 # ------------------------------------------------------------ safety review
 Write-Host "[safety]"
