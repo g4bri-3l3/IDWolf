@@ -195,6 +195,7 @@ $script:MitreTechniqueNames = @{
     'T1557.001' = 'Adversary-in-the-Middle: LLMNR/NBT-NS Poisoning and SMB Relay'
     'T1558'     = 'Steal or Forge Kerberos Tickets'
     'T1558.001' = 'Steal or Forge Kerberos Tickets: Golden Ticket'
+    'T1558.002' = 'Steal or Forge Kerberos Tickets: Silver Ticket'
     'T1558.003' = 'Steal or Forge Kerberos Tickets: Kerberoasting'
     'T1558.004' = 'Steal or Forge Kerberos Tickets: AS-REP Roasting'
     'T1562.002' = 'Impair Defenses: Disable Windows Event Logging'

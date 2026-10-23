@@ -25,6 +25,10 @@ $script:HostCheckCatalog = [ordered]@{
         Title = 'Weak LM/NTLM compatibility level'
         Description = 'LmCompatibilityLevel is below 5, so the DCs may accept LM/NTLMv1 authentication, which is weak and relayable.'
         Remediation = 'Set "Network security: LAN Manager authentication level" to "Send NTLMv2 response only. Refuse LM & NTLM" (level 5) after auditing NTLMv1 usage.' }
+    ntlm_not_restricted = @{ Category = 'Host Hardening'; Severity = 'Low'; Mitre = 'T1550.002'; Needs = @('gpo')
+        Title = 'NTLM neither audited nor restricted on domain controllers'
+        Description = 'No GPO on the DCs turns on "Restrict NTLM" auditing or blocking (AuditNTLMInDomain, RestrictNTLMInDomain, AuditReceivingNTLMTraffic, RestrictReceivingNTLMTraffic). Nobody can tell which systems still use NTLM, so it can never be switched off, and pass-the-hash and NTLM relay stay possible everywhere.'
+        Remediation = 'Enable "Network security: Restrict NTLM: Audit NTLM authentication in this domain" (Enable all) and "Audit incoming NTLM traffic" on the DCs, review the NTLM operational log, then deny NTLM for the servers and accounts that no longer need it (Tier 0 first).' }
     dangerous_privilege_right = @{ Category = 'Host Hardening'; Severity = 'High'; Mitre = 'T1078.002'; Needs = @('gpo')
         Title = 'Sensitive privilege granted to a non-privileged principal on DCs'
         Description = 'A GPO on the Domain Controllers OU grants a Tier 0 equivalent user right (SeDebug, SeBackup/Restore, SeTakeOwnership, SeTcb, SeLoadDriver, SeEnableDelegation, "Log on as a batch/service") to a principal that is not a default Tier 0 group.'
@@ -162,6 +166,10 @@ $script:HostCheckCatalog = [ordered]@{
         Title = 'Kerberos armoring (FAST) not enforced on domain controllers'
         Description = 'EnableCbacAndArmor / the KDC "fail unarmored" setting is not enforced, so Kerberos pre-authentication is not protected by FAST and remains exposed to AS-REP roasting and some downgrade attacks.'
         Remediation = 'Once the functional level and clients support it, enable KDC support for claims/armoring and require armored requests via GPO.' }
+    kerberos_ticket_lifetime_long = @{ Category = 'Kerberos'; Severity = 'Low'; Mitre = 'T1558'; Needs = @('gpo', 'gpo.kerberos')
+        Title = 'Kerberos ticket lifetimes longer than the defaults'
+        Description = 'The domain Kerberos policy (a GPO linked to the domain root, normally the Default Domain Policy) lets tickets live longer than the defaults: user tickets 10 hours, renewal 7 days, service tickets 600 minutes. A stolen or forged ticket stays usable for longer, and disabling an account takes longer to bite.'
+        Remediation = 'Set "Maximum lifetime for user ticket" back to 10 hours or less, "Maximum lifetime for user ticket renewal" to 7 days or less and "Maximum lifetime for service ticket" to 600 minutes or less in the Default Domain Policy.' }
     point_and_print_unsafe = @{ Category = 'Host Hardening'; Severity = 'High'; Mitre = 'T1068'; Needs = @('gpo')
         Title = 'Point and Print lets non-admins install printer drivers (PrintNightmare)'
         Description = 'An effective GPO sets RestrictDriverInstallationToAdministrators to 0, which undoes the August 2021 PrintNightmare fix (CVE-2021-34527): any user can install a printer driver, and a malicious driver runs as SYSTEM. With NoWarningNoElevationOnInstall = 1 or UpdatePromptSettings set to skip the prompt, it happens silently.'
@@ -335,6 +343,30 @@ function Invoke-GpoChecks {
     $lmcompat = Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Control\Lsa\LmCompatibilityLevel')
     if ($null -ne $lmcompat -and $lmcompat -lt 5) {
         Add-Finding -Type ntlm_weak_lmcompat -Object $dcLabel -ObjectType 'gpo' -Detail "LmCompatibilityLevel = $lmcompat (5 = NTLMv2 only, refuse LM & NTLM)."
+    }
+    # Restrict NTLM: any audit or block setting above 0 means someone is watching NTLM.
+    $ntlmKeys = @('MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\AuditNTLMInDomain', 'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\RestrictNTLMInDomain',
+        'MACHINE\System\CurrentControlSet\Control\Lsa\MSV1_0\AuditReceivingNTLMTraffic', 'MACHINE\System\CurrentControlSet\Control\Lsa\MSV1_0\RestrictReceivingNTLMTraffic')
+    if (-not @($ntlmKeys | Where-Object { (Get-RegInt (Get-EffectiveRegValue $order $_)) -gt 0 }).Count) {
+        Add-Finding -Type ntlm_not_restricted -Object $dcLabel -ObjectType 'gpo' -Detail 'No effective GPO sets AuditNTLMInDomain, RestrictNTLMInDomain, AuditReceivingNTLMTraffic or RestrictReceivingNTLMTraffic.'
+    }
+    # Kerberos policy is a domain setting: only GPOs linked to the domain root apply.
+    if (@($gpo.gpos | Where-Object { $_ -and (Test-Member2 $_ 'kerberosPolicy') }).Count) {
+        $byGuid = @{}; foreach ($g in @($gpo.gpos)) { $byGuid["$($g.guid)".ToUpper()] = $g }
+        $rootOrder = @(foreach ($pass in $true, $false) { foreach ($l in @($gpo.domainRootLinks | Where-Object { $_ -and $_.enabled -and [bool]$_.enforced -eq $pass })) { $byGuid["$($l.guid)".ToUpper()] } }) | Where-Object { $_ }
+        $long = @(); $from = @()
+        foreach ($k in @(@{ N = 'MaxTicketAge'; Max = 10; U = 'hours' }, @{ N = 'MaxRenewAge'; Max = 7; U = 'days' }, @{ N = 'MaxServiceAge'; Max = 600; U = 'minutes' })) {
+            $win = @($rootOrder | Where-Object { "$(Get-Member2 (Get-Member2 $_ 'kerberosPolicy') $k.N)" -ne '' } | Select-Object -First 1)
+            if (-not $win.Count) { continue }
+            $v = [int]"$(Get-Member2 (Get-Member2 $win[0] 'kerberosPolicy') $k.N)"
+            if ($v -gt $k.Max -or $v -eq 0) {
+                $long += "$($k.N) = $(if ($v -eq 0) { '0 (no limit)' } else { "$v $($k.U)" }) (default $($k.Max))"
+                if ($from -notcontains "$($win[0].displayName)") { $from += "$($win[0].displayName)" }
+            }
+        }
+        if ($long.Count) {
+            Add-Finding -Type kerberos_ticket_lifetime_long -Object ($from -join ', ') -ObjectType 'gpo' -Detail "Kerberos policy: $($long -join '; ')."
+        }
     }
     $ra = Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Control\Lsa\RestrictAnonymousSAM')
     $anon = @()
@@ -732,12 +764,20 @@ function Invoke-PasswordQualityChecks {
     $pq = $Snapshot.passwordQuality
     if (-not $pq) { return }
     $names = { param($list) ConvertTo-PqNameList $list }
+    # An account is in one cluster only, so its alphabetically first name keeps the Object
+    # unique and stable from run to run (two clusters of 3 used to both be "3 accounts").
+    $usedObjects = @{}
     foreach ($grp in @($pq.duplicatePasswordGroups | Where-Object { $_ })) {
         $accts = @(& $names $grp)
         if ($accts.Count -lt 2) { continue }
         $shown = ($accts | Select-Object -First 8) -join ', '
         if ($accts.Count -gt 8) { $shown += " (+$($accts.Count - 8) more)" }
-        Add-Finding -Type pwq_duplicate_passwords -Object "$($accts.Count) accounts" -ObjectType 'cluster' -Detail "Same password: $shown."
+        $sorted = [string[]]@($accts); [Array]::Sort($sorted, [StringComparer]::OrdinalIgnoreCase)
+        $obj = "$($accts.Count) accounts incl. $($sorted[0])"
+        $n = 1; $base = $obj
+        while ($usedObjects.ContainsKey($obj.ToLower())) { $n++; $obj = "$base ($n)" }
+        $usedObjects[$obj.ToLower()] = $true
+        Add-Finding -Type pwq_duplicate_passwords -Object $obj -ObjectType 'cluster' -Detail "Same password: $shown."
     }
     foreach ($a in (& $names $pq.emptyPassword)) { Add-Finding -Type pwq_empty_password -Object $a -ObjectType 'user' -Detail 'Empty password.' }
     foreach ($a in (& $names $pq.defaultOrUsernamePassword)) { Add-Finding -Type pwq_default_password -Object $a -ObjectType 'user' -Detail 'Password equals username or a known default.' }

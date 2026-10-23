@@ -50,12 +50,28 @@ $demo = Import-ADSnapshot (Join-Path $tmp 'demo.json')
 $r = Invoke-Analysis $demo
 $bySev = @{}; foreach ($s in 'Critical', 'High', 'Medium', 'Low') { $bySev[$s] = @($r.Findings | Where-Object { $_.Severity -eq $s }).Count }
 Write-Host ("  {0} findings (C {1} / H {2} / M {3} / L {4}), {5} Tier 0 principals" -f $r.Findings.Count, $bySev.Critical, $bySev.High, $bySev.Medium, $bySev.Low, $r.PrivMap.Principals.Count)
-Assert-True ($r.Findings.Count -eq 211) "demo total findings: expected 211, got $($r.Findings.Count)"
-Assert-True ($bySev.Critical -eq 25 -and $bySev.High -eq 78 -and $bySev.Medium -eq 81 -and $bySev.Low -eq 27) "demo severity split: expected 25/78/81/27 (got $($bySev.Critical)/$($bySev.High)/$($bySev.Medium)/$($bySev.Low))"
+Assert-True ($r.Findings.Count -eq 216) "demo total findings: expected 216, got $($r.Findings.Count)"
+Assert-True ($bySev.Critical -eq 26 -and $bySev.High -eq 79 -and $bySev.Medium -eq 82 -and $bySev.Low -eq 29) "demo severity split: expected 26/79/82/29 (got $($bySev.Critical)/$($bySev.High)/$($bySev.Medium)/$($bySev.Low))"
 # New checks: DSRM logon behavior on a DC, tombstone lifetime below 180, Tier 0 accounts
 # that log on with a reusable password (not in Protected Users, no smart card).
 Assert-True ((Has $r 'dsrm_logon_behavior' 'dc02.moosebank.local' 'High') -and @($r.Findings | Where-Object { $_.Type -eq 'dsrm_logon_behavior' }).Count -eq 1) 'demo: DsrmAdminLogonBehavior=2 on DC02 flagged, DC01 (0) clean'
 Assert-True (Has $r 'tombstone_lifetime_low' 'moosebank.local' 'Low') 'demo: tombstone lifetime below 180 days flagged'
+# Hybrid keys, Kerberos ticket lifetimes, NTLM auditing, Exchange on the domain head.
+Assert-True (Has $r 'azuread_sso_key_old' 'AZUREADSSOACC$' 'High') 'demo: Seamless SSO key not rolled over for 400 days (High)'
+Assert-True (-not (Has $r 'stale_computer' 'AZUREADSSOACC$')) 'demo: AZUREADSSOACC$ never logs on, but is not reported as a stale computer'
+Assert-True (Has $r 'cloud_kerberos_trust_key_old' 'krbtgt_AzureAD' 'Medium') 'demo: krbtgt_AzureAD key older than the krbtgt threshold (Medium)'
+Assert-True (-not (Has $r 'rodc_krbtgt_password_old' 'krbtgt_AzureAD')) 'demo: krbtgt_AzureAD is not taken for an RODC krbtgt'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'kerberos_ticket_lifetime_long' -and $_.Object -eq 'Default Domain Policy' -and $_.Detail -match 'MaxRenewAge = 30 days' -and $_.Detail -notmatch 'MaxTicketAge' }).Count -eq 1) 'demo: 30-day ticket renewal flagged, default ticket age not'
+Assert-True (Has $r 'ntlm_not_restricted' 'Domain Controllers' 'Low') 'demo: no GPO audits or restricts NTLM on the DCs'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'dangerous_ace_tier0' -and $_.Object -eq 'MOOSEBANK\Exchange Windows Permissions' -and $_.Severity -eq 'Critical' -and $_.Detail -match 'PrivExchange' }).Count -eq 1) 'demo: Exchange WriteDacl on the domain head flagged with the PrivExchange note'
+$snapOldK = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+foreach ($gg in @($snapOldK.gpo.gpos)) { $gg.PSObject.Properties.Remove('kerberosPolicy') }
+$rOldK = Invoke-Analysis $snapOldK
+Assert-True ((@($rOldK.NotEvaluated | ForEach-Object { $_.Type }) -contains 'kerberos_ticket_lifetime_long') -and -not (Has $rOldK 'kerberos_ticket_lifetime_long' 'Default Domain Policy') -and (Has $rOldK 'ntlm_not_restricted' 'Domain Controllers')) 'older snapshot without the Kerberos policy: lifetimes not evaluated, NTLM check still runs'
+$snapNtlm = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$dcPol = @($snapNtlm.gpo.gpos | Where-Object { $_.displayName -eq 'Default Domain Controllers Policy' })[0]
+$dcPol.registryValues | Add-Member -NotePropertyName 'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\AuditNTLMInDomain' -NotePropertyValue '4,7'
+Assert-True (-not (Has (Invoke-Analysis $snapNtlm) 'ntlm_not_restricted' 'Domain Controllers')) 'NTLM auditing in the domain set on the DCs: no finding'
 Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'privileged_logon_unrestricted' -and $_.Severity -eq 'Medium' }).Count -eq 14) "demo: Tier 0 accounts with a reusable password (expected 14, got $(@($r.Findings | Where-Object { $_.Type -eq 'privileged_logon_unrestricted' }).Count))"
 Assert-True ($r.PrivMap.Principals.Count -eq 17) "demo Tier 0 principals: expected 17, got $($r.PrivMap.Principals.Count)"
 $demoNE = @($r.NotEvaluated | ForEach-Object { $_.Type })
@@ -170,10 +186,10 @@ function New-Dc2025Snapshot {
 }
 $rBs = Invoke-Analysis (New-Dc2025Snapshot -Ubr 4652)
 $bs = @($rBs.Findings | Where-Object { $_.Type -eq 'badsuccessor_dmsa_create' })
-Assert-True ((($bs | ForEach-Object { "$($_.Object)=$($_.Severity)" }) -join ',') -eq 'MOOSEBANK\Helpdesk=High,MOOSEBANK\IT-Ops=High') "BadSuccessor: Helpdesk (CreateChild dMSA) and IT-Ops (owner) only, High on an unpatched DC (got $(($bs | ForEach-Object { "$($_.Object)=$($_.Severity)" }) -join ','))"
-Assert-True ($bs[0].Detail -match '^CreateChild\(dMSA\) on OU=Workstations,OU=MooseBank,DC=moosebank,DC=local\. Windows Server 2025 DC\(s\): DC03 \(build 26100\.4652, not patched\)\.$' -and $bs[1].Detail -match '^owner on OU=ServiceAccounts') "BadSuccessor: detail names the right, the OU and the DC (got $($bs.Detail -join ' | '))"
+Assert-True ((($bs | ForEach-Object { "$($_.Object)=$($_.Severity)" }) -join ',') -eq 'MOOSEBANK\Exchange Windows Permissions=High,MOOSEBANK\Helpdesk=High,MOOSEBANK\IT-Ops=High') "BadSuccessor: Exchange Windows Permissions (WriteDacl on the domain), Helpdesk (CreateChild dMSA) and IT-Ops (owner) only, High on an unpatched DC (got $(($bs | ForEach-Object { "$($_.Object)=$($_.Severity)" }) -join ','))"
+Assert-True ($bs[0].Detail -match '^WriteDacl on DC=moosebank' -and $bs[1].Detail -match '^CreateChild\(dMSA\) on OU=Workstations,OU=MooseBank,DC=moosebank,DC=local\. Windows Server 2025 DC\(s\): DC03 \(build 26100\.4652, not patched\)\.$' -and $bs[2].Detail -match '^owner on OU=ServiceAccounts') "BadSuccessor: detail names the right, the OU and the DC (got $($bs.Detail -join ' | '))"
 $rBsP = Invoke-Analysis (New-Dc2025Snapshot -Ubr 4946)
-Assert-True (@($rBsP.Findings | Where-Object { $_.Type -eq 'badsuccessor_dmsa_create' -and $_.Severity -eq 'Medium' }).Count -eq 2) 'BadSuccessor: Medium once every 2025 DC has the August 2025 update'
+Assert-True (@($rBsP.Findings | Where-Object { $_.Type -eq 'badsuccessor_dmsa_create' -and $_.Severity -eq 'Medium' }).Count -eq 3) 'BadSuccessor: Medium once every 2025 DC has the August 2025 update'
 $rBsU = Invoke-Analysis (New-Dc2025Snapshot -NoState)
 Assert-True ((Has $rBsU 'badsuccessor_dmsa_create' 'MOOSEBANK\Helpdesk' 'High') -and @($rBsU.Findings | Where-Object { $_.Type -eq 'badsuccessor_dmsa_create' })[0].Detail -match 'DC03 \(patch level not read\)') 'BadSuccessor: unread patch level stays High'
 $sBsC = New-Dc2025Snapshot -Ubr 4652
@@ -423,7 +439,7 @@ $deep = Import-ADSnapshot (Join-Path $tmp 'deep.json')
 $rd = Invoke-Analysis $deep
 Assert-True (@($rd.NotEvaluated | Where-Object { $_.Type -eq 'dangerous_ace_anywhere' }).Count -eq 0) 'deep run evaluates dangerous_ace_anywhere'
 Assert-True (Has $rd 'dangerous_ace_anywhere' 'MOOSEBANK\Helpdesk' 'High') 'deep: non-priv GenericAll over a DA'
-Assert-True ($rd.Findings.Count -eq 216) "deep total findings: expected 216, got $($rd.Findings.Count)"
+Assert-True ($rd.Findings.Count -eq 221) "deep total findings: expected 221, got $($rd.Findings.Count)"
 Assert-True (Has $rd 'kds_root_key_readable' 'MOOSEBANK\Helpdesk' 'High') 'deep: Helpdesk can read the KDS root key (Golden gMSA)'
 Assert-True (-not (Has $rd 'kds_root_key_readable' 'MOOSEBANK\Domain Admins')) 'deep: Domain Admins on the KDS root key is the default'
 Assert-True (@($r.NotEvaluated | Where-Object { $_.Type -eq 'kds_root_key_readable' }).Count -eq 1) 'kds_root_key_readable not evaluated without -Deep'
@@ -475,7 +491,7 @@ Write-Host "[partial]"
 $partial = Import-ADSnapshot (Join-Path $tmp 'partial.json')
 $rp = Invoke-Analysis $partial
 $ne = @($rp.NotEvaluated | ForEach-Object { $_.Type })
-Assert-True ($rp.Findings.Count -eq 201) "partial total findings: expected 201, got $($rp.Findings.Count)"
+Assert-True ($rp.Findings.Count -eq 205) "partial total findings: expected 205, got $($rp.Findings.Count)"
 Assert-True (($ne -join ',') -eq 'fgpp_weak,dcsync_rights,sync_laps_rights,dangerous_ace_tier0,nonstandard_owner_tier0,gpp_cpassword,sysvol_writable,sysvol_script_secrets,dangerous_ace_anywhere,kds_root_key_readable,badsuccessor_dmsa_create,laps_readers,gpo_autologon_password,pwq_duplicate_passwords,pwq_default_password,pwq_empty_password,pwq_breached_password,pwq_cleartext_stored') "partial not-evaluated set: got $($ne -join ',')"
 
 # ------------------------------------------------------------- mutations
@@ -565,6 +581,35 @@ Assert-True ((ConvertTo-AttackMapHtml -Snapshot $demo -Index $r.Index -PrivMap $
 $flatHtml = ConvertTo-AttackMapHtml -Snapshot $demo -Index $r.Index -PrivMap $r.PrivMap -Findings @($hopFindings[0])
 Assert-True ($flatHtml -notmatch "data-to='" -and $flatHtml -notmatch 'hops of one chain') 'attack map without chains keeps the flat layout'
 Assert-True (@($graph.Trusts).Count -ge 1) 'attack graph includes external/forest trusts'
+# Kinds added to the map, and the conditional ones.
+$gById = @{}; foreach ($n in $graph.Nodes) { $gById[$n.Id] = $n }
+function GEdge { param($G, [string]$From, [string]$To, [string]$Kind)
+    $ids = @{}; foreach ($n in $G.Nodes) { $ids[$n.Id] = $n.Label }
+    , @($G.Edges | Where-Object { $ids[$_.From] -eq $From -and ($(if ($To -eq 'T0') { $_.To -lt 0 } else { $ids[$_.To] -eq $To })) -and $_.Kind -like $Kind }) }
+Assert-True ((GEdge $graph 'MOOSEBANK-CA' 'T0' 'AD CS ESC8*').Count -eq 1 -and (GEdge $graph 'partner.example' 'T0' 'Trust without SID filtering').Count -eq 1 -and (GEdge $graph 'svc_backup' 'T0' 'Operator group*').Count -eq 1 -and (GEdge $graph 'RODC01' 'T0' 'Tier 0 password cached on RODC').Count -eq 1) 'attack graph: AD CS on the CA, SID filtering, operator groups and RODC caches are on the map'
+Assert-True ((GEdge $graph 'evil.user' 'T0' 'Privileged SID history').Count -eq 1 -and -not @($graph.Nodes | Where-Object { $_.Label -eq 'migrated.user' }).Count) 'attack graph: privileged SID history is a path, a foreign SID history is not'
+Assert-True (@((GEdge $graph 'GPO {31B2F340-016D-11D2-945F-00C04FB984F9}' 'T0' 'GPP password*') | Where-Object { $_.Unverified }).Count -eq 1 -and @((GEdge $graph 'MooseBank DC Extra: \\fs01.moosebank.local\it$\dc-tools.cmd' 'T0' 'GPO runs code*') | Where-Object { -not $_.Unverified }).Count -eq 1 -and @((GEdge $graph 'Workstation Baseline: \\fs01\inventory\agent.exe' 'T0' 'GPO runs code*') | Where-Object { $_.Unverified }).Count -eq 1) 'attack graph: GPP passwords and workstation GPO scripts are dashed, a DC GPO script is not'
+# Entry point: what any domain account can start from.
+$anyNode = @($graph.Nodes | Where-Object { $_.Label -eq 'Any domain user' })
+Assert-True ($anyNode.Count -eq 1 -and $anyNode[0].Type -eq 'entry' -and $anyNode[0].Level -ge 1) 'attack graph: one "Any domain user" entry box, at the left of a chain'
+Assert-True ((GEdge $graph 'Any domain user' 'svc_sql_admin' 'Kerberoast').Count -eq 1 -and (GEdge $graph 'Any domain user' 'Moose ESC1 Vulnerable' 'Enroll').Count -eq 1 -and (GEdge $graph 'Any domain user' 'MOOSEBANK-CA' 'Coerce a DC, relay').Count -eq 1 -and (GEdge $graph 'Any domain user' 'T0' 'noPac (dc02.moosebank.local)').Count -eq 1) 'attack graph: any user can Kerberoast, enroll ESC1, relay to the CA and use noPac (quota > 0)'
+Assert-True (-not (GEdge $graph 'Any domain user' 'Moose User' '*').Count) 'attack graph: a template only admins can enroll is not an entry'
+# Membership: the non-Tier 0 members of a source group are one hop behind it.
+Assert-True ((GEdge $graph 'hd.operator1' 'MOOSEBANK\Helpdesk' 'Member of Helpdesk').Count -eq 1 -and -not (GEdge $graph 'helpdesk.lead' 'MOOSEBANK\Helpdesk' 'Member of*').Count) 'attack graph: Helpdesk members are hops; the Tier 0 member is not drawn as a source'
+# An ACL over a host with unconstrained delegation is a hop to that host.
+$printHost = $r.Index.Computers | Where-Object samAccountName -eq 'SRV-PRINT01$' | Select-Object -First 1
+$udGraph = Get-AttackGraph -Snapshot $demo -Index $r.Index -PrivMap $r.PrivMap -Findings @(
+    [PSCustomObject]@{ Type = 'unconstrained_delegation'; Object = 'SRV-PRINT01$'; ObjectType = 'computer'; ObjectDn = $printHost.distinguishedName; Severity = 'High'; Detail = 'x' }
+    [PSCustomObject]@{ Type = 'dangerous_ace_anywhere'; Object = 'MOOSEBANK\someone'; ObjectType = 'acl'; ObjectDn = $printHost.distinguishedName; Severity = 'High'; Detail = "GenericWrite over computer 'SRV-PRINT01$'." })
+Assert-True ((GEdge $udGraph 'MOOSEBANK\someone' 'SRV-PRINT01$' 'ACL path (GenericWrite)').Count -eq 1) 'attack graph: a right over an unconstrained-delegation host is a hop to it'
+# Password quality: a breached Tier 0 password and a Tier 0 password shared with a normal account.
+$demoPq = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$demoPq | Add-Member -NotePropertyName passwordQuality -NotePropertyValue ([PSCustomObject]@{ duplicatePasswordGroups = @(, @('adm.verdi', 'user003')); breachedPassword = @('svc_backup', 'user004'); emptyPassword = @(); defaultOrUsernamePassword = @() }) -Force
+$pqGraph = Get-AttackGraph -Snapshot $demoPq -Index $r.Index -PrivMap $r.PrivMap -Findings $r.Findings
+Assert-True ((GEdge $pqGraph 'Any domain user' 'T0' 'Breached password (svc_backup)').Count -eq 1 -and -not (GEdge $pqGraph 'Any domain user' 'T0' '*user004*').Count -and (GEdge $pqGraph 'user003' 'T0' 'Same password as adm.verdi').Count -eq 1) 'attack graph: breached Tier 0 password and a shared Tier 0 password are paths; a breached normal account is not'
+$gKeys1 = (@($graph.Edges | ForEach-Object { $_.EdgeKey }) -join '|'); $gKeys2 = (@((Get-AttackGraph -Snapshot $demo -Index $r.Index -PrivMap $r.PrivMap -Findings $r.Findings).Edges | ForEach-Object { $_.EdgeKey }) -join '|')
+Assert-True ($gKeys1 -eq $gKeys2) 'attack graph is deterministic'
+Assert-True ($html -match "font-weight='700'>Any domain user</text>" -and $html -match 'The dark box <b>Any domain user</b>') 'attack map draws the entry box dark and explains it'
 
 # ------------------------------------------------------------------ AI
 Write-Host "[ai pseudonymization]"
@@ -853,7 +898,12 @@ $pqDemo = Import-ADSnapshot (Join-Path $tmp 'demo.json')
 $pq = Get-Content -Raw (Join-Path $root 'examples\passwordquality.example.json') | ConvertFrom-Json
 $pqDemo | Add-Member -NotePropertyName passwordQuality -NotePropertyValue $pq -Force
 $rpq = Invoke-Analysis $pqDemo
-Assert-True (Has $rpq 'pwq_duplicate_passwords' '3 accounts' 'High') 'pwq: duplicate password cluster'
+Assert-True ((Has $rpq 'pwq_duplicate_passwords' '3 accounts incl. svc_app' 'High') -and (Has $rpq 'pwq_duplicate_passwords' '2 accounts incl. user001' 'High')) 'pwq: duplicate password clusters, named by their first account'
+# Two clusters of the same size must not share Type + Object (-CompareTo and the SIEM finding_id key on it).
+$pqSame = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$pqSame | Add-Member -NotePropertyName passwordQuality -NotePropertyValue ([PSCustomObject]@{ weakListUsed = $true; duplicatePasswordGroups = @(@('svc_web', 'svc_app'), @('user002', 'User001'), @('user001', 'zeta.user')); emptyPassword = @(); defaultOrUsernamePassword = @(); breachedPassword = @(); clearTextPassword = @() }) -Force
+$dupObjs = @((Invoke-Analysis $pqSame).Findings | Where-Object { $_.Type -eq 'pwq_duplicate_passwords' } | ForEach-Object { $_.Object })
+Assert-True ($dupObjs.Count -eq 3 -and $dupObjs -ccontains '2 accounts incl. svc_app' -and $dupObjs -ccontains '2 accounts incl. User001' -and $dupObjs -ccontains '2 accounts incl. user001 (2)') "pwq: same-size clusters get distinct Objects (got $($dupObjs -join '|'))"
 Assert-True (Has $rpq 'pwq_empty_password' 'temp.user' 'Critical') 'pwq: empty password'
 Assert-True (Has $rpq 'pwq_breached_password' 'svc_backup') 'pwq: breached password'
 Assert-True (Has $rpq 'pwq_cleartext_stored' 'revers.user') 'pwq: cleartext recoverable'
@@ -920,7 +970,7 @@ $ef = @(Invoke-EntraChecks -Snapshot $entra -Config $ecfg)
 function EHas { param([string]$Type, [string]$Object = '', [string]$Sev = '') @($ef | Where-Object { $_.Type -eq $Type -and (-not $Object -or $_.Object -eq $Object) -and (-not $Sev -or $_.Severity -eq $Sev) }).Count -gt 0 }
 Assert-True (EHas 'entra_security_defaults_off') 'entra: security defaults off + no CA MFA'
 $eSev = @{}; foreach ($x in $ef) { $eSev[$x.Severity] = 1 + [int]$eSev[$x.Severity] }
-Assert-True ($ef.Count -eq 93 -and $eSev['Critical'] -eq 4 -and $eSev['High'] -eq 21 -and $eSev['Medium'] -eq 27 -and $eSev['Low'] -eq 41) "entra total findings: expected 93 (4/21/27/41), got $($ef.Count) ($($eSev['Critical'])/$($eSev['High'])/$($eSev['Medium'])/$($eSev['Low']))"
+Assert-True ($ef.Count -eq 95 -and $eSev['Critical'] -eq 4 -and $eSev['High'] -eq 21 -and $eSev['Medium'] -eq 28 -and $eSev['Low'] -eq 42) "entra total findings: expected 95 (4/21/28/42), got $($ef.Count) ($($eSev['Critical'])/$($eSev['High'])/$($eSev['Medium'])/$($eSev['Low']))"
 # EntraFalcon gaps: groups behind CA exclusions and admin roles, Entra Connect app, look-alike names.
 $eg = @($ef | Where-Object { $_.Type -eq 'entra_ca_excluded_group_weak' })
 Assert-True ($eg.Count -eq 1 -and $eg[0].Object -eq 'Project Elk team' -and $eg[0].Detail -match 'public Microsoft 365 group' -and $eg[0].Detail -match 'non-admin user12@') "entra: public, user-owned group excluded from CA flagged; the admin-owned emergency group is not (got $($eg.Object -join ', '))"
@@ -973,6 +1023,25 @@ $efS10 = @(Invoke-EntraChecks -Snapshot $entraS10 -Config $ecfg); $neS10 = @(Get
 Assert-True (@($efS10 | Where-Object { $_.Type -in 'entra_app_azure_ad_graph', 'entra_catalog_role_privileged_group' }).Count -eq 0 -and ($neS10 -contains 'entra_app_azure_ad_graph') -and ($neS10 -contains 'entra_catalog_role_privileged_group') -and ($neS10 -notcontains 'entra_intune_no_multi_admin_approval')) 'entra: schema 9 snapshot: the schema 10 checks are not evaluated and silent, the others still run'
 $entraCF = Import-ADSnapshot (Join-Path $tmp 'entra.json'); $entraCF.meta.collectionErrors = @([PSCustomObject]@{ section = 'catalogRoles'; message = 'Forbidden' }); $entraCF.catalogRoles = $null
 Assert-True (@(Invoke-EntraChecks -Snapshot $entraCF -Config $ecfg | Where-Object { $_.Type -eq 'entra_catalog_role_privileged_group' }).Count -eq 0 -and (@(Get-EntraNotEvaluated -Snapshot $entraCF | ForEach-Object { $_.Type }) -contains 'entra_catalog_role_privileged_group')) 'entra: catalog roles not readable: not evaluated, no finding'
+# Schema 11: soft / hard match protection and Temporary Access Pass settings.
+$efSync = @($ef | Where-Object { $_.Type -eq 'entra_sync_hard_match_takeover' }); $efTap = @($ef | Where-Object { $_.Type -eq 'entra_tap_weak' })
+Assert-True ($efSync.Count -eq 1 -and $efSync[0].Severity -eq 'Low' -and $efSync[0].Detail -match 'Soft match is not blocked' -and $efSync[0].Detail -notmatch 'Hard match') 'entra: soft match open, hard match blocked: Low'
+Assert-True ($efTap.Count -eq 1 -and $efTap[0].Severity -eq 'Medium' -and $efTap[0].Detail -match 'more than once' -and $efTap[0].Detail -match '4320 minutes') 'entra: reusable TAP with a 3-day maximum: Medium'
+$entraS11 = Import-ADSnapshot (Join-Path $tmp 'entra.json'); $entraS11.onPremSync.blockCloudObjectTakeover = $false; $entraS11.tapSettings.isUsableOnce = $true; $entraS11.tapSettings.maxLifetimeInMinutes = 480
+$efS11 = @(Invoke-EntraChecks -Snapshot $entraS11 -Config $ecfg)
+Assert-True ((@($efS11 | Where-Object { $_.Type -eq 'entra_sync_hard_match_takeover' -and $_.Severity -eq 'Medium' -and $_.Detail -match 'Hard match onto cloud-only' }).Count -eq 1) -and -not @($efS11 | Where-Object { $_.Type -eq 'entra_tap_weak' }).Count) 'entra: hard match open is Medium; a one-time TAP of up to 8 hours is fine'
+$entraS11.onPremSync.syncEnabled = $false; $entraS11.tapSettings.state = 'disabled'; $entraS11.tapSettings.isUsableOnce = $false
+Assert-True (-not @(Invoke-EntraChecks -Snapshot $entraS11 -Config $ecfg | Where-Object { $_.Type -in 'entra_sync_hard_match_takeover', 'entra_tap_weak' }).Count) 'entra: no sync and TAP off: neither check fires'
+$entraS10b = Import-ADSnapshot (Join-Path $tmp 'entra.json'); $entraS10b.meta.schemaVersion = 10; $entraS10b.PSObject.Properties.Remove('tapSettings'); $entraS10b.onPremSync.PSObject.Properties.Remove('blockSoftMatch'); $entraS10b.onPremSync.PSObject.Properties.Remove('blockCloudObjectTakeover')
+$neS10b = @(Get-EntraNotEvaluated -Snapshot $entraS10b | ForEach-Object { $_.Type })
+Assert-True (-not @(Invoke-EntraChecks -Snapshot $entraS10b -Config $ecfg | Where-Object { $_.Type -in 'entra_sync_hard_match_takeover', 'entra_tap_weak' }).Count -and ($neS10b -contains 'entra_sync_hard_match_takeover') -and ($neS10b -contains 'entra_tap_weak')) 'entra: schema 10 snapshot: the schema 11 checks are not evaluated and silent'
+# Entra attack map: owners, scoped app admins, access packages and admins without MFA, toward the admin roles.
+$eg = Get-EntraAttackGraph -Snapshot $entra -Findings $ef
+$egIds = @{}; foreach ($n in $eg.Nodes) { $egIds[$n.Id] = $n.Label }
+$egLines = @($eg.Edges | ForEach-Object { "$($egIds[$_.From]) -> $(if ($_.To -ge 0) { $egIds[$_.To] } else { 'ADMIN' }) : $($_.Kind)" })
+Assert-True (@($egLines | Where-Object { $_ -match '^func-payroll-mi -> Backup Automation : Owns the app$' }).Count -eq 1 -and @($egLines | Where-Object { $_ -match '^user13@\S+ -> Tier 2 security operators : Owns the group$' }).Count -eq 1) "entra attack map: app and group owners are hops (got $($egLines -join ' | '))"
+Assert-True (@($egLines | Where-Object { $_ -match '^Any user -> IT on-call : Request the package \(allMemberUsers\)$' }).Count -eq 1 -and @($egLines | Where-Object { $_ -match '^Any user -> ADMIN : No MFA \(bob\.admin@' }).Count -eq 1) 'entra attack map: an open access package and an admin without MFA start from any user'
+Assert-True ((@($eg.Edges | ForEach-Object { $_.EdgeKey }) -join '|') -eq (@((Get-EntraAttackGraph -Snapshot $entra -Findings $ef).Edges | ForEach-Object { $_.EdgeKey }) -join '|')) 'entra attack map is deterministic'
 $epzC = New-EntraPseudonymizer -Snapshot $entra
 Assert-True ((Protect-EntraText $epzC 'IT resources: user12@moosebank.onmicrosoft.com') -notmatch 'IT resources|user12') 'entra: catalog names are pseudonymized'
 $entraS = Import-ADSnapshot (Join-Path $tmp 'entra.json')
@@ -1162,6 +1231,7 @@ foreach ($secret in 'moosebank', 'onmicrosoft', 'bob.admin', 'Backup Automation'
 $escore = Get-HygieneScore -Findings $ef
 $ehtml = ConvertTo-EntraReportHtml -Snapshot $entra -Findings $ef -Score $escore -NotEvaluated @() -ToolVersion 'test' -ElapsedText '0s' -AiResult $null
 Assert-True ($ehtml -match '</html>\s*$' -and $ehtml -match 'Entra ID Hygiene Report' -and ([regex]::Matches($ehtml, "class='pie-chart-wrap'")).Count -ge 2) 'entra HTML renders the finding donuts'
+Assert-True ($ehtml -match 'Attack-path map \(toward the admin roles\)' -and $ehtml -match "font-weight='700'>Any user</text>") 'entra HTML has the attack map with the any-user entry box'
 Assert-True (($ehtml -match 'Users by type') -and ($ehtml -match 'MFA registration') -and ($ehtml -match 'Service principals') -and ($ehtml -match 'Tenant at a glance') -and ($ehtml -match 'Privileged role assignments')) 'entra HTML has the tenant info donuts and the at-a-glance table'
 Assert-True ($ehtml -match 'id="tab-dashboard"' -and $ehtml -match 'id="tab-details"' -and $ehtml -match 'function idwTab' -and ([regex]::Matches($ehtml, 'class="fw-name"')).Count -eq 4 -and $ehtml -match 'Top risks') 'entra HTML has the same dashboard and tabs'
 # A tenant with no Entra ID P1/P2 and no CA policy: one note instead of the "no policy" findings; security defaults still checked.
@@ -1280,7 +1350,7 @@ $tempBefore = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Di
 $bz = New-IDWolfBundle -Snapshot (Join-Path $tmp 'demo.json') -PasswordQuality (Join-Path $root 'examples\passwordquality.example.json') -OutFile (Join-Path $tmp 'bundle.zip')
 $bzCsv = Join-Path $tmp 'bundle.csv'
 & (Join-Path $root 'IDWolf.ps1') -Snapshot $bz -OutHtml (Join-Path $tmp 'bundle.html') -OutCsv $bzCsv -SkipLLM 6>&1 2>&1 | Out-Null
-Assert-True ((Test-Path $bzCsv) -and @(Import-Csv $bzCsv).Count -eq 219) "zip with snapshot + password quality analyzes like the two files (219 findings, got $(if (Test-Path $bzCsv) { @(Import-Csv $bzCsv).Count }))"
+Assert-True ((Test-Path $bzCsv) -and @(Import-Csv $bzCsv).Count -eq 224) "zip with snapshot + password quality analyzes like the two files (224 findings, got $(if (Test-Path $bzCsv) { @(Import-Csv $bzCsv).Count }))"
 $tempAfter = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Directory -Filter 'idwolf_bundle_*' -ErrorAction SilentlyContinue).Count
 Assert-True ($tempAfter -eq $tempBefore) 'extracted bundle removed from TEMP after the analysis'
 # A file changed inside the zip no longer matches the manifest.
@@ -1306,7 +1376,7 @@ $encRaw = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes(
 Assert-True ($encHead -eq 'IDWOLFENC1' -and $encZipMsg -and $encRaw -notmatch 'moosebank|snapshot\.json') 'encrypted bundle: IDWolf header, not readable as a zip, no plain names inside'
 $encCsv = Join-Path $tmp 'bundle_enc.csv'
 & (Join-Path $root 'IDWolf.ps1') -Snapshot $encBz -BundlePassword $encPw -OutHtml (Join-Path $tmp 'bundle_enc.html') -OutCsv $encCsv -SkipLLM 6>&1 2>&1 | Out-Null
-Assert-True ((Test-Path $encCsv) -and @(Import-Csv $encCsv).Count -eq 219) "encrypted bundle analyzes like the plain one with the right password (got $(if (Test-Path $encCsv) { @(Import-Csv $encCsv).Count }))"
+Assert-True ((Test-Path $encCsv) -and @(Import-Csv $encCsv).Count -eq 224) "encrypted bundle analyzes like the plain one with the right password (got $(if (Test-Path $encCsv) { @(Import-Csv $encCsv).Count }))"
 $wrongMsg = ''; try { Expand-IDWolfBundle -Path $encBz -Password (ConvertTo-SecureString 'wrong password here' -AsPlainText -Force) | Out-Null } catch { $wrongMsg = $_.Exception.Message }
 $tamper2 = Join-Path $tmp 'tampered.idwolf'; $tb = [System.IO.File]::ReadAllBytes($encBz); $tb[100] = $tb[100] -bxor 1; [System.IO.File]::WriteAllBytes($tamper2, $tb)
 $tamperMsg = ''; try { Expand-IDWolfBundle -Path $tamper2 -Password $encPw | Out-Null } catch { $tamperMsg = $_.Exception.Message }
@@ -1324,8 +1394,8 @@ $jl = Join-Path $tmp 'demo.jsonl'
 $jlRows = @([System.IO.File]::ReadAllLines($jl) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
 $jlFind = @($jlRows | Where-Object { $_.event_type -eq 'finding' })
 $jlSum = @($jlRows | Where-Object { $_.event_type -eq 'summary' })
-Assert-True ($jlFind.Count -eq 211 -and $jlSum.Count -eq 1) "jsonl: 211 findings + 1 summary (got $($jlFind.Count) + $($jlSum.Count))"
-Assert-True ($jlSum[0].critical -eq 25 -and $jlSum[0].findings -eq 211 -and $jlSum[0].score -ge 0 -and $jlSum[0].domain -eq 'moosebank.local') 'jsonl summary: counts, score, domain'
+Assert-True ($jlFind.Count -eq 216 -and $jlSum.Count -eq 1) "jsonl: 216 findings + 1 summary (got $($jlFind.Count) + $($jlSum.Count))"
+Assert-True ($jlSum[0].critical -eq 26 -and $jlSum[0].findings -eq 216 -and $jlSum[0].score -ge 0 -and $jlSum[0].domain -eq 'moosebank.local') 'jsonl summary: counts, score, domain'
 Assert-True (@($jlFind | Where-Object { $_.finding_id -notmatch '^[0-9a-f]{16}$' -or $_.severity_score -lt 1 }).Count -eq 0) 'jsonl: every finding has a finding_id and a severity_score'
 Assert-True (@($jlFind | ForEach-Object { $_.finding_id } | Select-Object -Unique).Count -eq $jlFind.Count) 'jsonl: finding_id unique within a run'
 Assert-True ((Get-FindingId 'x_check' 'Bob') -eq (Get-FindingId 'X_CHECK' 'bob')) 'finding_id ignores case, so it survives renames in case only'

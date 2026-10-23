@@ -21,6 +21,8 @@ $script:AiKeepNames = @(
     'Allowed RODC Password Replication Group', 'Denied RODC Password Replication Group',
     'Cloneable Domain Controllers', 'Enterprise Domain Controllers', 'Default Domain Policy',
     'Default Domain Controllers Policy',
+    # Fixed names created by Entra Connect and Exchange: the same in every domain.
+    'AZUREADSSOACC', 'krbtgt_AzureAD', 'Exchange Windows Permissions', 'Exchange Trusted Subsystem',
     # Builtin local groups: identical in every domain, identify nothing.
     'Users', 'Guests', 'Remote Desktop Users', 'Remote Management Users', 'IIS_IUSRS',
     'Performance Log Users', 'Performance Monitor Users', 'Distributed COM Users',

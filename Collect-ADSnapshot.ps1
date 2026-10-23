@@ -80,7 +80,7 @@ Param(
 # account with broad read rights. Without it those checks show up as
 # "not evaluated".
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.6"
+$script:CollectorVersion = "1.7"
 $script:Errors = New-Object System.Collections.Generic.List[object]
 
 # Connection diagnostics and the DC list (lib\Connection.ps1). Optional: a collector copied
@@ -1448,6 +1448,13 @@ if (-not $SkipGpo) {
                         if ($eq -lt 0) { continue }
                         $sysAccess[$l.Substring(0, $eq).Trim()] = $l.Substring($eq + 1).Trim()
                     }
+                    # Ticket lifetimes (MaxTicketAge hours, MaxRenewAge days, MaxServiceAge minutes, MaxClockSkew minutes).
+                    $kerbPolicy = [ordered]@{}
+                    foreach ($l in @($ini['Kerberos Policy'] | Where-Object { $_ })) {
+                        $eq = $l.IndexOf('=')
+                        if ($eq -lt 0) { continue }
+                        $kerbPolicy[$l.Substring(0, $eq).Trim()] = $l.Substring($eq + 1).Trim()
+                    }
                     # audit.csv, keyed by subcategory GUID so the language doesn't
                     # matter. Values: 0 none, 1 success, 2 failure, 3 both.
                     $auditPolicy = [ordered]@{}
@@ -1469,6 +1476,7 @@ if (-not $SkipGpo) {
                         registryValues = $regValues
                         privilegeRights = $privRights
                         systemAccess   = $sysAccess
+                        kerberosPolicy = $kerbPolicy
                         serviceStart   = $svcStart
                         userPolicyRead = $userPolRead
                         auditPolicy    = $auditPolicy

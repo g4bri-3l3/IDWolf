@@ -16,6 +16,14 @@ $script:CheckCatalog = [ordered]@{
         Title = 'RODC krbtgt account not rotated'
         Description = 'Each RODC has its own krbtgt_NNNNN account. A stale key extends the impact of a compromised branch-office RODC.'
         Remediation = 'Rotate the RODC krbtgt_NNNNN account with the same double-reset procedure.' }
+    azuread_sso_key_old = @{ Category = 'Kerberos'; Severity = 'Medium'; Mitre = 'T1558.002'; Needs = @('computers')
+        Title = 'Seamless SSO key (AZUREADSSOACC$) not rolled over'
+        Description = 'With Entra Seamless SSO, the AZUREADSSOACC$ computer account holds the Kerberos key that Entra ID uses to accept on-premises tickets. Whoever has read that key (DCSync, an old backup) can forge a ticket for any synced user and sign in to the cloud as them, MFA rules for trusted networks included. The key never changes by itself.'
+        Remediation = 'Roll over the Seamless SSO decryption key (Update-AzureADSSOForest from the Entra Connect server) at least every 30 days, as Microsoft recommends, and protect the AZUREADSSOACC$ object like a Tier 0 account. If Seamless SSO is no longer used, turn it off in Entra Connect and delete the account.' }
+    cloud_kerberos_trust_key_old = @{ Category = 'Kerberos'; Severity = 'Medium'; Mitre = 'T1558.001'; Needs = @('users')
+        Title = 'Cloud Kerberos trust key (krbtgt_AzureAD) not rotated'
+        Description = 'The krbtgt_AzureAD account (Entra Kerberos server object, used by Windows Hello for Business cloud Kerberos trust and FIDO2 sign-in to on-premises resources) holds the key Entra ID uses to issue partial TGTs for this domain. Like the RODC krbtgt keys, a stolen copy keeps working until it is rotated.'
+        Remediation = 'Rotate the key with Set-AzureADKerberosServer -RotateServerKey (AzureADHybridAuthenticationManagement module) on a regular schedule, like krbtgt.' }
     privileged_kerberoastable = @{ Category = 'Kerberos'; Severity = 'Critical'; Mitre = 'T1558.003'; Needs = @('users', 'groups')
         Title = 'Privileged account with SPN (Kerberoastable)'
         Description = 'Any authenticated user can request a service ticket for an account with a servicePrincipalName and crack it offline. When that account is Tier 0, a cracked password means domain compromise.'
@@ -687,6 +695,9 @@ function Get-NotEvaluatedChecks {
     if ($Snapshot.sysvol -and $Snapshot.sysvol.scanned -and -not $Snapshot.sysvol.PSObject.Properties['autologonFiles']) {
         $absentReasons['sysvol.autologon'] = 'snapshot from an older collector (no Group Policy Preferences autologon scan): re-collect'
     }
+    if ($Snapshot.gpo -and $Snapshot.gpo.collected -and @($Snapshot.gpo.gpos | Where-Object { $_ -and $_.PSObject.Properties['kerberosPolicy'] }).Count -eq 0) {
+        $absentReasons['gpo.kerberos'] = 'snapshot from an older collector (no Kerberos policy from the GPO security templates): re-collect'
+    }
     if ($Snapshot.gpo -and $Snapshot.gpo.collected -and @($Snapshot.gpo.gpos | Where-Object { $_ -and -not $_.PSObject.Properties['serviceStart'] }).Count -gt 0) {
         $absentReasons['gpo.services'] = 'snapshot from an older collector (no GPO service startup settings): re-collect'
     }
@@ -793,6 +804,24 @@ function Invoke-ADHygieneChecks {
         if ($null -eq $age -or $age -gt $Config.KrbtgtMaxAgeDays) {
             Add-Finding -Type rodc_krbtgt_password_old -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName `
                 -Detail "RODC krbtgt password last set $(Format-Age $age) ago."
+        }
+    }
+    # Hybrid keys Entra ID holds for this domain: Seamless SSO and cloud Kerberos trust.
+    $ssoMax = if ($Config.ContainsKey('SsoKeyMaxAgeDays')) { [int]$Config.SsoKeyMaxAgeDays } else { 30 }
+    foreach ($c in @($Index.Computers | Where-Object { "$($_.samAccountName)" -ieq 'AZUREADSSOACC$' })) {
+        $age = Get-AgeDays $c.pwdLastSet
+        if ($null -eq $age -or $age -gt $ssoMax) {
+            $sev = if ($null -eq $age -or $age -gt 365) { 'High' } else { 'Medium' }
+            Add-Finding -Type azuread_sso_key_old -Object $c.samAccountName -ObjectType 'computer' -ObjectDn $c.distinguishedName -Severity $sev `
+                -Detail "Seamless SSO key last rolled over $(Format-Age $age) ago (Microsoft recommends every $ssoMax days)."
+        }
+    }
+    foreach ($u in @($Index.Users | Where-Object { "$($_.samAccountName)" -ieq 'krbtgt_AzureAD' })) {
+        $age = Get-AgeDays $u.pwdLastSet
+        if ($null -eq $age -or $age -gt $Config.KrbtgtMaxAgeDays) {
+            $sev = if ($null -eq $age -or $age -gt $Config.KrbtgtCriticalDays) { 'High' } else { 'Medium' }
+            Add-Finding -Type cloud_kerberos_trust_key_old -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName -Severity $sev `
+                -Detail "Entra Kerberos server key last set $(Format-Age $age) ago (threshold $($Config.KrbtgtMaxAgeDays) days)."
         }
     }
 
@@ -1185,7 +1214,8 @@ function Invoke-ADHygieneChecks {
         $ll = Get-AgeDays $c.lastLogonTimestamp
         $created = Get-AgeDays $c.whenCreated
         $stale = ($null -ne $ll -and $ll -gt $Config.StaleComputerDays) -or ($null -eq $ll -and $null -ne $created -and $created -gt $Config.StaleComputerDays)
-        if ($stale) {
+        # The Seamless SSO account never logs on; deleting it as stale breaks SSO (azuread_sso_key_old covers it).
+        if ($stale -and "$($c.samAccountName)" -ine 'AZUREADSSOACC$') {
             Add-Finding -Type stale_computer -Object $c.samAccountName -ObjectType 'computer' -ObjectDn $c.distinguishedName `
                 -Detail "Last logon: $(Format-Age $ll)$(if ($null -ne $ll) { ' ago' }) (threshold $($Config.StaleComputerDays) days). OS: $($c.operatingSystem)."
         }
@@ -1467,6 +1497,8 @@ function Invoke-ADHygieneChecks {
             $entry = $perPrincipal[$sid]
             $name = if ($entry.Name) { $entry.Name } else { $sid }
             $isSync = $name -match '(?i)(^|\\)(MSOL_|AAD_|Sync_)'
+            # Exchange's default WriteDacl on the domain head: the PrivExchange path to DCSync.
+            $exNote = if ($name -match '(?i)(^|\\)(Exchange Windows Permissions|Exchange Trusted Subsystem|Organization Management)$') { ' Exchange group: without split permissions it can grant itself DCSync (PrivExchange); remove the ACE with Exchange''s split-permissions setup or the published fix.' } else { '' }
 
             if ($acl.target -eq 'DomainRoot') {
                 $dcsyncItems = @($entry.Items | Where-Object {
@@ -1488,7 +1520,7 @@ function Invoke-ADHygieneChecks {
                 $selfApplies = @($other | Where-Object { Test-AceAppliesToSelf $_.Ace }).Count -gt 0
                 $sev = if ($selfApplies) { 'Critical' } else { 'High' }
                 Add-Finding -Type dangerous_ace_tier0 -Object $name -ObjectType 'acl' -ObjectDn $acl.distinguishedName -Severity $sev `
-                    -Detail "Target: DomainRoot. $($parts -join '; ')."
+                    -Detail "Target: DomainRoot. $($parts -join '; ').$exNote"
             }
             else {
                 $parts = @($entry.Items | ForEach-Object { $_.Danger } | Select-Object -Unique)

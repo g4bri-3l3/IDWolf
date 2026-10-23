@@ -32,12 +32,12 @@ nothing but the native ActiveDirectory module, then analyzes that snapshot
 **offline** and gives you an HTML report, a findings CSV and, if you want, JSON
 Lines for your SIEM.
 
-On the AD side it runs **169 checks**: Kerberos, privileged access, account
+On the AD side it runs **176 checks**: Kerberos, privileged access, account
 hygiene, domain configuration, permissions, DNS, AD CS (ESC1-5, 9, 10, 13, 15),
 operational health (replication, DHCP, backups), host hardening read from the
 GPOs (SMB and LDAP signing, NTLM, LM hash, user rights) and password quality,
 all without ever handling a password hash. A separate collector covers
-**Microsoft Entra ID** with **90 checks**, mapped to the CIS Microsoft 365
+**Microsoft Entra ID** with **92 checks**, mapped to the CIS Microsoft 365
 benchmark.
 
 If you like, a Gemini step can write an executive summary and a remediation
@@ -158,12 +158,12 @@ October 2026. If something here is out of date or wrong, please say so.
 | Proves it can't write to the directory (built-in code review) | **Yes** | – | – | – | – (has a fix mode) | – | – (attacks by design, after operator confirmation) |
 | Collect once, analyze later on another machine, offline | **Yes** | partial (re-renders its XML report) | – | yes (import into the server) | – | – | – |
 | AI summary, remediation plan, attack-path story, fix scripts, exploitability ranking | **Yes** (names tokenized first, nothing sent without consent) | – | – | – | – | – | – |
-| AD hygiene checklist | 169 checks | yes | yes | – (paths, not a checklist) | – | – | – (104 attack techniques, tried rather than audited) |
+| AD hygiene checklist | 176 checks | yes | yes | – (paths, not a checklist) | – | – | – (104 attack techniques, tried rather than audited) |
 | AD CS (ESC) | ESC1-5, 9, 10, 13, 15; 6, 7, 8, 11, 16 read on the CA | some | some | yes, as graph edges | **broadest**, with fixes | – | template enumeration; ESC1-16 exploitation in PRO |
 | Password quality (duplicates, breached) | yes, hashless | – | – | – | – | – | spraying and cracking (an attack, not an audit) |
 | Host hardening read from GPOs | yes | yes | yes | – | – | – | – (some preconditions probed live) |
 | DC health | replication, backup age, FSMO holders, reachability, clock skew, disk space, stopped services | backup age, DC registration, DCs not updated | ? | – | – | – | – |
-| Entra ID | 90 checks, CIS M365 v7 + non-human identities | **102 checks** (4.0; the list isn't public, so the overlap with IDWolf is unknown) | yes | yes (AzureHound) | – | **broadest** (CIS, CISA, EIDSCA) | – |
+| Entra ID | 92 checks, CIS M365 v7 + non-human identities | **102 checks** (4.0; the list isn't public, so the overlap with IDWolf is unknown) | yes | yes (AzureHound) | – | **broadest** (CIS, CISA, EIDSCA) | – |
 | Attack-path view | map in the report + BloodHound export | control-path map | – | **the reference** | – | – | BloodHound CE-compatible collection; attack graph and exploitation chains in PRO |
 | Report | **one self-contained HTML** (charts, attack-path and trust maps, compliance view, no CDN), CSV, JSONL | HTML | ? | web UI | console, CSV | HTML | TXT / JSON; PDF (with NIS2 / ISO 27001 mapping) in PRO |
 
@@ -676,6 +676,8 @@ particular object.
 |---|---|---|---|
 | `krbtgt_password_old` | High | T1558.001 | krbtgt password not rotated |
 | `rodc_krbtgt_password_old` | Medium | T1558.001 | RODC krbtgt account not rotated |
+| `azuread_sso_key_old` | Medium | T1558.002 | Seamless SSO key (AZUREADSSOACC$) not rolled over |
+| `cloud_kerberos_trust_key_old` | Medium | T1558.001 | Cloud Kerberos trust key (krbtgt_AzureAD) not rotated |
 | `privileged_kerberoastable` | Critical | T1558.003 | Privileged account with SPN (Kerberoastable) |
 | `kerberoastable_user` | Medium | T1558.003 | User account with SPN (Kerberoastable) |
 | `spn_account_rc4` | Medium | T1558.003 | SPN account without AES-only encryption |
@@ -688,6 +690,7 @@ particular object.
 | `privileged_account_delegable` | High | T1558 | Privileged account can be delegated |
 | `des_enabled` | High | T1558 | DES Kerberos encryption enabled |
 | `protected_users_empty` | Medium | T1550 | Protected Users group is empty |
+| `kerberos_ticket_lifetime_long` | Low | T1558 | Kerberos ticket lifetimes longer than the defaults |
 
 **Privileged Access**
 
@@ -841,6 +844,7 @@ particular object.
 | `ldap_channel_binding_off` | Medium | T1557.001 | LDAP channel binding not enforced |
 | `lm_hash_stored` | High | T1003 | LM hash storage not disabled |
 | `ntlm_weak_lmcompat` | Medium | T1550.002 | Weak LM/NTLM compatibility level |
+| `ntlm_not_restricted` | Low | T1550.002 | NTLM neither audited nor restricted on domain controllers |
 | `dangerous_privilege_right` | High | T1078.002 | Sensitive privilege granted to a non-privileged principal on DCs |
 | `anonymous_sam_enum` | Medium | T1087 | Anonymous SAM / share enumeration allowed |
 | `audit_policy_insufficient` | Medium | T1562.002 | Advanced audit policy gaps on domain controllers |
@@ -951,6 +955,7 @@ Two permanent Global Admins are fine: those are the emergency access accounts.
 | `entra_federated_domain` | Low | T1606.002 | Federated domain |
 | `entra_b2b_direct_connect_open` | Medium | T1199 | B2B direct connect open to every tenant |
 | `entra_no_workload_identity_ca` | Medium | T1078.004 | Privileged apps without workload identity Conditional Access |
+| `entra_tap_weak` | Low | T1078.004 | Temporary Access Pass can be reused or lives long |
 
 **Entra Identity**
 
@@ -978,6 +983,7 @@ Two permanent Global Admins are fine: those are the emergency access accounts.
 | `entra_access_package_external_no_approval` | High | T1098 | External users can get an access package without approval |
 | `entra_access_package_no_expiry` | Low | T1078.004 | Access package assignments never expire and are never reviewed |
 | `entra_catalog_role_privileged_group` | High | T1098.003 | Non-admin manages an entitlement catalog that holds an admin group |
+| `entra_sync_hard_match_takeover` | Medium | T1098 | On-premises accounts can take over cloud accounts (soft / hard match) |
 
 **Entra Applications**
 
@@ -1187,9 +1193,25 @@ box holds a right over another, the arrow goes to that box and the chain reads
 left to right, one column per step. A dashed arrow means the right is real but
 nothing shows that the object it applies to leads to Tier 0. Hover a box to light
 up its whole path. Below the map, a table lists the Tier 0 members, which are
-the destination and not a source. Next to it there is a **trust map**, with the
-domain in the middle and each trust around it, in red when it's weak. Both maps
-come from the findings, not from probing the network.
+the destination and not a source. A dark **Any domain user** box on the left
+gathers what any account can start from: Kerberoasting and AS-REP roasting a
+Tier 0 account, enrolling a vulnerable template, coercing a DC and relaying to
+the CA, noPac while the machine account quota is above zero, rights granted to
+Authenticated Users / Domain Users / Everyone, and, with a password-quality
+report attached, a breached or empty Tier 0 password. The members of a group
+that is a source are one step behind it ("Member of Helpdesk"), and a Tier 0
+password shared with a normal account is a step from that account. AD CS on the
+CA (ESC6/7/8/11/16), SID history, SID filtering off on a trust, operator groups,
+RODC caches, GPO scripts on a share, GPP passwords and LAPS readers are on the
+map too; the last few are dashed, because the finding alone doesn't prove the
+path. Next to it there is a **trust map**, with the domain in the middle and
+each trust around it, in red when it's weak. Both maps come from the findings,
+not from probing the network.
+
+The Entra report has the same map **toward the admin roles**: owners of a
+privileged group, app or service principal, scoped application administrators,
+access packages that any user can request, and privileged accounts without MFA
+(from "Any user").
 
 ## Score
 
@@ -1264,10 +1286,10 @@ collections run there, and some bugs only show up there.
   fake Graph.
 - The AI layer is tested offline: no real name in the prompt, the token round
   trip, and invented check IDs being dropped.
-- Reference results: the AD `demo` gives **211 findings** (25 Critical, 78 High,
-  81 Medium, 27 Low) and 17 Tier 0 principals, and 219 with the example
-  password report. `-Deep` gives 216. `partial` gives 201. The Entra tenant
-  gives 93. In total there are **626 assertions**.
+- Reference results: the AD `demo` gives **216 findings** (26 Critical, 79 High,
+  82 Medium, 29 Low) and 17 Tier 0 principals, and 224 with the example
+  password report. `-Deep` gives 221. `partial` gives 205. The Entra tenant
+  gives 95. In total there are **658 assertions**.
 - `tests/lab/` is for a throw-away lab domain, never for production.
   `New-LabAttackPaths.ps1` plants a four-step ACL chain and a few delegation
   findings. It **writes to AD**, asks you to type the domain name first, and has

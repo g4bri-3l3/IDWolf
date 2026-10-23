@@ -50,12 +50,12 @@ Windows Server benchmark is mostly GPO hardening, which IDWolf reads from SYSVOL
 | Password and lockout policy | Yes `password_policy_*`, `fgpp_weak` |
 | SMB signing, SMBv1 | GPO `smb_signing_not_required`, `smb_client_signing_not_required`, `smb1_server_enabled` |
 | LDAP signing and channel binding | GPO `ldap_signing_not_required`, `ldap_channel_binding_off` |
-| LM hash, NTLM level | GPO `lm_hash_stored`, `ntlm_weak_lmcompat` |
+| LM hash, NTLM level, NTLM audit and restriction | GPO `lm_hash_stored`, `ntlm_weak_lmcompat`, `ntlm_not_restricted` |
 | Anonymous access | GPO `anonymous_sam_enum`; Yes `anonymous_ldap_enabled`, `pre_win2000_anonymous` |
 | Sensitive user rights (SeDebug, SeBackup...) | GPO `dangerous_privilege_right` |
 | Advanced audit policy, command line, PowerShell logging | GPO `audit_policy_insufficient`, `audit_advanced_policy_missing`, `cmdline_audit_not_enabled`, `powershell_logging_not_enabled` |
 | Credential protection (WDigest, LSA PPL, cached logons) | GPO `wdigest_cleartext`, `lsass_not_protected`, `cached_credentials` |
-| Kerberos encryption types, armoring | GPO `kerberos_rc4_allowed`, `kerberos_armoring_not_enforced` |
+| Kerberos encryption types, armoring, ticket lifetimes | GPO `kerberos_rc4_allowed`, `kerberos_armoring_not_enforced`, `kerberos_ticket_lifetime_long` |
 | Netlogon secure channel, Print Spooler, WebClient, LLMNR, mDNS, UNC hardening | GPO `netlogon_vulnerable_channel`, `spooler_on_dc`, `webclient_not_disabled`, Live `webclient_on_dc`, `llmnr_enabled`, `mdns_enabled`, `unc_hardening_disabled` |
 | Firewall, Defender, TLS versions, BitLocker | Out (host build state) |
 
@@ -111,9 +111,10 @@ by score. Rule list: pingcastle.com, engine 3.3.
 | Certifried (CVE-2022-26923) | Partial `machine_account_quota`; patch level Out |
 | Timeroasting | Partial `precreated_computer_account` (pre-created computers with a predictable password); the attack itself Out |
 | AD CS ESC5 (access to PKI objects), ESC14 (weak explicit certificate mappings) | Yes `adcs_esc5`, `altsecid_weak_mapping`; write access to `altSecurityIdentities` is a dangerous ACE |
-| Exchange privileges (PrivExchange, Exchange Windows Permissions) | Yes `dangerous_ace_tier0` (WriteDacl on the domain head or on Tier 0 groups, as for any non-Tier 0 principal) |
+| Exchange privileges (PrivExchange, Exchange Windows Permissions) | Yes `dangerous_ace_tier0` (WriteDacl on the domain head or on Tier 0 groups, as for any non-Tier 0 principal; the Exchange groups get a PrivExchange note with the fix) |
 | SID history abuse, cross-forest trust tickets | Yes `sid_history`, `trust_sid_filtering_disabled`, `trust_tgt_delegation`, `trust_no_selective_auth`, `trust_rc4` |
 | Golden / Silver Ticket | Yes `krbtgt_password_old`, `dc_password_old`; the forging itself Out |
+| Silver ticket for Entra Seamless SSO (`AZUREADSSOACC$`), cloud Kerberos trust key (`krbtgt_AzureAD`) | Yes `azuread_sso_key_old`, `cloud_kerberos_trust_key_old` |
 | DSRM admin persistence (DC local admin logon) | Live `dsrm_logon_behavior` (DsrmAdminLogonBehavior=2 on a DC) |
 | Tier 0 accounts authenticating with a reusable password | Yes `privileged_logon_unrestricted` (not in Protected Users, no smart card required) |
 | Local admin password reuse | Partial `laps_not_deployed`, `laps_missing` (the condition, not the reuse) |
@@ -243,7 +244,7 @@ Netwrix announced, not rule by rule.
 | Unsafe app consent grants | Yes `entra_risky_delegated_grant`, `entra_user_consent_allowed`, `entra_users_can_consent` |
 | Conditional Access gaps | Yes (the 5.2.2.x rows above) |
 | Non-human identities: app owners, credentials, permissions | Yes `entra_privileged_app_owner`, `entra_first_party_sp_credentials`, `entra_app_high_privilege`, `entra_app_insecure_redirect`, `entra_app_secret_long_lived` |
-| Hybrid: sync and federation | Yes `entra_sync_stale`, `entra_password_hash_sync_off`, `entra_federated_domain`, `entra_admin_synced_from_onprem` |
+| Hybrid: sync and federation | Yes `entra_sync_stale`, `entra_password_hash_sync_off`, `entra_sync_hard_match_takeover`, `entra_federated_domain`, `entra_admin_synced_from_onprem` |
 | Cross-tenant trust | Yes `entra_cross_tenant_mfa_trust`, `entra_b2b_direct_connect_open` |
 | Workload identities | Yes `entra_no_workload_identity_ca` |
 | Intune RBAC: roles that push scripts, apps or configuration to devices, or change Intune roles | Yes `entra_intune_role_weak_group` (given through a group that is not role-assignable or is dynamic). Not yet verified on a real tenant: the action names are matched from documentation |
@@ -260,6 +261,7 @@ Source: Microsoft Learn "Best practices to secure with Microsoft Entra ID".
 | Practice | IDWolf |
 |---|---|
 | Strong / phishing-resistant MFA for everyone, admins first | Yes `entra_security_defaults_off`, `entra_no_ca_mfa_admins`, `entra_admins_without_mfa`, `entra_no_phishing_resistant_admins` |
+| Temporary Access Pass: one-time use, short lifetime | Yes `entra_tap_weak` |
 | Block legacy authentication | Yes `entra_legacy_auth_allowed` |
 | Risk-based Conditional Access | Yes `entra_risk_policies_missing` |
 | No standing admin access (PIM, just in time, approval for the top roles) | Yes `entra_pim_not_used`, `entra_pim_activation_no_approval` |
@@ -294,7 +296,7 @@ October 2026.
 | Kerberoasting in ransomware intrusions (Interlock, 2026) | 2026 | Yes `kerberoastable_user`, `privileged_kerberoastable`, `spn_account_rc4` |
 | Shadow Credentials | ongoing | Yes `shadow_credentials_present`; Deep `dangerous_ace_anywhere` (write access to `msDS-KeyCredentialLink`) |
 | Entra Connect server and sync account as a way into the cloud (Mollema, Black Hat 2025) | 2025 | Partial `entra_connect_app_extra_credentials`, `dcsync_rights` (the sync account is flagged as a Tier 0 credential), `entra_admin_synced_from_onprem` |
-| SyncJacking: hard match takes over a synced cloud account (Semperis) | 2025-26 | Partial `entra_admin_synced_from_onprem` (synced admins are what makes it worth doing); Microsoft blocks the re-match in the service since mid-2026 |
+| SyncJacking: hard match takes over a synced cloud account (Semperis) | 2025-26 | Yes `entra_sync_hard_match_takeover` (BlockCloudObjectTakeoverThroughHardMatch and BlockSoftMatch off); Partial `entra_admin_synced_from_onprem` (synced admins are what makes it worth doing); Microsoft blocks the re-match in the service since mid-2026 |
 | Password spraying, over 99% of observed cloud initial access (Microsoft Digital Defense Report 2026) | 2025-26 | Yes `entra_smart_lockout_weak`, `entra_banned_passwords_off`, `entra_legacy_auth_allowed`, `entra_admins_without_mfa`, `entra_users_not_mfa_capable`; on premises `password_policy_no_lockout`, PQ `pwq_*` |
 | Device code phishing (Storm-2372 and later kits) | 2025-26 | Yes `entra_device_code_flow_allowed` |
 | Adversary-in-the-middle phishing and token theft | ongoing | Yes `entra_no_phishing_resistant_admins`, `entra_admin_no_phishing_resistant_method`, `entra_token_protection_off`, `entra_admin_sign_in_frequency` |

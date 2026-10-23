@@ -136,7 +136,7 @@ $intuneRoles = @(
 $intuneApprovalPolicies = @([ordered]@{ id = (Guid5 950); policyType = 'app'; policyPlatform = 'notApplicable'; approverGroupCount = 1 })
 $snapshot = [ordered]@{
     meta = [ordered]@{
-        tool = 'IDWolf'; kind = 'entra'; schemaVersion = 10; collectorVersion = 'synthetic'
+        tool = 'IDWolf'; kind = 'entra'; schemaVersion = 11; collectorVersion = 'synthetic'
         collectedAtUtc = $ref.ToString('o'); tenantId = '11111111-2222-3333-4444-555555555555'; account = 'auditor@moosebank.onmicrosoft.com'
         collectionErrors = @(); synthetic = $true
     }
@@ -147,6 +147,8 @@ $snapshot = [ordered]@{
         allowedToReadBitlockerKeys = $true }
     consentPolicy = [ordered]@{ adminConsentRequestEnabled = $false }
     authenticationMethods = @([ordered]@{ id = 'Sms'; state = 'enabled' }, [ordered]@{ id = 'Voice'; state = 'disabled' }, [ordered]@{ id = 'Email'; state = 'enabled' }, [ordered]@{ id = 'Fido2'; state = 'enabled' })
+    # TAP on, reusable, passes up to 3 days: entra_tap_weak (Medium).
+    tapSettings = [ordered]@{ state = 'enabled'; isUsableOnce = $false; defaultLifetimeInMinutes = 60; maxLifetimeInMinutes = 4320 }
     passwordSettings = [ordered]@{ configured = $true; enableBannedPasswordCheck = $false; bannedPasswordCount = 0; lockoutThreshold = 20; lockoutDurationInSeconds = 30 }
     pim = $pim
     # Global Admin activation needs approval, Privileged Role Admin doesn't.
@@ -162,7 +164,8 @@ $snapshot = [ordered]@{
         [ordered]@{ id = 'moosebank.example'; isVerified = $true; authenticationType = 'Federated'; passwordValidityDays = $null; federatedIdpMfaBehavior = 'acceptIfMfaDoneByFederatedIdp' })
     idleTimeout = [ordered]@{ policyCount = 0 }
     branding = [ordered]@{ configured = $false; hideKeepMeSignedIn = $false }
-    onPremSync = [ordered]@{ syncEnabled = $true; passwordHashSync = $false }
+    # Hard-match takeover blocked, soft match still open: entra_sync_hard_match_takeover (Low).
+    onPremSync = [ordered]@{ syncEnabled = $true; passwordHashSync = $false; blockSoftMatch = $false; blockCloudObjectTakeover = $true }
     # Guests are reviewed, admin roles aren't.
     accessReviews = @([ordered]@{ displayName = 'Quarterly guest review'; status = 'InProgress'; scope = '{"query":"/users?$filter=(userType eq ''Guest'')"}' })
     # An office range is trusted; a country list exists but no policy blocks with it.

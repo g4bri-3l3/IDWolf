@@ -400,6 +400,15 @@ $script:EntraCheckCatalog = [ordered]@{
         Title = 'Privileged apps without workload identity Conditional Access'
         Description = 'Apps registered in this tenant hold admin roles or tenant-wide permissions, and no Conditional Access policy covers service principals. A stolen secret or certificate for those apps works from anywhere on the internet.'
         Remediation = 'With Workload Identities Premium, add a Conditional Access policy that targets those service principals and blocks sign-ins outside your known locations (and high service principal risk). Without the licence, move them to certificates and managed identities and watch their sign-ins.' }
+    # ---- Schema 11 ----
+    entra_sync_hard_match_takeover = @{ Category = 'Entra Identity'; Severity = 'Medium'; Mitre = 'T1098'; Needs = @('onPremSync', 'schema11')
+        Title = 'On-premises accounts can take over cloud accounts (soft / hard match)'
+        Description = 'Directory sync does not block soft match (an on-premises account with the same UPN or e-mail address is joined to an existing cloud account) or hard match onto cloud-only accounts (the on-premises sourceAnchor is matched to a cloud account''s immutableId). Whoever can create or edit accounts in AD, or in an OU that is synced, can then take control of a cloud-only account, admins included, and set its password from on-premises.'
+        Remediation = 'Turn on BlockCloudObjectTakeoverThroughHardMatch and BlockSoftMatch (Update-MgDirectoryOnPremiseSynchronization, or Set-EntraDirSyncFeature) once the initial migration is done; turn soft match back on only for the duration of a planned migration. Keep cloud-only admins out of the reach of sync.' }
+    entra_tap_weak = @{ Category = 'Entra Access Policy'; Severity = 'Low'; Mitre = 'T1078.004'; Needs = @('authenticationMethods', 'schema11')
+        Title = 'Temporary Access Pass can be reused or lives long'
+        Description = 'The Temporary Access Pass method is on and a pass can be used more than once, or can be issued for longer than the default 8 hours. A TAP counts as strong authentication and can register new methods: a pass that leaks from a help-desk ticket or a chat keeps working for its whole lifetime.'
+        Remediation = 'In the Temporary Access Pass settings, require one-time use and keep the maximum lifetime at 8 hours or less (1 hour is usually enough); limit the method to the groups that onboard new users.' }
 }
 
 # Built-in authentication strength for phishing-resistant MFA.
@@ -437,6 +446,7 @@ function Get-EntraNotEvaluated {
     if ($sv -lt 8) { $absent['schema8'] = "$reCollect (no Intune roles)" }
     if ($sv -lt 9) { $absent['schema9'] = "$reCollect (no Intune Multi Admin Approval policies)" }
     if ($sv -lt 10) { $absent['schema10'] = "$reCollect (no Azure AD Graph permissions, entitlement catalogs or catalog roles)" }
+    if ($sv -lt 11) { $absent['schema11'] = "$reCollect (no Temporary Access Pass settings or soft / hard match protection)" }
     foreach ($s in 'authenticationMethods', 'passwordSettings', 'pim', 'pimPolicies', 'authenticatorSettings', 'groupCreation', 'deviceRegistration',
         'appManagementPolicy', 'domains', 'idleTimeout', 'branding', 'onPremSync', 'accessReviews', 'namedLocations', 'licenses', 'perUserMfa', 'oauthGrants', 'crossTenant', 'accessPackages', 'intuneRoles', 'intuneApprovalPolicies') {
         if (-not $Snapshot.PSObject.Properties[$s]) { $absent[$s] = "'$s' not in this snapshot ($reCollect)" }
@@ -859,6 +869,26 @@ function Invoke-EntraChecks {
     $ps = $Snapshot.onPremSync
     if ((& $have 'onPremSync') -and $ps -and $ps.syncEnabled -and $ps.passwordHashSync -eq $false) {
         Add-EntraFinding -Type entra_password_hash_sync_off -Object 'Entra Connect' -ObjectType 'sync' -Detail 'Directory sync is on, password hash sync is off.'
+    }
+    # Both flags are null when sync is off, and absent before schema 11.
+    if ($sv -ge 11 -and (& $have 'onPremSync') -and $ps -and $ps.syncEnabled) {
+        $open = @()
+        if ($ps.blockCloudObjectTakeover -ne $true) { $open += 'Hard match onto cloud-only accounts is not blocked (BlockCloudObjectTakeoverThroughHardMatch off)' }
+        if ($ps.blockSoftMatch -ne $true) { $open += 'Soft match is not blocked (BlockSoftMatch off)' }
+        if ($open.Count) {
+            $sev = if ($ps.blockCloudObjectTakeover -ne $true) { 'Medium' } else { 'Low' }
+            Add-EntraFinding -Type entra_sync_hard_match_takeover -Object 'directory sync' -ObjectType 'sync' -Severity $sev -Detail "$($open -join '; ')."
+        }
+    }
+    $tap = $Snapshot.tapSettings
+    if ($sv -ge 11 -and (& $have 'authenticationMethods') -and $tap -and "$($tap.state)" -eq 'enabled') {
+        $why = @()
+        if ($tap.isUsableOnce -ne $true) { $why += 'a pass can be used more than once' }
+        if ($null -ne $tap.maxLifetimeInMinutes -and [int]$tap.maxLifetimeInMinutes -gt 480) { $why += "maximum lifetime $([int]$tap.maxLifetimeInMinutes) minutes (over 8 hours)" }
+        if ($why.Count) {
+            $sev = if ($null -ne $tap.maxLifetimeInMinutes -and [int]$tap.maxLifetimeInMinutes -gt 480) { 'Medium' } else { 'Low' }
+            Add-EntraFinding -Type entra_tap_weak -Object 'Temporary Access Pass' -ObjectType 'policy' -Severity $sev -Detail "Temporary Access Pass is on: $($why -join '; ')."
+        }
     }
 
     if ($caOk -and (& $have 'namedLocations') -and -not @($Snapshot.namedLocations | Where-Object { $_ -and $_.isTrusted }).Count) {
@@ -1537,6 +1567,10 @@ function ConvertTo-EntraReportHtml {
         & $w '</ul></blockquote>'
     }
     if ($AiResult) { & $w (ConvertTo-AiSectionHtml -AiResult $AiResult) }
+    if (Get-Command ConvertTo-EntraAttackMapHtml -ErrorAction SilentlyContinue) {
+        try { & $w (ConvertTo-EntraAttackMapHtml -Snapshot $Snapshot -Findings $Findings) }
+        catch { Write-Warning "Attack-path map skipped: $($_.Exception.Message)" }
+    }
     if (Get-Command Get-CheckControls -ErrorAction SilentlyContinue) {
         try { & $w (ConvertTo-FrameworkCardsHtml -Catalog $script:EntraCheckCatalog -Findings $Findings -NotEvaluated $NotEvaluated) }
         catch { Write-Warning "Framework cards skipped: $($_.Exception.Message)" }

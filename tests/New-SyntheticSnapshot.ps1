@@ -132,6 +132,8 @@ $u.hd2 = New-U 'hd.operator2' -PwdAge 30 -Logon 1
 # Smart card required (0x40000), hash never rolled: smartcard_password_not_rotated.
 # Also a subject-only certificate mapping next to a strong one: altsecid_weak_mapping.
 $u.scard = New-U 'sc.bianchi' -Uac (0x200 -bor 0x40000) -PwdAge 900 -Logon 1 -AltSec @('IssuerSerial', 'SubjectOnly')
+# Entra Kerberos server object (cloud Kerberos trust), key not rotated: cloud_kerberos_trust_key_old.
+$u.krbAad = New-U 'krbtgt_AzureAD' -Ou "CN=Users,$dn" -Uac (0x200 -bor $UAC_DIS) -PwdAge 250 -Logon $null -Created 900
 
 # -------------------------------------------------------------- computers
 $c = [ordered]@{}
@@ -151,6 +153,8 @@ $c.sql    = New-C 'SRV-SQL01' -Ou $srvOu -Os 'Windows Server 2022 Standard' -OsV
 $c.linux  = New-C 'LINUX01' -Ou $srvOu -Os 'Ubuntu 24.04' -OsVer '' -LapsV2 $null
 # Pre-staged computer left with PASSWD_NOTREQD (predictable default password).
 $c.prestaged = New-C 'PRESTAGE01' -Ou $srvOu -Os 'Windows Server 2022 Standard' -OsVer '10.0 (20348)' -Uac (0x1000 -bor $PNR)
+# Seamless SSO account: never logs on (not stale), key rolled over 400 days ago: azuread_sso_key_old.
+$c.sso = New-C 'AZUREADSSOACC' -Ou "CN=Computers,$dn" -Os '' -OsVer '' -Logon $null -PwdAge 400 -Created 1500 -LapsV2 $null -Enc 24
 foreach ($i in 1..20) {
     $name = "WKS-{0:D3}" -f $i
     $laps = -20; $logon = ($i % 10) + 1; $desc = ''; $susp = $false
@@ -192,6 +196,7 @@ $g.allowedRodc = New-G 'Allowed RODC Password Replication Group' "$dom-571" @() 
 $g.hd      = New-G 'Helpdesk' "$dom-1103" @($u.hd1.distinguishedName, $u.hd2.distinguishedName, $u.hdlead.distinguishedName)
 $g.itops   = New-G 'IT-Ops' "$dom-1106" @($u.verdi.distinguishedName)
 $g.svcgrp  = New-G 'ServiceAccounts-PSO' "$dom-1107" @($u.web.distinguishedName, $u.app.distinguishedName)
+$g.exwp    = New-G 'Exchange Windows Permissions' "$dom-1108" @() -Ou "OU=Microsoft Exchange Security Groups,$dn" -Scope 'Universal'
 
 # ------------------------------------------------------------------- ACLs
 $GC = '1131f6aa-9c07-11d1-f79f-00c04fc2dcd2'; $GCA = '1131f6ad-9c07-11d1-f79f-00c04fc2dcd2'
@@ -220,6 +225,8 @@ $rootAces = @(Default-Aces) + @(
     (Ace $u.dirsync.sid 'MOOSEBANK\svc.dirsync' 'ExtendedRight' -ObjectType $GC -Inh 'None')
     (Ace $u.dirsync.sid 'MOOSEBANK\svc.dirsync' 'ExtendedRight' -ObjectType '89e95b76-444d-4c62-991a-0facbeda640c' -Inh 'None')
     (Ace "$dom-1103" 'MOOSEBANK\Helpdesk' 'ExtendedRight' -ObjectType $FCP -InhObj $USER -Inh 'Descendents')
+    # Exchange left without split permissions: WriteDacl on the domain head (PrivExchange).
+    (Ace "$dom-1108" 'MOOSEBANK\Exchange Windows Permissions' 'WriteDacl' -Inh 'None')
     (Ace 'S-1-5-11' 'NT AUTHORITY\Authenticated Users' 'WriteProperty' -ObjectType $GPLINK -Inh 'None' -Type 'Deny')
 )
 $acls = @(
@@ -412,7 +419,7 @@ $gpo = [ordered]@{
                 'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\NullSessionPipes' = '7,netlogon,samr,lsarpc,BROWSER'
             }
             privilegeRights = [ordered]@{ 'SeBackupPrivilege' = @('S-1-5-32-544', 'S-1-5-32-551') }
-            systemAccess = [ordered]@{}; serviceStart = [ordered]@{}; userPolicyRead = $true
+            systemAccess = [ordered]@{}; kerberosPolicy = [ordered]@{}; serviceStart = [ordered]@{}; userPolicyRead = $true
             # Partial audit policy: audit_policy_insufficient, not audit_advanced_policy_missing.
             auditPolicy = [ordered]@{
                 '0cce923f-69ae-11d9-bed3-505054503030' = 3   # Credential Validation OK
@@ -426,7 +433,7 @@ $gpo = [ordered]@{
                 # The DCs take updates over HTTPS; MooseESC15 issues server certificates for any name: adcs_esc17.
                 'MACHINE\Software\Policies\Microsoft\Windows\WindowsUpdate\WUServer' = '1,https://wsus02.moosebank.local:8531' }
             privilegeRights = [ordered]@{ 'SeDebugPrivilege' = @("$dom-1103") }  # Helpdesk (non Tier 0) can debug on DCs
-            systemAccess = [ordered]@{}; serviceStart = [ordered]@{}; userPolicyRead = $true
+            systemAccess = [ordered]@{}; kerberosPolicy = [ordered]@{}; serviceStart = [ordered]@{}; userPolicyRead = $true
             # Non-Tier 0 principal (Helpdesk) can edit this DC-OU-linked GPO.
             ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'
             aces = @((Ace "$dom-1103" 'MOOSEBANK\Helpdesk' 'GenericWrite' -Inh 'None')) }
@@ -441,7 +448,9 @@ $gpo = [ordered]@{
                 'MACHINE\Software\Policies\Microsoft\Windows\WindowsUpdate\WUServer' = '1,http://wsus01.moosebank.local:8530'
                 'MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\AutoAdminLogon' = '1,1'
                 'MACHINE\Software\Microsoft\Windows NT\CurrentVersion\Winlogon\DefaultPassword' = '1,<masked>' }
-            privilegeRights = [ordered]@{}; systemAccess = [ordered]@{}; userPolicyRead = $true
+            privilegeRights = [ordered]@{}; systemAccess = [ordered]@{}
+            # Ticket renewal stretched to 30 days: kerberos_ticket_lifetime_long.
+            kerberosPolicy = [ordered]@{ MaxTicketAge = '10'; MaxRenewAge = '30'; MaxServiceAge = '600'; MaxClockSkew = '5' }; userPolicyRead = $true
             # WebClient left on Manual: webclient_not_disabled.
             serviceStart = [ordered]@{ 'webclient' = 3 } }
     )

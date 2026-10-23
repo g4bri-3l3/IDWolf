@@ -55,7 +55,7 @@ Param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.5"
+$script:CollectorVersion = "1.7"
 $script:Errors = New-Object System.Collections.Generic.List[object]
 function Add-CollectionError {
     param([string]$Section, [string]$Message)
@@ -244,6 +244,12 @@ try {
     $authMethods = @($am.authenticationMethodConfigurations | ForEach-Object { [ordered]@{ id = "$($_.id)"; state = "$($_.state)" } })
 }
 catch { Add-CollectionError 'authenticationMethods' $_.Exception.Message }
+# Temporary Access Pass: how long a pass can live and whether it can be used more than once.
+$tapSettings = $null
+if ($authMethods) {
+    $tap = @($am.authenticationMethodConfigurations | Where-Object { "$($_.id)" -eq 'TemporaryAccessPass' })[0]
+    $tapSettings = if ($tap) { [ordered]@{ state = "$($tap.state)"; isUsableOnce = $tap.isUsableOnce; defaultLifetimeInMinutes = $tap.defaultLifetimeInMinutes; maxLifetimeInMinutes = $tap.maxLifetimeInMinutes } } else { [ordered]@{ state = 'absent' } }
+}
 
 # Authenticator details (number matching context, Authenticator Lite) and system-preferred MFA.
 $authenticatorSettings = $null
@@ -342,9 +348,11 @@ $onPremSync = $null
 try {
     if ($org -and $org.onPremisesSyncEnabled) {
         $s = @(Get-Graph 'directory/onPremisesSynchronization')[0]
-        $onPremSync = [ordered]@{ syncEnabled = $true; passwordHashSync = [bool]$s.features.passwordSyncEnabled }
+        # Soft match (by UPN / SMTP) and hard match (by sourceAnchor) let an AD account take over a cloud account.
+        $onPremSync = [ordered]@{ syncEnabled = $true; passwordHashSync = [bool]$s.features.passwordSyncEnabled
+            blockSoftMatch = $s.features.blockSoftMatchEnabled; blockCloudObjectTakeover = $s.features.blockCloudObjectTakeoverThroughHardMatchEnabled }
     }
-    else { $onPremSync = [ordered]@{ syncEnabled = $false; passwordHashSync = $null } }
+    else { $onPremSync = [ordered]@{ syncEnabled = $false; passwordHashSync = $null; blockSoftMatch = $null; blockCloudObjectTakeover = $null } }
 }
 catch { Add-CollectionError 'onPremSync' $_.Exception.Message }
 
@@ -732,7 +740,7 @@ if ($null -ne $entitlementCatalogs) {
 # --------------------------------------------------------------------------
 $snapshot = [ordered]@{
     meta = [ordered]@{
-        tool = 'IDWolf'; kind = 'entra'; schemaVersion = 10; collectorVersion = $script:CollectorVersion
+        tool = 'IDWolf'; kind = 'entra'; schemaVersion = 11; collectorVersion = $script:CollectorVersion
         collectedAtUtc = (Get-Date).ToUniversalTime().ToString('o')
         tenantId = $ctx.TenantId; account = $ctx.Account
         collectionErrors = $script:Errors.ToArray(); synthetic = $false
@@ -742,6 +750,7 @@ $snapshot = [ordered]@{
     authorizationPolicy = $authPolicy
     consentPolicy     = $consentPolicy
     authenticationMethods = $authMethods
+    tapSettings       = $tapSettings
     passwordSettings  = $passwordSettings
     pim               = $pim
     pimPolicies       = $pimPolicies

@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.6 - 2026-10-21
+## 1.7 - 2026-10-23
 
 - New AD checks (3): `dsrm_logon_behavior` (High) flags a DC where DsrmAdminLogonBehavior = 2, so
   the DSRM local administrator can log on while the DC runs normally (Tier 0 persistence; read
@@ -8,7 +8,7 @@
   below 180 days (short recovery/backup window); `privileged_logon_unrestricted` (Medium) flags
   Tier 0 accounts that log on with a reusable password, i.e. not in Protected Users and not
   required to use a smart card. The collector records `domain.tombstoneLifetime` and per-DC
-  `dsrmAdminLogonBehavior`; the demo now gives 211 findings (216 deep, 201 partial).
+  `dsrmAdminLogonBehavior`.
 - Report header: when the AI step ran, the top line also shows the model used and how long
   Gemini took (retries and the defensive fallback included), e.g. `... analysis 2.8s &middot; AI
   gemini-3.8-flash in 12.4s`. Nothing is added when no AI step ran.
@@ -18,6 +18,52 @@
   scan. It only changes the pace (same objects, still read-only over ADWS) and is recorded in
   `meta.options` (`gentle`, `throttleMs`). The launcher offers it on an AD run and in the
   default settings.
+- Four more AD checks: `azuread_sso_key_old` (Medium, High past a year) flags an Entra Seamless SSO
+  computer account (`AZUREADSSOACC$`) whose Kerberos key hasn't been rolled over in 30 days
+  (`SsoKeyMaxAgeDays`), the key behind a Silver Ticket for any synced user;
+  `cloud_kerberos_trust_key_old` (Medium) flags a Windows Hello cloud Kerberos trust account
+  (`krbtgt_AzureAD`) past the krbtgt rotation age; `kerberos_ticket_lifetime_long` (Low) flags a
+  domain Kerberos policy with ticket, renewal or service-ticket lifetimes above the defaults
+  (10 h, 7 days, 600 min) or unlimited; `ntlm_not_restricted` (Low) flags DCs where NTLM is
+  neither audited nor restricted (the first step of any NTLM phase-out). The collector reads the
+  `[Kerberos Policy]` section of each GPO's security template (`gpo.gpos[].kerberosPolicy`); an
+  older snapshot without it lists the lifetime check as *not evaluated*.
+- `AZUREADSSOACC$` is no longer reported as a stale computer: it never logs on by design.
+- `dangerous_ace_tier0` on the domain head for Exchange Windows Permissions, Exchange Trusted
+  Subsystem or Organization Management now says it is the PrivExchange path and how to remove it
+  (Exchange's split-permissions setup, or the published fix).
+- New Entra checks (2, snapshot schema 11): `entra_sync_hard_match_takeover` (Medium; Low when
+  only soft match is open) flags a synced tenant where on-premises accounts can be matched onto
+  existing cloud accounts (BlockCloudObjectTakeoverThroughHardMatch / BlockSoftMatch off, the
+  SyncJacking precondition); `entra_tap_weak` (Low; Medium past 8 hours) flags a Temporary Access
+  Pass policy that allows reusable passes or a long maximum lifetime. The Entra collector reads
+  both from endpoints it already used (GET only). Schema 10 snapshots list them as *not
+  evaluated*.
+- AD attack-path map: a dark **Any domain user** entry box for what any account can start from
+  (Kerberoasting / AS-REP roasting a Tier 0 account, enrolling a vulnerable template, coercion and
+  relay to the CA, noPac with a machine account quota above zero, rights given to Authenticated
+  Users / Domain Users / Everyone, a breached or empty Tier 0 password from the password report).
+  Members of a source group are one step behind it, and a Tier 0 password shared with a normal
+  account is a step from that account. New kinds on the map: AD CS on the CA (ESC6/7/8/10/11/16/17),
+  weak certificate mappings on Tier 0, BadSuccessor, Golden gMSA (only when a gMSA is Tier 0),
+  privileged SID history, SID filtering off, operator groups, DnsAdmins, RODC caches, GPO scripts
+  from a share, GPP passwords, writable SYSVOL, LAPS readers and the SCCM container; the ones the
+  finding alone doesn't prove are dashed.
+- Entra report: a new attack-path map toward the admin roles (owners of privileged groups, apps
+  and service principals, scoped application administrators, access packages any user can
+  request, admins without MFA), drawn like the AD one.
+- Not added: a check on partner (DAP / GDAP) relationships. Microsoft Graph exposes them only to
+  the partner tenant, not to the customer, so a read-only customer-side collector can't see them.
+- Password quality: two duplicate-password clusters of the same size no longer share one Object
+  ("3 accounts"), which made `-CompareTo` and the SIEM `finding_id` mix them up. The Object now
+  names the cluster's alphabetically first account, e.g. `3 accounts incl. svc_app`. Findings
+  of this check get a new `finding_id` once, so the first comparison against a 1.6 run shows
+  them as resolved and new.
+- The demo now gives 216 findings (26/79/82/29; 221 deep, 205 partial, 224 with the example
+  password report) and the Entra tenant 95.
+
+## 1.6 - 2026-10-21
+
 - AI step, reasoning: the model now works in three passes (as an intruder from every realistic
   starting point and across categories; as a reviewer trying to break each chain against the
   findings; as a defender planning from the chains that survived) and returns only the
