@@ -611,6 +611,44 @@ $gKeys1 = (@($graph.Edges | ForEach-Object { $_.EdgeKey }) -join '|'); $gKeys2 =
 Assert-True ($gKeys1 -eq $gKeys2) 'attack graph is deterministic'
 Assert-True ($html -match "font-weight='700'>Any domain user</text>" -and $html -match 'The dark box <b>Any domain user</b>') 'attack map draws the entry box dark and explains it'
 
+# ------------------------------------------------------------------ one finding per Type + Object
+Write-Host "[finding keys]"
+$dupKeys = { param($F) @($F | Group-Object { "$($_.Type)|$($_.Object)".ToLowerInvariant() } | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name }) }
+Assert-True ((& $dupKeys $r.Findings).Count -eq 0) "demo: Type + Object unique (dupes: $((& $dupKeys $r.Findings) -join ', '))"
+# Administrator in both Schema Admins and Enterprise Admins, the usual forest root: one finding, both groups named.
+$dupSnap = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$schemaGrp = $dupSnap.groups | Where-Object { $_.sid -match '-518$' }
+$schemaGrp.members = @('CN=Administrator,CN=Users,DC=moosebank,DC=local')
+$rDup = Invoke-Analysis $dupSnap
+$seaAdmin = @($rDup.Findings | Where-Object { $_.Type -eq 'schema_enterprise_admins_populated' -and $_.Object -eq 'Administrator' })
+Assert-True ($seaAdmin.Count -eq 1 -and $seaAdmin[0].Detail -match 'Schema Admins via' -and $seaAdmin[0].Detail -match 'Enterprise Admins via' -and (& $dupKeys $rDup.Findings).Count -eq 0) "Administrator in Schema and Enterprise Admins: one finding naming both groups (got $($seaAdmin.Count): $($seaAdmin.Detail -join ' || '))"
+# Several hits on one object from any check: merged, worst severity, every detail, same result in any emission order.
+$mk = { param($Sev, $Det) [PSCustomObject]@{ Severity = $Sev; Type = 'replication_failures'; Title = 't'; Category = 'c'; Object = 'DC01'; ObjectType = 'dc'; ObjectDn = ''; Detail = $Det; Mitre = '' } }
+$mA = @(Merge-DuplicateFindings -Findings @((& $mk 'Medium' 'partner DC02 failed'), (& $mk 'High' 'partner DC03 failed'), ([PSCustomObject]@{ Severity = 'Low'; Type = 'replication_stale'; Title = 't'; Category = 'c'; Object = 'DC01'; ObjectType = 'dc'; ObjectDn = ''; Detail = 'x'; Mitre = '' })))
+$mB = @(Merge-DuplicateFindings -Findings @((& $mk 'High' 'partner DC03 failed'), (& $mk 'Medium' 'partner DC02 failed')))
+Assert-True ($mA.Count -eq 2 -and $mA[0].Severity -eq 'High' -and $mA[0].Detail -eq '2 hits: partner DC02 failed | partner DC03 failed' -and $mB[0].Detail -eq $mA[0].Detail) "duplicate findings merged with the worst severity, in a fixed order (got $($mA[0].Severity): $($mA[0].Detail))"
+
+# ------------------------------------------------------------------ not evaluated: tombstone lifetime, schema probes
+$tsSnap = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$tsSnap.domain.PSObject.Properties.Remove('tombstoneLifetime')
+$tsSnap.meta.collectionErrors = @(@($tsSnap.meta.collectionErrors) + @([PSCustomObject]@{ section = 'domain.dsHeuristics'; message = 'Access denied (synthetic)' }, [PSCustomObject]@{ section = 'schema.keyCredentialLink'; message = 'Timeout (synthetic)' }) | Where-Object { $_ })
+$rTs = Invoke-Analysis $tsSnap
+$neTs = @{}; foreach ($n in $rTs.NotEvaluated) { $neTs[$n.Type] = $n.Reason }
+Assert-True (-not (Has $rTs 'tombstone_lifetime_low' 'moosebank.local') -and $neTs['tombstone_lifetime_low'] -match 'Directory Service object could not be read') "tombstone lifetime unread: not evaluated, not clean (got: $($neTs['tombstone_lifetime_low']))"
+Assert-True ($neTs.ContainsKey('shadow_credentials_present') -and -not $neTs.ContainsKey('laps_not_deployed')) 'a failed KeyCredentialLink probe marks Shadow Credentials not evaluated, not LAPS'
+
+# ------------------------------------------------------------------ AD CS: a template without EKU, read as null
+$ekuSnap = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$esc2 = $ekuSnap.adcs.templates | Where-Object { $_.displayName -eq 'Moose ESC2 AnyPurpose' }
+$esc2.ekus = $null
+$rEku = Invoke-Analysis $ekuSnap
+Assert-True (@($rEku.Findings | Where-Object { $_.Type -eq 'adcs_esc2' -and $_.Object -eq 'Moose ESC2 AnyPurpose' -and $_.Detail -match 'no EKU' }).Count -eq 1) 'ESC2: a template whose EKU list reads as null is a no-EKU template'
+
+# ------------------------------------------------------------------ SYSVOL write rights
+Assert-True ((Test-FsRightsWrite 'Modify, Synchronize') -and (Test-FsRightsWrite 'Write, ReadAndExecute, Synchronize') -and (Test-FsRightsWrite '268435456') -and (Test-FsRightsWrite 'CreateFiles')) 'SYSVOL: Modify, Write, GENERIC_ALL and CreateFiles are write rights'
+Assert-True (-not (Test-FsRightsWrite 'WriteAttributes, Synchronize') -and -not (Test-FsRightsWrite 'WriteExtendedAttributes') -and -not (Test-FsRightsWrite 'ReadAndExecute, Synchronize') -and -not (Test-FsRightsWrite '-1610612736')) 'SYSVOL: attribute-only and read/execute rights are not'
+Assert-True ((Get-SevPill '<b>x</b>') -notmatch '<b>' -and (Get-SevPill 'High') -match 'sev-pill-high') 'severity pill encodes a value read back from an earlier CSV'
+
 # ------------------------------------------------------------------ AI
 Write-Host "[ai pseudonymization]"
 $script:RefDate = ConvertTo-UtcDate $demo.meta.collectedAtUtc
@@ -623,6 +661,20 @@ foreach ($secret in 'moosebank', 'MOOSEBANK', 'adm.rossi', 'svc_sql_admin', 'SRV
 foreach ($kept in 'Domain Admins', 'krbtgt', 'Administrator', 'privileged_kerberoastable') {
     Assert-True ($prompt.Contains($kept)) "prompt keeps well-known '$kept'"
 }
+# Names that are not accounts: AD CS templates, issuance policies, OUs, SCCM sites.
+$findText = (@($r.Findings | ForEach-Object { "$($_.Object) $($_.Detail)" }) -join "`n")
+foreach ($secret in 'Moose ESC13 PolicyLink', 'High Assurance Policy') {
+    Assert-True ($findText.Contains($secret) -and $prompt.IndexOf($secret, [StringComparison]::OrdinalIgnoreCase) -lt 0) "prompt must not contain '$secret' (it is in the findings)"
+}
+Assert-True ($pz.Forward.ContainsKey('MooseESC13') -and $pz.Forward.ContainsKey('MB1') -and $pz.Forward.ContainsKey('Tier0') -and $pz.Forward.ContainsKey('Admins')) 'pseudonymizer registers template, SCCM site and OU names'
+# An OU called "Admins" is tokenized on its own, while "Domain Admins" stays whole.
+$ouTok = $pz.Forward['Admins']
+Assert-True ((Protect-AiText $pz "Member of Domain Admins; over organizationalUnit 'Admins'.") -eq "Member of Domain Admins; over organizationalUnit '$ouTok'.") "well-known names shielded from shorter tokens (got: $(Protect-AiText $pz "Member of Domain Admins; over organizationalUnit 'Admins'."))"
+# A real name that is also a word of a check title: not a leak in the title, a leak in a detail.
+$ttl = $script:CheckCatalog['privileged_group_oversized'].Title
+$word = @($ttl -split '\s+' | Where-Object { $_ -match '^[A-Za-z]{5,}$' })[0]
+$pzWord = [PSCustomObject]@{ Forward = @{ $word = 'OU-99' }; Ordered = @($word); DomainSuffixes = @() }
+Assert-True (@(Test-AiLeak -Pz $pzWord -Text "## [High] privileged_group_oversized: $ttl (2 object(s))").Count -eq 0 -and @(Test-AiLeak -Pz $pzWord -Text "- [High] x: over organizationalUnit '$word'.").Count -eq 1) "leak check looks past the tool's own text ('$word' in a title), not past a detail"
 # Builtin names like "Users" stay as they are, or the leak check trips on "Domain Users".
 $pzKeep = New-Pseudonymizer -Snapshot $demo -Index $r.Index
 Assert-True (-not $pzKeep.Forward.ContainsKey('Users')) 'builtin group Users is kept, not tokenized'
@@ -1091,6 +1143,13 @@ Assert-True (EHas 'entra_app_credential_expiring' 'Legacy Sync App') 'entra: exp
 Assert-True (EHas 'entra_app_credential_expiring' 'Reporting App') 'entra: expired app secret'
 Assert-True (EHas 'entra_stale_guest') 'entra: stale guest'
 Assert-True (-not (EHas 'entra_global_admins_excessive') -and -not (EHas 'entra_global_admins_too_few')) 'entra: 3 GAs = neither excessive nor too few'
+# A role read without members is 0 members, and a CA list read as [null] targets nothing.
+$entraNull = Import-ADSnapshot (Join-Path $tmp 'entra.json')
+($entraNull.directoryRoles | Where-Object { "$($_.roleTemplateId)" -eq '62e90394-69f5-4237-9190-012177145e10' }).members = $null
+$gaNull = @(Invoke-EntraChecks -Snapshot $entraNull -Config $ecfg | Where-Object { $_.Type -eq 'entra_global_admins_too_few' })
+Assert-True ($gaNull.Count -eq 1 -and $gaNull[0].Detail -match '^0 Global') "entra: GA role with members null counts 0, not 1 (got: $($gaNull.Detail))"
+$caNull = [PSCustomObject]@{ conditionalAccess = @([PSCustomObject]@{ state = 'enabled'; grantControls = @('mfa'); authStrengthId = ''; includeRoles = @($null); includeUsers = @($null) }) }
+Assert-True (-not (Test-CaRequiresMfaForAdmins $caNull)) 'entra: an MFA policy whose role list reads as [null] does not cover the admins'
 # Schema 2 checks (CIS M365 / Microsoft Entra best practices)
 Assert-True (EHas 'entra_admin_synced_from_onprem' 'dave.appadmin@moosebank.onmicrosoft.com' 'High') 'entra: admin synced from on-premises'
 Assert-True (-not (EHas 'entra_admin_synced_from_onprem' 'user10@moosebank.onmicrosoft.com')) 'entra: synced non-admin not flagged'
@@ -1451,6 +1510,8 @@ Write-Host "[update]"
 $tagsJson = '[{"name":"v1.6"},{"name":"v1.10"},{"name":"v1.9"},{"name":"latest"},{"name":"v2.0-beta"}]'
 Assert-True ((Get-IDWolfLatestTag -TagsJson $tagsJson) -eq [version]'1.10') 'update: highest vX.Y tag wins, compared as a version (1.10 > 1.9), other tags ignored'
 Assert-True ((Get-IDWolfLatestTag -TagsJson '[{"name":"v1.7"}]') -eq [version]'1.7' -and $null -eq (Get-IDWolfLatestTag -TagsJson 'not json') -and $null -eq (Get-IDWolfLatestTag -TagsJson '[]')) 'update: one tag, no tag and an unreadable answer'
+$linkNext = '<https://api.github.com/repositories/1/tags?per_page=100&page=2>; rel="next", <https://api.github.com/repositories/1/tags?per_page=100&page=3>; rel="last"'
+Assert-True ((Get-IDWolfNextPageUri -LinkHeader $linkNext) -eq 'https://api.github.com/repositories/1/tags?per_page=100&page=2' -and $null -eq (Get-IDWolfNextPageUri -LinkHeader '<https://evil.example.com/x>; rel="next"') -and $null -eq (Get-IDWolfNextPageUri -LinkHeader '<https://api.github.com/x?page=1>; rel="prev"')) 'update: follows the next page of the tag list, only on api.github.com'
 $nGit = @(Get-IDWolfUpdateNotice -Current '1.7' -Latest ([version]'1.8') -IsGitClone $true)
 $nZip = @(Get-IDWolfUpdateNotice -Current '1.7' -Latest ([version]'1.8'))
 Assert-True ($nGit.Count -eq 2 -and $nGit[0] -match 'v1\.8 \(this copy is v1\.7\)' -and $nGit[1] -match 'git pull' -and $nZip[1] -match 'releases/tag/v1\.8' -and $nZip[1] -notmatch 'git pull') 'update: a newer tag is announced, with git pull on a clone and the release page otherwise'
@@ -1703,6 +1764,23 @@ Add-Content (Join-Path $tamper 'lib\Common.ps1') "`nfunction Invoke-Helper { Set
 $tamperOut = & (Join-Path $tamper 'Test-IDWolfSafety.ps1') -Quiet 6>&1 2>&1 | Out-String
 $tamperExit = $LASTEXITCODE
 Assert-True ($tamperExit -eq 1 -and $tamperOut -match 'Set-ADUser changes the directory' -and $tamperOut -match 'iex is not allowed' -and $tamperOut -match 'evil\.example\.com' -and $tamperOut -match 'not a GET' -and $tamperOut -match 'not a registry read' -and $tamperOut -match 'Invoke-Item outside lib') 'safety review catches an AD write, iex, a download, a Graph POST, a registry write over CIM and Invoke-Item outside the report opener'
+# Ways around the command list: a name built at run time, code from text, .NET directory and process
+# calls. The copy sits under a "tests" folder, which must not hide the shipped files from the review.
+$tamperB = Join-Path $tmp 'tests\copy'; New-Item -ItemType Directory -Force (Join-Path $tamperB 'lib') | Out-Null
+Copy-Item (Join-Path $root '*.ps1') $tamperB; Copy-Item (Join-Path $root 'lib\*.ps1') (Join-Path $tamperB 'lib')
+Add-Content (Join-Path $tamperB 'lib\Common.ps1') @'
+
+function Invoke-Helper2 {
+    $n = 'Set-AD' + 'User'; & $n -Identity x
+    & "Remove-$('ADObject')" x
+    $sb = [scriptblock]::Create('x')
+    $de = New-Object System.DirectoryServices.DirectoryEntry('LDAP://x'); $de.CommitChanges()
+    [System.Diagnostics.Process]::Start('cmd')
+}
+'@
+$tamperOutB = & (Join-Path $tamperB 'Test-IDWolfSafety.ps1') -Quiet 6>&1 2>&1 | Out-String
+$tamperExitB = $LASTEXITCODE
+Assert-True ($tamperExitB -eq 1 -and $tamperOutB -match 'runs \$n, which this file never sets' -and $tamperOutB -match 'command name built at run time' -and $tamperOutB -match 'Script block built from text' -and $tamperOutB -match 'Directory write through \.NET' -and $tamperOutB -match 'Process started from \.NET') "safety review catches dynamic command names, scriptblocks from text and .NET writes, also under a tests folder: $($tamperOutB.Trim())"
 
 Remove-Item -Recurse -Force $tmp
 Write-Host ""

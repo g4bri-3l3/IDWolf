@@ -160,7 +160,7 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Weak explicit certificate mapping on an account (ESC14)'
         Description = 'altSecurityIdentities maps a certificate to the account by subject, issuer + subject or e-mail (RFC822) only. Whoever gets a certificate with that subject or e-mail, which is often easy to request, can authenticate as the account. Full strong certificate binding enforcement rejects these weak mappings for Kerberos; when it is relaxed by GPO, they work again. High on Tier 0 accounts.'
         Remediation = 'Replace the mapping with a strong one (X509:<I>issuer<SR>serial, <SKI> or <SHA1-PUKEY>), or remove it, and keep StrongCertificateBindingEnforcement = 2 on the DCs.' }
-    unix_password_present = @{ Category = 'Account Hygiene'; Severity = 'High'; Mitre = 'T1552'; Needs = @('users')
+    unix_password_present = @{ Category = 'Account Hygiene'; Severity = 'High'; Mitre = 'T1552'; Needs = @('users', 'schema.unixUserPassword')
         Title = 'UNIX password attribute populated'
         Description = 'The account has a userPassword or unixUserPassword attribute set. These attributes are often world-readable or weakly protected and can store a recoverable or hashed credential, a classic forgotten exposure from NIS/identity-management integrations. The collector records only that a value exists, never the value.'
         Remediation = 'Clear userPassword / unixUserPassword, and move UNIX identity integration to a mechanism that does not store a readable secret in the directory.' }
@@ -445,7 +445,7 @@ $script:CheckCatalog = [ordered]@{
         Title = 'gMSA password readable by a non-Tier 0 principal'
         Description = 'msDS-GroupMSAMembership (PrincipalsAllowedToRetrieveManagedPassword) lets the listed principals retrieve the managed password of this group managed service account. When that principal is not Tier 0, anyone who controls it can recover the gMSA credential and impersonate the service (BloodHound ReadGMSAPassword edge).'
         Remediation = 'Restrict PrincipalsAllowedToRetrieveManagedPassword to the specific host or Tier-matched group that runs the service. Remove broad or non-Tier 0 principals.' }
-    shadow_credentials_present = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1556.003'; Needs = @('users')
+    shadow_credentials_present = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1556.003'; Needs = @('users', 'schema.keyCredentialLink')
         Title = 'Key credential set on a privileged account (possible Shadow Credentials)'
         Description = 'The privileged account has one or more msDS-KeyCredentialLink entries. A key credential allows PKINIT/NGC logon with an attacker-held private key, a common persistence and takeover technique (Shadow Credentials / Whisker). Windows Hello for Business and Azure AD join set this legitimately, so each entry on a Tier 0 account must be confirmed.'
         Remediation = 'Verify every key credential on the account against the expected device/registration. Remove unexpected entries and review who holds the write-to-key-credential right on the object.' }
@@ -746,6 +746,11 @@ function Get-NotEvaluatedChecks {
         $absentReasons['trusts.whenChanged'] = 'snapshot from an older collector (no trust object change date): re-collect'
     }
     if (-not $Snapshot.domain.PSObject.Properties['possSuperiorClasses']) { $absentReasons['domain.possSuperiors'] = 'snapshot from an older collector (no schema possSuperiors probe): re-collect' }
+    # Read together with dSHeuristics: a failed read is logged under that section only, and an older
+    # collector never wrote it. A missing key is unknown, not the 60-day default of an unset value.
+    if (-not $Snapshot.domain.PSObject.Properties['tombstoneLifetime']) {
+        $absentReasons['domain.tombstoneLifetime'] = if ($Index.CollectionErrorSections.Contains('domain.dsHeuristics')) { "Directory Service object could not be read: $($Index.CollectionErrorSections['domain.dsHeuristics'])" } else { 'snapshot from an older collector (no tombstone lifetime): re-collect' }
+    }
     if (-not $Snapshot.domain.PSObject.Properties['javaSchemaClasses']) { $absentReasons['domain.javaSchema'] = 'snapshot from an older collector (no Java schema probe): re-collect' }
     if ($null -eq $Snapshot.domain.subnetCount) { $absentReasons['sites'] = 'Sites/subnets could not be read from the Configuration partition' }
     if (-not $Snapshot.domain.sysvolReplication) { $absentReasons['sysvolReplication'] = 'SYSVOL replication engine could not be determined' }
@@ -998,18 +1003,27 @@ function Invoke-ADHygieneChecks {
         @{ Keys = @('DnsAdmins'); Type = 'dnsadmins_populated' }
     )
     foreach ($gc in $groupMemberChecks) {
+        # One finding per member and check: Administrator sits in both Schema Admins and Enterprise
+        # Admins in most forest roots, and Type + Object must stay unique.
+        $byMember = [ordered]@{}
         foreach ($k in $gc.Keys) {
             if (-not $PrivMap.Groups.Contains($k)) { continue }
             $entry = $PrivMap.Groups[$k]
-            $seen = @{}
             foreach ($m in $entry.Members) {
-                if ($seen.ContainsKey($m.Dn.ToLower())) { continue }
-                $seen[$m.Dn.ToLower()] = $true
-                $name = if ($m.Principal -and $m.Principal.samAccountName) { $m.Principal.samAccountName } elseif ($m.Principal -and $m.Principal.name) { $m.Principal.name } else { $m.Dn }
-                $state = if ($m.Principal -and $null -ne $m.Principal.enabled) { if ($m.Principal.enabled) { 'enabled' } else { 'disabled' } } else { 'n/a' }
-                Add-Finding -Type $gc.Type -Object $name -ObjectType $m.Type -ObjectDn $m.Dn `
-                    -Detail "Member of $($entry.Def.Label) via: $($m.Path). Account $state."
+                $dnKey = $m.Dn.ToLower()
+                if (-not $byMember.Contains($dnKey)) { $byMember[$dnKey] = @{ Member = $m; Via = New-Object System.Collections.Generic.List[string]; Labels = @{} } }
+                $rec = $byMember[$dnKey]
+                if ($rec.Labels.ContainsKey($entry.Def.Label)) { continue }
+                $rec.Labels[$entry.Def.Label] = $true
+                $rec.Via.Add("$($entry.Def.Label) via: $($m.Path)")
             }
+        }
+        foreach ($rec in $byMember.Values) {
+            $m = $rec.Member
+            $name = if ($m.Principal -and $m.Principal.samAccountName) { $m.Principal.samAccountName } elseif ($m.Principal -and $m.Principal.name) { $m.Principal.name } else { $m.Dn }
+            $state = if ($m.Principal -and $null -ne $m.Principal.enabled) { if ($m.Principal.enabled) { 'enabled' } else { 'disabled' } } else { 'n/a' }
+            Add-Finding -Type $gc.Type -Object $name -ObjectType $m.Type -ObjectDn $m.Dn `
+                -Detail "Member of $($rec.Via -join ' | '). Account $state."
         }
     }
 
@@ -1070,7 +1084,6 @@ function Invoke-ADHygieneChecks {
         if ($null -eq $p.primaryGroupId) { continue }
         $pg = [int64]$p.primaryGroupId
         if ($script:NormalPrimaryGroupRids -contains $pg) { continue }
-        if ($p.sid -eq "$dom-500" -and $pg -eq 513) { continue }
         $g = $Index.BySid["$dom-$pg"]
         $gName = if ($g) { $g.name } else { "RID $pg" }
         $sev = if ($privRids.ContainsKey($pg)) { 'Critical' } else { 'High' }
@@ -1087,7 +1100,7 @@ function Invoke-ADHygieneChecks {
             -Detail "adminCount=1 but not an effective member of any protected group. Enabled: $($u.enabled)."
     }
 
-    # RID 500
+    # Smart-card accounts: the NT hash behind the card still works for NTLM until it is rotated.
     $scRotation = if (-not $Snapshot.domain.PSObject.Properties['smartcardPwdRotation'] -or $null -eq $Snapshot.domain.smartcardPwdRotation) { 'unknown' }
     elseif ($Snapshot.domain.smartcardPwdRotation) { 'on' } else { 'off' }
     foreach ($u in @($enabledUsers | Where-Object { Test-Uac $_ 'SMARTCARD_REQUIRED' })) {
@@ -1098,6 +1111,7 @@ function Invoke-ADHygieneChecks {
         }
     }
 
+    # RID 500
     $rid500 = $Index.BySid["$dom-500"]
     if ($rid500 -and $rid500.enabled) {
         $issues = @()
@@ -1561,14 +1575,17 @@ function Invoke-ADHygieneChecks {
         $t0 = Get-Tier0SidSet $Index $PrivMap
         foreach ($fa in @($Snapshot.sysvol.folderAcls | Where-Object { $_ })) {
             $w = [ordered]@{}
-            foreach ($a in @($fa.aces | Where-Object { $_ -and "$($_.accessType)" -eq 'Allow' -and "$($_.rights)" -match 'FullControl|Modify|Write|CreateFiles|AppendData|ChangePermissions|TakeOwnership' })) {
-                if ($t0.ContainsKey("$($a.sid)")) { continue }
+            foreach ($a in @($fa.aces | Where-Object { $_ -and "$($_.accessType)" -eq 'Allow' -and (Test-FsRightsWrite "$($_.rights)") })) {
+                # CREATOR OWNER applies to whoever created the file, who already had to be able to write.
+                if ($t0.ContainsKey("$($a.sid)") -or "$($a.sid)" -eq 'S-1-3-0') { continue }
                 $n = if ($a.name) { "$($a.name)" } else { "$($a.sid)" }
-                $w[$n] = "$($a.rights)"
+                # One principal can hold several ACEs (this folder, subfolders): keep them all.
+                if (-not $w.Contains($n)) { $w[$n] = New-Object System.Collections.Generic.List[string] }
+                if (-not $w[$n].Contains("$($a.rights)")) { $w[$n].Add("$($a.rights)") }
             }
             if ($w.Count) {
                 Add-Finding -Type sysvol_writable -Object "$($fa.folder)" -ObjectType 'file' `
-                    -Detail "Write access for: $(@($w.Keys | ForEach-Object { "$_ ($($w[$_]))" }) -join '; '). Folder: $($fa.path)"
+                    -Detail "Write access for: $(@($w.Keys | ForEach-Object { "$_ ($($w[$_] -join ' + '))" }) -join '; '). Folder: $($fa.path)"
             }
         }
         foreach ($f in @($Snapshot.sysvol.scriptSecretFiles | Where-Object { $_ })) {
@@ -1642,13 +1659,50 @@ function Get-CheckPosition {
     return 99999
 }
 
+# One finding per Type + Object (case-insensitive, like the SIEM finding_id): -CompareTo, the
+# exceptions and finding_id all key on it. Several hits on one object (an owner of many Tier 0
+# objects, a server with several failing partners, a GPO with several bad ACEs) become one
+# finding with the worst severity and every detail, sorted ordinally so the merge doesn't
+# depend on emission order.
+$script:MergedDetailMax = 25
+function Merge-DuplicateFindings {
+    param($Findings)
+    $groups = [ordered]@{}
+    foreach ($f in @($Findings | Where-Object { $_ })) {
+        $key = "$($f.Type)|$($f.Object)".ToLowerInvariant()
+        if (-not $groups.Contains($key)) { $groups[$key] = New-Object System.Collections.Generic.List[object] }
+        $groups[$key].Add($f)
+    }
+    foreach ($g in $groups.Values) {
+        if ($g.Count -eq 1) { $g[0]; continue }
+        $sorted = @($g.ToArray())
+        $dkeys = New-Object 'System.Collections.Generic.List[string]'
+        for ($n = 0; $n -lt $sorted.Count; $n++) { $dkeys.Add(('{0}|{1:D6}' -f "$($sorted[$n].Detail)", $n)) }
+        $dkeys.Sort([StringComparer]::Ordinal)
+        $ordered = @(foreach ($k in $dkeys) { $sorted[[int]$k.Substring($k.Length - 6)] })
+        $worst = $ordered[0].Severity
+        foreach ($f in $ordered) { if ($script:SeverityRank[$f.Severity] -gt $script:SeverityRank[$worst]) { $worst = $f.Severity } }
+        $details = @($ordered | ForEach-Object { "$($_.Detail)" } | Where-Object { $_ } | Select-Object -Unique)
+        $text = if ($details.Count -gt $script:MergedDetailMax) {
+            (($details[0..($script:MergedDetailMax - 1)]) -join ' | ') + " | (+$($details.Count - $script:MergedDetailMax) more)"
+        }
+        else { $details -join ' | ' }
+        $first = $ordered[0]
+        [PSCustomObject]@{
+            Severity = $worst; Type = $first.Type; Title = $first.Title; Category = $first.Category
+            Object = $first.Object; ObjectType = $first.ObjectType; ObjectDn = $first.ObjectDn
+            Detail = "$($g.Count) hits: $text"; Mitre = $first.Mitre
+        }
+    }
+}
+
 # Findings in a fixed order: catalog position of the check, then object. PS 7
 # randomizes hashtable order per process, so without this the CSV, the JSON
 # Lines and the AI prompt changed order from one run of the same snapshot to
 # the next. Ordinal keys: the same order on every machine and culture.
 function Sort-FindingsStable {
     param($Findings, $Catalog)
-    $items = @($Findings | Where-Object { $_ })
+    $items = @(Merge-DuplicateFindings -Findings @($Findings | Where-Object { $_ }))
     if ($items.Count -lt 2) { return $items }
     $pos = @{}; $i = 0
     foreach ($k in $Catalog.Keys) { $pos["$k"] = $i; $i++ }
@@ -2178,9 +2232,20 @@ function Test-TemplateDangerousAcl {
     return $hits
 }
 
+# FileSystemRights text that lets a principal change or plant files: a regex on "Write" would also
+# take WriteAttributes and WriteExtendedAttributes, which change no content. Generic bits come
+# back as a bare number (GENERIC_ALL 0x10000000, GENERIC_WRITE 0x40000000).
+$script:FsWriteRights = @('FullControl', 'Modify', 'Write', 'WriteData', 'CreateFiles', 'AppendData', 'CreateDirectories', 'ChangePermissions', 'TakeOwnership')
+function Test-FsRightsWrite {
+    param([string]$Rights)
+    if ($Rights -match '^-?\d+$') { $v = [int64]$Rights; return (($v -band 0x10000000) -ne 0 -or ($v -band 0x40000000) -ne 0) }
+    foreach ($r in ($Rights -split ',\s*')) { if ($script:FsWriteRights -contains $r.Trim()) { return $true } }
+    return $false
+}
+
 function Test-TemplateHasEku {
     param($Template, [string[]]$Oids)
-    $ekus = @($Template.ekus)
+    $ekus = @($Template.ekus | Where-Object { $_ -is [string] -and $_ })
     if ($ekus.Count -eq 0) { return $false }
     foreach ($o in $Oids) { if ($ekus -contains $o) { return $true } }
     return $false
@@ -2289,7 +2354,9 @@ function Invoke-AdcsChecks {
         $noRaSig = ([int]$t.raSignature -le 0)
         $suppliesSubject = (([int64]$t.nameFlag -band $script:CT_ENROLLEE_SUPPLIES_SUBJECT) -ne 0)
         $clientAuth = Test-TemplateHasEku -Template $t -Oids $script:EkuClientAuth
-        $anyPurpose = ($t.ekus -contains $script:EkuAnyPurpose) -or (@($t.ekus).Count -eq 0)
+        # Where-Object: a 5.1 snapshot can hold a null, an empty string or {} where there is no EKU at all.
+        $tEkus = @($t.ekus | Where-Object { $_ -is [string] -and $_ })
+        $anyPurpose = ($tEkus -contains $script:EkuAnyPurpose) -or ($tEkus.Count -eq 0)
         $enrollAgent = Test-TemplateHasEku -Template $t -Oids @($script:EkuEnrollmentAgent)
         $noSecExt = (([int64]$t.enrollmentFlag -band $script:CT_NO_SECURITY_EXTENSION) -ne 0)
         $schemaV1 = ([int]$t.schemaVersion -eq 1)
@@ -2310,7 +2377,7 @@ function Invoke-AdcsChecks {
         }
         elseif ($anyPurpose -and $noApproval) {
             Add-Finding -Type adcs_esc2 -Object $label -ObjectType 'certtemplate' `
-                -Detail "Enrollable by $enroller; $(if (@($t.ekus).Count -eq 0) { 'no EKU (SubCA-equivalent)' } else { 'Any Purpose EKU' }); no manager approval."
+                -Detail "Enrollable by $enroller; $(if ($tEkus.Count -eq 0) { 'no EKU (SubCA-equivalent)' } else { 'Any Purpose EKU' }); no manager approval."
         }
         elseif ($enrollAgent -and $noApproval) {
             Add-Finding -Type adcs_esc3 -Object $label -ObjectType 'certtemplate' `

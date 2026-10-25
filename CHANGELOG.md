@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.7 - 2026-10-23
+## 1.8 - 2026-10-25
+
+Fixes from a full bug review, and the launcher's version check (committed after the 1.7 tag).
+The synthetic totals don't change (demo 216, partial 205, `-Deep` 221, Entra 95).
 
 - Launcher: version check at start. `Start-IDWolf.ps1` asks GitHub for the repository's tag
   list (one GET to `api.github.com`, no account, at most 3 seconds, silent offline) and, when a
@@ -8,6 +11,70 @@
   otherwise. It never downloads or changes anything (the reviewed copy is the one that runs).
   Off with `-NoUpdateCheck` or `IDWOLF_NO_UPDATE_CHECK=1`; the analyzer, the collectors and
   `Invoke-IDWolfScheduled.ps1` never check. The safety review now allows `api.github.com`.
+- One finding per check and object. Several checks could report the same Type + Object more
+  than once, and `-CompareTo`, the exceptions and the SIEM `finding_id` all key on that pair:
+  - Administrator in both Schema Admins and Enterprise Admins, as in most forest roots;
+  - an owner of several Tier 0 objects;
+  - a principal with rights on several targets;
+  - a GPO with several bad ACEs;
+  - a server with several failing replication partners;
+  - several cpassword files in one GPO;
+  - scripts with the same name.
+
+  These are now merged into one finding with the worst severity and every detail, sorted
+  (`Merge-DuplicateFindings`, in front of `Sort-FindingsStable` for AD and Entra).
+  `schema_enterprise_admins_populated` and `operator_groups_populated` list every group the
+  member is in.
+- AI step: more names are pseudonymized: AD CS template names, the issuance policies linked to
+  groups, OU names, DNS zones (zones outside the domain also count as domain suffixes), SCCM
+  site codes and management points. Some of these used to reach the prompt in clear, and the
+  leak check didn't know them.
+  - Well-known names (`Domain Admins`...) are shielded, so an OU called `Admins` no longer turns
+    them into `Domain OU-1`.
+  - The leak check now looks past the tool's own text (check titles, technique labels, fixed
+    sentences). An OU named after a common word no longer stops the AI step where a title uses
+    the same word.
+  - The leak check now looks for names of 3 characters or more, the same length the
+    pseudonymizer starts tokenizing at.
+- `tombstone_lifetime_low` is *not evaluated* when the Directory Service object could not be
+  read, or when the snapshot comes from an older collector. Before, it was silently clean.
+- Collector:
+  - `Get-ADTrust` now asks for `whenChanged`, which is not in its default property set.
+    Without it, `trust_inactive` could not fire on a real domain, and `trust_rc4` had no key age.
+  - A failed schema probe is logged under its own section. A failed KeyCredentialLink probe used
+    to mark the LAPS checks *not evaluated* and leave `shadow_credentials_present` silently
+    clean. Now `schema.keyCredentialLink` and `schema.unixUserPassword` drive
+    `shadow_credentials_present` and `unix_password_present`.
+  - Password-in-description masking now catches more words and spellings: `Passwort`,
+    `contraseña`, `wachtwoord`, `lösenord`, `hasło`, `passcode`, `P@ssw0rd`, `svc_password`,
+    `Password1`. Ordinary words (`Passport`, `-PassThru`, `pwdLastSet`, `passaggio`) still don't
+    match. The non-word `parola chiave` was dropped. The same pattern drives the SYSVOL script
+    scan.
+  - The Entra CA lists drop null entries.
+- `sysvol_writable` counts only rights that change content: no more WriteAttributes /
+  WriteExtendedAttributes. It reads the generic bits too (GENERIC_ALL / GENERIC_WRITE as a
+  number), skips CREATOR OWNER, and keeps every ACE of a principal instead of the last one.
+- AD CS: a template whose EKU list reads as null or `{}` (older 5.1 snapshots) is treated as a
+  no-EKU template, so ESC2 now fires on it.
+- Entra:
+  - A role read without members counts 0 Global Administrators, not 1.
+  - An MFA policy whose role list reads as `[null]` no longer counts as covering the admins.
+- Wizard: an encrypted bundle's password is asked once, not twice.
+- Report: the comparison and accepted tables HTML-encode the check ID and the severity they read
+  back from an earlier CSV. The "Disabled users" slice is now "Disabled (users and MSAs)".
+- Launcher version check: it follows the tag list's next pages (up to 5, same 3-second budget,
+  `api.github.com` only), so a newer tag past the first 100 is still seen.
+- Safety review:
+  - It flags `&` / `.` on a command name built at run time, or on a variable the file never
+    sets to its own code.
+  - It flags `[scriptblock]::Create`, processes started from .NET, directory writes through .NET
+    (`CommitChanges`, `SetInfo`, `ModifyRequest`...), HTTP writes other than the Gemini POST in
+    `lib\AI.ps1`.
+  - It leaves out only the `tests\` and `examples\` folders of IDWolf itself, so a copy kept
+    under a folder named `tests` is still reviewed.
+
+## 1.7 - 2026-10-23
+
 - New AD checks (3): `dsrm_logon_behavior` (High) flags a DC where DsrmAdminLogonBehavior = 2, so
   the DSRM local administrator can log on while the DC runs normally (Tier 0 persistence; read
   over CIM, needs admin on the DCs); `tombstone_lifetime_low` (Low) flags a tombstone lifetime

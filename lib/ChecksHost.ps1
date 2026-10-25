@@ -649,7 +649,7 @@ function Invoke-GpoChecks {
             $enroller = Test-TemplateLowPrivEnroll -Template $t -LowPrivSids $lowPriv
             if (-not $enroller) { continue }
             if ((([int64]$t.nameFlag -band $script:CT_ENROLLEE_SUPPLIES_SUBJECT) -eq 0) -or (([int64]$t.enrollmentFlag -band $script:CT_PEND_ALL_REQUESTS) -ne 0) -or [int]$t.raSignature -gt 0) { continue }
-            $ekus = @($t.ekus | Where-Object { $_ })
+            $ekus = @($t.ekus | Where-Object { $_ -is [string] -and $_ })
             if ($ekus.Count -and $ekus -notcontains '1.3.6.1.5.5.7.3.1' -and $ekus -notcontains $script:EkuAnyPurpose) { continue }
             $label = if ($t.displayName) { "$($t.displayName)" } else { "$($t.name)" }
             Add-Finding -Type adcs_esc17 -Object $label -ObjectType 'certtemplate' `

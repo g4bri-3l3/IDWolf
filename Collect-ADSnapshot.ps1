@@ -80,7 +80,7 @@ Param(
 # account with broad read rights. Without it those checks show up as
 # "not evaluated".
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.7"
+$script:CollectorVersion = "1.8"
 $script:Errors = New-Object System.Collections.Generic.List[object]
 
 # Connection diagnostics and the DC list (lib\Connection.ps1). Optional: a collector copied
@@ -170,9 +170,11 @@ function ConvertTo-StringArray {
 }
 
 # Password-in-description check runs here, so a matching description never
-# reaches the snapshot. Whole words only: "passaggio" or "Ufficio Crediti"
-# must not match.
-$script:PasswordHintRegex = '(?i)\b(password|passwd|pass|pwd|pw|psw|kennwort|mdp|mot de passe|contrasena|senha|parola chiave)\b'
+# reaches the snapshot. No letter on either side, so "passaggio", "Passport",
+# "-PassThru" or "pwdLastSet" don't match, while "svc_password", "Password1"
+# and "P@ssw0rd" do. Several languages; non-ASCII letters as \u escapes (the
+# file stays ASCII for Windows PowerShell 5.1).
+$script:PasswordHintRegex = '(?i)(?<![a-z])(passwor[dt]s?|passwd|pass|pwd|pw|psw|passcode|passphrase|p[a@4][s5$]{2}w[o0]rd|kennwort|mdp|mot de passe|contrase(n|\u00f1)a|senha|wachtwoord|l(o|\u00f6)senord|salasana|has(l|\u0142)o|heslo|jelsz(o|\u00f3))(?![a-z])'
 function Protect-Description {
     param([string]$Text)
     if ([string]::IsNullOrEmpty($Text)) { return @{ text = $Text; suspicious = $false } }
@@ -378,21 +380,22 @@ Write-Host "Domain: $($domain.DNSRoot)  Forest: $($forest.Name)"
 # whole query, so optional attributes are checked first.
 # --------------------------------------------------------------------------
 function Test-SchemaAttribute {
-    param([string]$LdapName)
+    # Section: the checks that depend on this probe (a failed KeyCredentialLink probe must not mark LAPS unknown).
+    param([string]$LdapName, [string]$Section)
     try {
         return [bool](Get-ADObject -SearchBase $schemaNC -LDAPFilter "(lDAPDisplayName=$LdapName)" @common)
     }
     catch {
-        Add-CollectionError 'domain.lapsSchema' "Schema probe for $LdapName failed: $($_.Exception.Message)"
+        Add-CollectionError $Section "Schema probe for $LdapName failed: $($_.Exception.Message)"
         return $false
     }
 }
-$hasLapsLegacy = Test-SchemaAttribute 'ms-Mcs-AdmPwdExpirationTime'
-$hasLapsV2 = Test-SchemaAttribute 'msLAPS-PasswordExpirationTime'
+$hasLapsLegacy = Test-SchemaAttribute 'ms-Mcs-AdmPwdExpirationTime' 'domain.lapsSchema'
+$hasLapsV2 = Test-SchemaAttribute 'msLAPS-PasswordExpirationTime' 'domain.lapsSchema'
 # msDS-KeyCredentialLink needs a 2016+ schema.
-$hasKeyCred = Test-SchemaAttribute 'msDS-KeyCredentialLink'
+$hasKeyCred = Test-SchemaAttribute 'msDS-KeyCredentialLink' 'schema.keyCredentialLink'
 # unixUserPassword comes with the NIS/IDMU schema extension. Only presence is recorded.
-$hasUnixPwdAttr = Test-SchemaAttribute 'unixUserPassword'
+$hasUnixPwdAttr = Test-SchemaAttribute 'unixUserPassword' 'schema.unixUserPassword'
 # RFC 2713 Java object classes (javaSerializedObject and friends) let LDAP clients store serialized
 # objects: leftover from old extensions, a deserialization risk. Only class presence is recorded.
 $javaSchemaClasses = @()
@@ -608,7 +611,7 @@ foreach ($dc in @($dcs | Where-Object { $_.isReadOnly -and $_.computerDN })) {
 
 $trusts = @()
 try {
-    $trusts = @(Get-ADTrust -Filter * @common | ForEach-Object {
+    $trusts = @(Get-ADTrust -Filter * -Properties whenChanged @common | ForEach-Object {
             [ordered]@{
                 name                    = $_.Name
                 target                  = $_.Target

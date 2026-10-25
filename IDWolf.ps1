@@ -103,7 +103,7 @@ Param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:IDWolfVersion = "1.7"
+$script:IDWolfVersion = "1.8"
 
 $libDir = Join-Path $PSScriptRoot 'lib'
 foreach ($f in @('Common.ps1', 'Checks.ps1', 'ChecksHost.ps1', 'Reporting.ps1', 'Graph.ps1', 'AI.ps1', 'ChecksEntra.ps1', 'Compliance.ps1', 'Bundle.ps1', 'Wizard.ps1')) {
@@ -281,8 +281,9 @@ function Invoke-AnalyzerSetup {
     $kind = 'ad'; $zipHasPq = $false; $snapDomain = ''
     try {
         if (Test-IDWolfBundleFile $snap) {
-            if ((Test-IDWolfEncryptedBundle $snap) -and -not $BundlePassword) { $BundlePassword = Read-Host 'Bundle password (hidden)' -AsSecureString }
-            $b = Expand-IDWolfBundle -Path $snap -Password $BundlePassword
+            # Script scope: the analysis below opens the bundle again and must not ask twice.
+            if ((Test-IDWolfEncryptedBundle $snap) -and -not $script:BundlePassword) { $script:BundlePassword = Read-Host 'Bundle password (hidden)' -AsSecureString }
+            $b = Expand-IDWolfBundle -Path $snap -Password $script:BundlePassword
             try { $peek = [System.IO.File]::ReadAllText($b.Snapshot) | ConvertFrom-Json; $zipHasPq = [bool]$b.PasswordQuality }
             finally { Remove-IDWolfBundle $b }
         }

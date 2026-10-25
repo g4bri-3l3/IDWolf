@@ -55,7 +55,7 @@ Param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.7"
+$script:CollectorVersion = "1.8"
 $script:Errors = New-Object System.Collections.Generic.List[object]
 function Add-CollectionError {
     param([string]$Section, [string]$Message)
@@ -194,21 +194,21 @@ try {
                 id                  = $_.id
                 displayName         = $_.displayName
                 state               = "$($_.state)"
-                includeUsers        = @($_.conditions.users.includeUsers)
-                excludeUsers        = @($_.conditions.users.excludeUsers)
-                excludeGroups       = @($_.conditions.users.excludeGroups)
-                includeGroups       = @($_.conditions.users.includeGroups)
-                includeRoles        = @($_.conditions.users.includeRoles)
-                includeApplications = @($_.conditions.applications.includeApplications)
-                includeUserActions  = @($_.conditions.applications.includeUserActions)
-                includeLocations    = @($_.conditions.locations.includeLocations)
-                excludeLocations    = @($_.conditions.locations.excludeLocations)
-                clientAppTypes      = @($_.conditions.clientAppTypes)
-                includeServicePrincipals = @($_.conditions.clientApplications.includeServicePrincipals)
-                userRiskLevels      = @($_.conditions.userRiskLevels)
-                signInRiskLevels    = @($_.conditions.signInRiskLevels)
+                includeUsers        = @($_.conditions.users.includeUsers | Where-Object { $null -ne $_ })
+                excludeUsers        = @($_.conditions.users.excludeUsers | Where-Object { $null -ne $_ })
+                excludeGroups       = @($_.conditions.users.excludeGroups | Where-Object { $null -ne $_ })
+                includeGroups       = @($_.conditions.users.includeGroups | Where-Object { $null -ne $_ })
+                includeRoles        = @($_.conditions.users.includeRoles | Where-Object { $null -ne $_ })
+                includeApplications = @($_.conditions.applications.includeApplications | Where-Object { $null -ne $_ })
+                includeUserActions  = @($_.conditions.applications.includeUserActions | Where-Object { $null -ne $_ })
+                includeLocations    = @($_.conditions.locations.includeLocations | Where-Object { $null -ne $_ })
+                excludeLocations    = @($_.conditions.locations.excludeLocations | Where-Object { $null -ne $_ })
+                clientAppTypes      = @($_.conditions.clientAppTypes | Where-Object { $null -ne $_ })
+                includeServicePrincipals = @($_.conditions.clientApplications.includeServicePrincipals | Where-Object { $null -ne $_ })
+                userRiskLevels      = @($_.conditions.userRiskLevels | Where-Object { $null -ne $_ })
+                signInRiskLevels    = @($_.conditions.signInRiskLevels | Where-Object { $null -ne $_ })
                 transferMethods     = "$($_.conditions.authenticationFlows.transferMethods)"
-                grantControls       = @($_.grantControls.builtInControls)
+                grantControls       = @($_.grantControls.builtInControls | Where-Object { $null -ne $_ })
                 authStrengthId      = "$($_.grantControls.authenticationStrength.id)"
                 signInFrequency     = [bool]$_.sessionControls.signInFrequency.isEnabled
                 signInFrequencyInterval = "$($_.sessionControls.signInFrequency.frequencyInterval)"

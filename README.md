@@ -1064,7 +1064,8 @@ with a defensive-only variant (same output, no intruder wording), saves it as
 
 This is how your data is protected:
 
-- **Tokens, not names.** Accounts, computers, groups, DNs, SIDs, domains, FQDNs
+- **Tokens, not names.** Accounts, computers, groups, OUs, DNs, SIDs, domains, DNS
+  zones, FQDNs, certificate templates, issuance policies, SCCM sites
   and paths become `USER-7`, `HOST-3$`, `DOMAIN-1` and so on. Well-known names
   such as `krbtgt` and `Domain Admins` stay, since they say nothing about you.
   The token map never leaves your machine, and the real names come back only in

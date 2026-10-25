@@ -104,7 +104,11 @@ real directory data in the report.
 
    It flags any command that would change AD, Entra, DNS, DHCP or GPOs, any
    command nobody reviewed, run-time code tricks (`iex`, Base64, encoded
-   commands, downloads, `Start-Process`, scheduled tasks), Graph requests that
+   commands, downloads, `Start-Process`, scheduled tasks, script blocks built
+   from text, a command name built at run time, `&` on a variable the file
+   doesn't fill with its own code), processes started and directory writes
+   made through .NET instead of a cmdlet, HTTP writes other than the Gemini
+   request, Graph requests that
    aren't GET, and web addresses other than Microsoft Graph, Gemini, the
    GitHub tag list (the launcher's version check) and the MITRE links in the
    report. The one command that opens a file with its

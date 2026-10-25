@@ -88,11 +88,29 @@ function New-Pseudonymizer {
     foreach ($g in $Index.Groups) { & $add $g.name 'GROUP' }
     foreach ($f in @($Snapshot.domain.fineGrainedPolicies | Where-Object { $_ })) { & $add $f.name 'PSO' }
     foreach ($f in @($Snapshot.foreignPrincipals | Where-Object { $_ })) { & $add $f.name 'FOREIGN' }
+    # AD CS template names and the issuance policies linked to groups (ESC13) name the organization.
+    foreach ($t in @($Snapshot.adcs.templates | Where-Object { $_ })) { & $add $t.displayName 'TEMPLATE'; & $add $t.name 'TEMPLATE' }
+    foreach ($l in @($Snapshot.adcs.oidGroupLinks | Where-Object { $_ })) { & $add $l.name 'POLICY' }
+    # OU names reach the details on their own (a deep ACL over an OU, a dMSA-creatable OU).
+    $ous = @{}
+    foreach ($a in @(@($Snapshot.ouAcls) + @($Snapshot.deepAcls) + @($Index.Users) + @($Index.Computers) + @($Index.Groups) | Where-Object { $_ })) {
+        foreach ($part in ("$($a.distinguishedName)" -split '(?<!\\),')) { if ($part -match '^OU=(.+)$') { $ous[$Matches[1]] = $true } }
+    }
+    foreach ($o in @($ous.Keys | Sort-Object)) { & $add $o 'OU' }
+    # SCCM site codes and management points (outside the domain suffix too).
+    foreach ($mp in @($Snapshot.sccm.managementPoints | Where-Object { $_ })) { & $add "$($mp.siteCode)" 'SITE'; & $add "$($mp.host)" 'HOSTFQDN' }
+    $zones = @(@($Snapshot.dns.zones | Where-Object { $_ }) | ForEach-Object { "$($_.name)" } | Where-Object { $_ -and $_ -notmatch '^(?i)(RootDNSServers|TrustAnchors|\.\.TrustAnchors|\.\.RootHints)$' })
+    foreach ($z in $zones) { & $add $z 'ZONE' }
 
     # Longest first, so "adm.rossi.old" is replaced before "adm.rossi".
     $pz.Ordered = @($pz.Forward.Keys | Sort-Object { $_.Length } -Descending)
-    # Whole FQDNs go first, before the single names.
-    $pz | Add-Member -NotePropertyName DomainSuffixes -NotePropertyValue @(@($Snapshot.domain.dnsRoot, $Snapshot.domain.forestName) + @($Snapshot.trusts | Where-Object { $_ } | ForEach-Object { $_.name }) | Where-Object { $_ } | Select-Object -Unique)
+    # The well-known names go in the same pass, longest first, and are only shielded: an OU or a
+    # user called "Admins" must not turn "Domain Admins" into "Domain OU-1".
+    $steps = @(@($pz.Ordered | ForEach-Object { [PSCustomObject]@{ Key = $_; Keep = $false } }) +
+        @($script:AiKeepNames | ForEach-Object { [PSCustomObject]@{ Key = $_; Keep = $true } }) | Sort-Object { $_.Key.Length } -Descending)
+    $pz | Add-Member -NotePropertyName Steps -NotePropertyValue $steps
+    # Whole FQDNs go first, before the single names. DNS zones outside the domain count as well.
+    $pz | Add-Member -NotePropertyName DomainSuffixes -NotePropertyValue @(@($Snapshot.domain.dnsRoot, $Snapshot.domain.forestName) + @($Snapshot.trusts | Where-Object { $_ } | ForEach-Object { $_.name }) + @($zones | Where-Object { $_ -match '\.' }) | Where-Object { $_ } | Select-Object -Unique | Sort-Object { $_.Length } -Descending)
     return $pz
 }
 
@@ -108,9 +126,25 @@ function Protect-AiText {
         $fq = '(?i)(?<![\w.\-])(?:[a-z0-9\-_]+\.)+' + [regex]::Escape($suffix) + '(?![\w\-])'
         $out = [regex]::Replace($out, $fq, { param($m) if ($Pz.Forward.ContainsKey($m.Value)) { $Pz.Forward[$m.Value] } else { Get-AiToken $Pz $m.Value 'HOSTFQDN' } })
     }
-    foreach ($k in $Pz.Ordered) {
-        $pattern = '(?<![\w.\-$])' + [regex]::Escape($k) + '(\$?)(?![\w\-$]|\.[\w])'
-        $out = [regex]::Replace($out, $pattern, ($Pz.Forward[$k] + '$1'), 'IgnoreCase')
+    $steps = if ($Pz.PSObject.Properties['Steps']) { $Pz.Steps } else { @($Pz.Ordered | ForEach-Object { [PSCustomObject]@{ Key = $_; Keep = $false } }) }
+    $shielded = New-Object System.Collections.Generic.List[string]
+    foreach ($st in $steps) {
+        $pattern = '(?<![\w.\-$])' + [regex]::Escape($st.Key) + '(\$?)(?![\w\-$]|\.[\w])'
+        if ($st.Keep) {
+            # Parked behind a private-use placeholder until the end, so no shorter name matches inside it.
+            $out = [regex]::Replace($out, $pattern, {
+                    param($m)
+                    $shielded.Add($m.Value)
+                    [string][char]0xE000 + ((("$($shielded.Count - 1)").ToCharArray() | ForEach-Object { [char](0xE001 + [int]::Parse("$_")) }) -join '') + [string][char]0xE000
+                }, 'IgnoreCase')
+        }
+        else { $out = [regex]::Replace($out, $pattern, ($Pz.Forward[$st.Key] + '$1'), 'IgnoreCase') }
+    }
+    if ($shielded.Count) {
+        $out = [regex]::Replace($out, '\uE000([\uE001-\uE00A]+)\uE000', {
+                param($m)
+                $shielded[[int]((($m.Groups[1].Value.ToCharArray()) | ForEach-Object { [string]([int]$_ - 0xE001) }) -join '')]
+            })
     }
     return $out
 }
@@ -138,13 +172,39 @@ function Unprotect-AiText {
         })
 }
 
+# The text of the prompt that comes from the tool, not from the directory: check titles, the
+# technique labels, the well-known names and the fixed sentences of New-AiPrompt. Test-AiLeak
+# looks past it, so an OU called "Service Accounts" or "Servers" is not reported as a leak where
+# a check title uses the same words. Longest first.
+$script:AiPromptFixedText = @(
+    'Findings grouped by check (severity, check id, title, affected objects):'
+    'Attack surface toward Tier 0 (source object, then technique; use ONLY these for attack_paths):'
+    'Comparison with the previous run (already computed):'
+    'Not evaluated (data the tool could not collect; unknown, never clean):'
+    'Recent attack vectors (fired checks that the local tool links to attacks seen in public incidents or research; start known_exploitation from these):'
+    'more object(s) with the same issue', 'object(s)', 'of the checks were evaluated', 'not reliable, only',
+    'Counts: users', 'computers', 'domain controllers', 'Functional level:', 'Hygiene score:', 'Domain:',
+    'Tier 0  via', 'Still present:', 'NEW', 'RESOLVED', 'hits:'
+)
+function Get-AiStaticFragments {
+    $set = @{}
+    foreach ($c in @($script:CheckCatalog.Values)) { if ($c.Title) { $set["$($c.Title)"] = $true } }
+    foreach ($tbl in @($script:RecentAttackVectors, $script:EscalationKinds)) { if ($tbl) { foreach ($v in @($tbl.Values)) { if ($v) { $set["$v"] = $true } } } }
+    foreach ($v in @($script:AiKeepNames) + @($script:AiPromptFixedText)) { $set["$v"] = $true }
+    return @($set.Keys | Sort-Object { $_.Length }, { $_ } -Descending)
+}
+
 # Last check before sending: if any real identifier survived, refuse.
 function Test-AiLeak {
     param($Pz, [string]$Text)
     $leaks = New-Object System.Collections.Generic.List[string]
+    $data = $Text
+    # Whole words only: "Administrator" must not hide a user called "Administrator2".
+    foreach ($s in (Get-AiStaticFragments)) { $data = [regex]::Replace($data, '(?<![\w.\-@$])' + [regex]::Escape($s) + '(?![\w\-$])', [string][char]0x1F) }
     foreach ($k in $Pz.Ordered) {
-        if ($k.Length -lt 4) { continue }
-        if ([regex]::IsMatch($Text, '(?<![\w.\-@$])' + [regex]::Escape($k) + '\$?(?![\w\-$]|\.[\w])', 'IgnoreCase')) { $leaks.Add($k) }
+        # Same floor as the pseudonymizer: every name it tokenizes is looked for.
+        if ($k.Length -lt 3) { continue }
+        if ([regex]::IsMatch($data, '(?<![\w.\-@$])' + [regex]::Escape($k) + '\$?(?![\w\-$]|\.[\w])', 'IgnoreCase')) { $leaks.Add($k) }
         if ($leaks.Count -ge 10) { break }
     }
     if ($Text -match 'S-1-5-21-\d+-\d+-\d+') { $leaks.Add('(domain SID)') }

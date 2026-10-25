@@ -125,8 +125,9 @@ function Get-FindingsComparison {
 
 function Get-SevPill {
     param([string]$Severity)
-    $s = $Severity.ToLower()
-    return "<span class=`"sev-pill sev-pill-$s`">$Severity</span>"
+    # The comparison and the accepted list read Severity back from an earlier CSV: encode it.
+    $s = if ($script:SeverityRank.ContainsKey($Severity)) { $Severity.ToLower() } else { 'unknown' }
+    return "<span class=`"sev-pill sev-pill-$s`">$(ConvertTo-HtmlSafe $Severity)</span>"
 }
 
 function Get-MitreLink {
@@ -377,7 +378,7 @@ function Get-AdInfoChartsRow {
     $isSvc = { param($u) $u.kind -ne 'user' -or @($u.servicePrincipalNames | Where-Object { $_ }).Count -gt 0 }
     $enabled = @($users | Where-Object { $_.enabled })
     $svc = @($enabled | Where-Object { & $isSvc $_ }).Count
-    & $add 'All accounts' 'accounts' @('User accounts', 'Service accounts', 'Disabled users', 'Computers') `
+    & $add 'All accounts' 'accounts' @('User accounts', 'Service accounts', 'Disabled (users and MSAs)', 'Computers') `
         @(($enabled.Count - $svc), $svc, ($users.Count - $enabled.Count), @($Index.Computers).Count) @('#2B2925', '#78726A', '#D3CCBD', '#F2B632')
 
     $pw = @{ recent = 0; mid = 0; old = 0; never = 0 }
@@ -1033,8 +1034,8 @@ function ConvertTo-ReportHtml {
         & $w "<details open><summary><h2>Comparison with previous run</h2></summary><p class=`"meta`">Baseline: $(& $H $Comparison.PreviousPath). Matched by (check, object).</p>"
         & $w "<div class=`"cards`"><div class=`"card`"><div class=`"num compare-new`">$(@($Comparison.New).Count)</div><div class=`"lbl`">New</div></div><div class=`"card`"><div class=`"num compare-resolved`">$(@($Comparison.Resolved).Count)</div><div class=`"lbl`">Resolved</div></div><div class=`"card`"><div class=`"num`">$(@($Comparison.Persisting).Count)</div><div class=`"lbl`">Still present</div></div></div>"
         & $w '<div class="table-wrap"><table><tr><th>Status</th><th>Severity</th><th>Check</th><th>Object</th><th>Detail</th></tr>'
-        foreach ($f in $Comparison.New) { & $w "<tr class=`"data-row`"><td class=`"compare-new`">NEW</td><td>$(Get-SevPill $f.Severity)</td><td>$($f.Type)</td><td>$(& $H $f.Object)</td><td>$(& $H $f.Detail)</td></tr>" }
-        foreach ($f in $Comparison.Resolved) { & $w "<tr class=`"data-row`"><td class=`"compare-resolved`">RESOLVED</td><td>$(Get-SevPill $f.Severity)</td><td>$($f.Type)</td><td>$(& $H $f.Object)</td><td>$(& $H $f.Detail)</td></tr>" }
+        foreach ($f in $Comparison.New) { & $w "<tr class=`"data-row`"><td class=`"compare-new`">NEW</td><td>$(Get-SevPill $f.Severity)</td><td>$(& $H $f.Type)</td><td>$(& $H $f.Object)</td><td>$(& $H $f.Detail)</td></tr>" }
+        foreach ($f in $Comparison.Resolved) { & $w "<tr class=`"data-row`"><td class=`"compare-resolved`">RESOLVED</td><td>$(Get-SevPill $f.Severity)</td><td>$(& $H $f.Type)</td><td>$(& $H $f.Object)</td><td>$(& $H $f.Detail)</td></tr>" }
         & $w '</table></div></details>'
     }
 
@@ -1058,7 +1059,7 @@ function ConvertTo-ReportHtml {
     & $w '<tr><th>Severity</th><th>Check</th><th>Category</th><th>Object</th><th>Type</th><th>Detail</th><th>MITRE</th></tr>'
     & $w ('<tr class="filter-row">' + ((1..7 | ForEach-Object { '<td><input type="text" placeholder="filter" oninput="filterIDWolfTable(this)"></td>' }) -join '') + '</tr>')
     foreach ($f in ($findings | Sort-Object { - $script:SeverityRank[$_.Severity] }, Type, Object)) {
-        & $w "<tr class=`"data-row`"><td>$(Get-SevPill $f.Severity)</td><td>$($f.Type)</td><td>$(& $H $f.Category)</td><td title=`"$(& $H $f.ObjectDn)`">$(& $H $f.Object)</td><td>$(& $H $f.ObjectType)</td><td>$(& $H $f.Detail)</td><td>$(Get-MitreLink $f.Mitre)</td></tr>"
+        & $w "<tr class=`"data-row`"><td>$(Get-SevPill $f.Severity)</td><td>$(& $H $f.Type)</td><td>$(& $H $f.Category)</td><td title=`"$(& $H $f.ObjectDn)`">$(& $H $f.Object)</td><td>$(& $H $f.ObjectType)</td><td>$(& $H $f.Detail)</td><td>$(Get-MitreLink $f.Mitre)</td></tr>"
     }
     & $w "</table></div><div class=`"filter-status`">$($findings.Count) rows</div></details>"
 

@@ -470,7 +470,7 @@ function Test-CaRequiresMfaForAdmins {
     foreach ($p in @($Snapshot.conditionalAccess | Where-Object { $_ })) {
         if ("$($p.state)" -ne 'enabled') { continue }
         if (-not (Test-CaGrantsMfa $p)) { continue }
-        $roles = @($p.includeRoles)
+        $roles = @($p.includeRoles | Where-Object { $_ })
         $usersAll = (@($p.includeUsers) -contains 'All')
         if ($roles.Count -gt 0 -or $usersAll) { return $true }
     }
@@ -490,7 +490,7 @@ function Test-CaBlocksLegacyAuth {
     foreach ($p in @($Snapshot.conditionalAccess | Where-Object { $_ })) {
         if ("$($p.state)" -ne 'enabled') { continue }
         if (@($p.grantControls) -notcontains 'block') { continue }
-        $types = @($p.clientAppTypes)
+        $types = @($p.clientAppTypes | Where-Object { $_ })
         if ($types -contains 'exchangeActiveSync' -or $types -contains 'other') { return $true }
     }
     return $false
@@ -556,7 +556,7 @@ function Invoke-EntraChecks {
     foreach ($r in @($Snapshot.directoryRoles | Where-Object { $_ })) {
         $rn = if ($script:EntraPrivRoleTemplates.ContainsKey("$($r.roleTemplateId)")) { $script:EntraPrivRoleTemplates["$($r.roleTemplateId)"] } else { $null }
         if (-not $rn) { continue }
-        foreach ($mid in @($r.members)) {
+        foreach ($mid in @($r.members | Where-Object { $_ })) {
             if (-not $privMembers.ContainsKey($mid)) { $privMembers[$mid] = New-Object System.Collections.Generic.List[string] }
             if (-not $privMembers[$mid].Contains($rn)) { $privMembers[$mid].Add($rn) }
         }
@@ -575,7 +575,8 @@ function Invoke-EntraChecks {
     }
     $ga = @($Snapshot.directoryRoles | Where-Object { $_ -and "$($_.roleTemplateId)" -eq '62e90394-69f5-4237-9190-012177145e10' } | Select-Object -First 1)
     if ($ga.Count -gt 0) {
-        $gaCount = @($ga[0].members).Count
+        # Where-Object: a role read without members (null) is 0 members, not 1.
+        $gaCount = @($ga[0].members | Where-Object { $_ }).Count
         if ($gaCount -gt $Config.MaxGlobalAdmins) {
             Add-EntraFinding -Type entra_global_admins_excessive -Object 'Global Administrator' -ObjectType 'role' -Detail "$gaCount Global Administrators (recommended < $($Config.MaxGlobalAdmins + 1))."
         }
@@ -1066,7 +1067,7 @@ function Invoke-EntraChecks {
 
         # Scoped admins: only a gap when the admin MFA comes from role targeting, not from "all users".
         if ($caOk -and (& $have 'roleAssignments') -and -not (Test-CaRequiresMfaAll $Snapshot)) {
-            $roleTargeted = @($Snapshot.conditionalAccess | Where-Object { $_ -and "$($_.state)" -eq 'enabled' -and (Test-CaGrantsMfa $_) -and @($_.includeRoles).Count }).Count -gt 0
+            $roleTargeted = @($Snapshot.conditionalAccess | Where-Object { $_ -and "$($_.state)" -eq 'enabled' -and (Test-CaGrantsMfa $_) -and @($_.includeRoles | Where-Object { $_ }).Count }).Count -gt 0
             if ($roleTargeted) {
                 $scoped = [ordered]@{}
                 foreach ($a in @($Snapshot.roleAssignments | Where-Object { $_ -and "$($_.directoryScopeId)" -and "$($_.directoryScopeId)" -ne '/' })) {
@@ -1179,7 +1180,7 @@ function Invoke-EntraChecks {
                 $owners = @(if ($g.ownerTypes) { $g.ownerTypes.PSObject.Properties }).Count
                 $what = if ($ia.isBuiltIn) { 'built-in role' } else { "custom role with $(@($hits | Select-Object -First 3) -join ', ')" }
                 Add-EntraFinding -Type entra_intune_role_weak_group -Object "$($ia.roleName): $($g.displayName)" -ObjectType 'intunerole' -ObjectDn $ia.id `
-                    -Detail "Assignment $($ia.displayName) ($what) is given to group $($g.displayName): $($weak -join ', '); $owners owner(s). Scope groups: $(if (@($ia.resourceScopes).Count) { @($ia.resourceScopes).Count } else { 'none listed' })."
+                    -Detail "Assignment $($ia.displayName) ($what) is given to group $($g.displayName): $($weak -join ', '); $owners owner(s). Scope groups: $(if (@($ia.resourceScopes | Where-Object { $_ }).Count) { @($ia.resourceScopes | Where-Object { $_ }).Count } else { 'none listed' })."
             }
         }
     }
@@ -1337,7 +1338,7 @@ function Invoke-EntraChecks {
                 $strong = @($u.mfaMethods | Where-Object { "$_" -match '(?i)fido2|passKey|windowsHelloForBusiness|x509Certificate' })
                 if (-not $strong.Count) {
                     Add-EntraFinding -Type entra_admin_no_phishing_resistant_method -Object $u.upn -ObjectType 'user' -ObjectDn $uid `
-                        -Detail "Registered: $(if (@($u.mfaMethods).Count) { @($u.mfaMethods) -join ', ' } else { 'nothing' }). Roles: $($privMembers[$uid] -join ', ')."
+                        -Detail "Registered: $(if (@($u.mfaMethods | Where-Object { $_ }).Count) { @($u.mfaMethods | Where-Object { $_ }) -join ', ' } else { 'nothing' }). Roles: $($privMembers[$uid] -join ', ')."
                 }
             }
         }

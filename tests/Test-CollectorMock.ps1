@@ -31,6 +31,12 @@ Check ($conn -and $conn.requestedServer -eq 'mock.local' -and $conn.port -eq 938
 $svc = $snap.users | Where-Object samAccountName -eq 'svc_sql'
 Check ($svc.descriptionSuspicious -and $svc.description -notmatch 'Summer2020') 'password in description masked at collection'
 Check (-not ($snap.users | Where-Object samAccountName -eq 'mario').descriptionSuspicious) 'no false positive on Italian description'
+# The masking pattern itself: other languages and spellings caught, ordinary words left alone.
+$hintRx = [regex]::Match((Get-Content -LiteralPath (Join-Path $root 'Collect-ADSnapshot.ps1') -Raw), "PasswordHintRegex = '([^']+)'").Groups[1].Value
+$hintHit = @('Passwort: Sommer2024!', ('contrase' + [char]0xF1 + 'a: Verano2024'), 'Wachtwoord Welkom01', 'P@ssw0rd!', 'svc_password: x', 'Password1', 'pass123')
+$hintMiss = @('Ufficio Crediti', 'Passport office', 'Get-Item -PassThru', 'pwdLastSet audit', 'Bypass proxy', 'passaggio chiave')
+Check ($hintRx -and @($hintHit | Where-Object { $_ -notmatch $hintRx }).Count -eq 0) "password hints masked (missed: $(@($hintHit | Where-Object { $_ -notmatch $hintRx }) -join ' | '))"
+Check ($hintRx -and @($hintMiss | Where-Object { $_ -match $hintRx }).Count -eq 0) "no false positive on ordinary words (hit: $(@($hintMiss | Where-Object { $_ -match $hintRx }) -join ' | '))"
 Check (@(@($snap.acls | Where-Object target -eq 'DomainRoot').aces | Where-Object { $_.objectType -eq '1131f6ad-9c07-11d1-f79f-00c04fc2dcd2' }).Count -eq 1) 'ACE GUIDs serialized as strings'
 # OU and container ACLs: only explicit create/control ACEs are kept (BadSuccessor).
 $staff = @($snap.ouAcls | Where-Object { $_.distinguishedName -eq 'OU=Staff,DC=mock,DC=local' })
@@ -44,6 +50,9 @@ Check ((@($rodcPol.revealed) -join '|') -eq 'CN=Administrator,CN=Users,DC=mock,D
 Check (@($rodcPol.allowed).Count -eq 2 -and $rodcPol.managedBy -match '^CN=mario') 'RODC allowed list and managedBy collected'
 # AD CS: the 8 PKI containers, the CA object and the CA server's computer account.
 Check ($snap.adcs.collected -and @($snap.adcs.pkiAcls).Count -eq 10 -and @($snap.adcs.pkiAcls | Where-Object { $_.target -eq 'CA host:PC1$' }).Count -eq 1) "PKI object ACLs collected (got $(@($snap.adcs.pkiAcls).Count))"
+# Trusts: whenChanged is outside Get-ADTrust's default set, so it must be asked for (trust_inactive, trust_rc4 key age).
+$tr = @($snap.trusts)
+Check ($tr.Count -eq 1 -and $tr[0].whenChanged) "trust whenChanged collected (got $($tr | ConvertTo-Json -Compress))"
 
 $psc = @($snap.domain.possSuperiorClasses)
 Check ($psc.Count -eq 1 -and $psc[0].name -eq 'msExchStorageGroup' -and $psc[0].inheritsContainer -and (@($psc[0].possSuperiors) -join ',') -eq 'computer') "schema possSuperiors probe (got $($psc | ConvertTo-Json -Compress -Depth 3))"

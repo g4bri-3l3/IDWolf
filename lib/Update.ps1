@@ -24,6 +24,17 @@ function Get-IDWolfLatestTag {
     return $best
 }
 
+# The rel="next" address of a GitHub Link header, only when it stays on api.github.com; $null otherwise.
+function Get-IDWolfNextPageUri {
+    param([string]$LinkHeader)
+    foreach ($part in ($LinkHeader -split ',')) {
+        if ($part -notmatch '<([^>]+)>\s*;\s*rel="next"') { continue }
+        $u = $null
+        if ([Uri]::TryCreate($Matches[1], [UriKind]::Absolute, [ref]$u) -and $u.Scheme -eq 'https' -and $u.Host -eq 'api.github.com') { return $u.AbsoluteUri }
+    }
+    return $null
+}
+
 # The latest released version, or $null when GitHub can't be reached in time.
 function Get-IDWolfLatestVersion {
     param([string]$Uri = $script:UpdateTagsUri, [int]$TimeoutMs = 3000)
@@ -37,12 +48,24 @@ function Get-IDWolfLatestVersion {
         # GitHub refuses API requests without a User-Agent.
         [void]$client.DefaultRequestHeaders.Add('User-Agent', 'IDWolf-update-check')
         [void]$client.DefaultRequestHeaders.Add('Accept', 'application/vnd.github+json')
-        $task = $client.GetAsync($Uri)
-        # Wait() also bounds a DNS lookup that hangs on a machine without internet.
-        if (-not $task.Wait($TimeoutMs)) { return $null }
-        $resp = $task.Result
-        if (-not $resp.IsSuccessStatusCode) { return $null }
-        return (Get-IDWolfLatestTag -TagsJson $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult())
+        # The tag list comes 100 at a time and not in version order: follow the "next" link for a
+        # few pages, all within the same time budget. Only api.github.com links are followed.
+        $best = $null; $next = $Uri; $deadline = [DateTime]::UtcNow.AddMilliseconds($TimeoutMs)
+        for ($page = 0; $page -lt 5 -and $next; $page++) {
+            $left = [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds
+            if ($left -le 0) { break }
+            $task = $client.GetAsync($next)
+            # Wait() also bounds a DNS lookup that hangs on a machine without internet.
+            if (-not $task.Wait($left)) { break }
+            $resp = $task.Result
+            if (-not $resp.IsSuccessStatusCode) { break }
+            $v = Get-IDWolfLatestTag -TagsJson $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+            if ($v -and (-not $best -or $v -gt $best)) { $best = $v }
+            $next = $null
+            $link = $null
+            if ($resp.Headers.TryGetValues('Link', [ref]$link)) { $next = Get-IDWolfNextPageUri -LinkHeader (@($link) -join ',') }
+        }
+        return $best
     }
     catch { return $null }
     finally { if ($client) { $client.Dispose() } }

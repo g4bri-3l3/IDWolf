@@ -91,7 +91,13 @@ function Get-ADDomainController { param($Filter, $Server)
         IsGlobalCatalog = $true; IsReadOnly = $false; Site = 'HQ'; OperationMasterRoles = @('PDCEmulator'); ComputerObjectDN = "CN=DC1,OU=Domain Controllers,$script:DN" }
     [PSCustomObject]@{ Name = 'RODC1'; HostName = 'rodc1.mock.local'; OperatingSystem = 'Windows Server 2022 Standard'; OperatingSystemVersion = '10.0 (20348)'
         IsGlobalCatalog = $true; IsReadOnly = $true; Site = 'Branch'; OperationMasterRoles = @(); ComputerObjectDN = "CN=RODC1,OU=Domain Controllers,$script:DN" } }
-function Get-ADTrust { param($Filter, $Server) @() }
+# Like the real cmdlet, whenChanged is not in the default property set: it comes back only when asked for.
+function Get-ADTrust { param($Filter, $Server, $Properties)
+    $t = [PSCustomObject]@{ Name = 'partner.example'; Target = 'partner.example'; Direction = 'Bidirectional'; TrustType = 'Uplevel'; TrustAttributes = 4
+        ForestTransitive = $false; IntraForest = $false; SIDFilteringQuarantined = $true; SIDFilteringForestAware = $false; SelectiveAuthentication = $false
+        TGTDelegation = $false; UsesRC4Encryption = $false; UsesAESKeys = $true }
+    if (@($Properties) -contains 'whenChanged') { $t | Add-Member -NotePropertyName whenChanged -NotePropertyValue ([DateTime]::UtcNow.AddDays(-20)) }
+    $t }
 
 function New-MockPrincipal {
     param($Sam, $Rid, $Uac = 0x200, $PwdAge = 30, $Logon = 1, $Spn = @(), $Pg = 513, $Desc = $null, $Ou = "CN=Users,$script:DN", $AdminCount = $null)

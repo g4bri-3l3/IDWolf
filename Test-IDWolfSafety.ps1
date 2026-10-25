@@ -13,7 +13,11 @@
       - any command that changes AD, Entra, DNS, DHCP or GPOs (Set-AD*, New-Mg*...);
       - any command not in the reviewed list below, so a new one can't slip in unnoticed;
       - run-time code tricks: Invoke-Expression, encoded commands, Base64
-        decoding, downloads, starting processes, scheduled tasks, services;
+        decoding, downloads, starting processes, scheduled tasks, services,
+        script blocks built from text, & or . on a command name built at run
+        time or on a variable the file never sets to its own code;
+      - directory writes and processes through .NET (CommitChanges, SetInfo,
+        ModifyRequest, Process.Start), HTTP writes other than the Gemini POST;
       - a Graph request that isn't a GET;
       - a CIM method call other than reading the registry (StdRegProv Get*/Enum*);
       - Invoke-Item anywhere but lib\Wizard.ps1 (which only opens the .html report);
@@ -71,11 +75,20 @@ $bannedText = [ordered]@{
     'Download helper'          = '(?i)DownloadString|DownloadFile|Net\.WebClient'
     'Compiled C# at run time'  = '(?i)Add-Type\s+-TypeDefinition|Add-Type\s+-MemberDefinition'
     'Hidden window'            = '(?i)-WindowStyle\s+Hidden'
+    # Code built at run time escapes the command list below.
+    'Script block built from text' = '(?i)\[scriptblock\]::Create|NewScriptBlock|\$ExecutionContext\.InvokeCommand'
+    'Process started from .NET'    = '(?i)Diagnostics\.Process\]::Start|ProcessStartInfo'
+    # Directory writes through .NET (System.DirectoryServices and .Protocols) rather than a cmdlet.
+    'Directory write through .NET' = '(?i)\.CommitChanges\(|\.SetInfo\(|\.InvokeSet\(|\.DeleteTree\(|\.Children\.(Add|Remove)\(|\b(Modify|Add|Delete|ModifyDN)Request\b|\.Invoke\(\s*[''"]Set'
+    'HTTP write other than POST'   = '(?i)\.(PutAsync|PatchAsync|DeleteAsync|SendAsync)\('
 }
+# The only POST: the Gemini request of the optional AI step.
+$postAllowedIn = @('lib/AI.ps1')
 $allowedHosts = @('graph.microsoft.com', 'generativelanguage.googleapis.com', 'attack.mitre.org', 'api.github.com')
 
 $root = (Resolve-Path -LiteralPath $Path).Path
-$files = @(Get-ScriptFiles $root | Where-Object { $_.FullName -notmatch '\\(tests|examples)\\' -and $_.Name -ne 'Test-IDWolfSafety.ps1' })
+# Relative to the IDWolf folder, either separator: a copy kept under C:\tests\ must still be read.
+$files = @(Get-ScriptFiles $root | Where-Object { $_.FullName.Substring($root.Length).TrimStart('\', '/') -notmatch '^(tests|examples)[\\/]' -and $_.Name -ne 'Test-IDWolfSafety.ps1' })
 
 $problems = New-Object System.Collections.Generic.List[string]
 $used = @{}          # command -> files
@@ -97,6 +110,7 @@ foreach ($f in $files) {
     $rel = $f.FullName.Substring($root.Length).TrimStart('\', '/')
     $text = [System.IO.File]::ReadAllText($f.FullName)
     foreach ($k in $bannedText.Keys) { if ($text -match $bannedText[$k]) { $problems.Add("${rel}: $k") } }
+    if ($text -match '(?i)\.PostAsync\(' -and $postAllowedIn -notcontains ($rel -replace '\\', '/')) { $problems.Add("${rel}: HTTP POST outside lib\AI.ps1") }
 
     # Web addresses in the code (comments and help blocks are ignored).
     $codeOnly = $text
@@ -117,9 +131,45 @@ foreach ($f in $files) {
     }
 
     $ast = $asts[$f.FullName]
+    # Variables the file fills with code it wrote itself (a { } block, a table of them) or with the
+    # path of one of its own .ps1 files: & $x and . $x on those run nothing new.
+    $codeVars = @{}
+    # foreach ($f in @('Common.ps1', ...)): a loop over literal .ps1 names only.
+    $ps1Loops = @{}
+    foreach ($fe in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.ForEachStatementAst] }, $true)) {
+        $items = @($fe.Condition.FindAll({ $args[0] -is [System.Management.Automation.Language.StringConstantExpressionAst] }, $true))
+        $others = @($fe.Condition.FindAll({ $args[0] -is [System.Management.Automation.Language.VariableExpressionAst] -or $args[0] -is [System.Management.Automation.Language.CommandAst] -or $args[0] -is [System.Management.Automation.Language.ExpandableStringExpressionAst] }, $true))
+        if ($items.Count -and $others.Count -eq 0 -and @($items | Where-Object { $_.Value -notmatch '^[\w.\-]+\.ps1$' }).Count -eq 0) { $ps1Loops[$fe.Variable.VariablePath.UserPath.ToLower()] = $true }
+    }
+    foreach ($a in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.AssignmentStatementAst] }, $true)) {
+        $left = $a.Left
+        if ($left -is [System.Management.Automation.Language.ConvertExpressionAst]) { $left = $left.Child }
+        if ($left -isnot [System.Management.Automation.Language.VariableExpressionAst]) { continue }
+        $rhs = $a.Right.Extent.Text.Trim()
+        if ($rhs -match '^(\[ordered\]\s*)?@?\{' -or $rhs -match "^\(?Join-Path\s+\S+\s+'[^']+\.ps1'\)?$" -or
+            ($rhs -match '^Join-Path\s+\$\w+\s+\$(\w+)$' -and $ps1Loops.ContainsKey($Matches[1].ToLower()))) {
+            $codeVars[($left.VariablePath.UserPath -replace '^(script|local|global):', '').ToLower()] = $true
+        }
+    }
+    # A parameter is filled by the caller, whose own call is read here too.
+    foreach ($p in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.ParameterAst] }, $true)) { $codeVars[$p.Name.VariablePath.UserPath.ToLower()] = $true }
     foreach ($c in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true)) {
         $name = $c.GetCommandName()
-        if (-not $name) { continue }
+        if (-not $name) {
+            # & or . on something that is not a plain command name: the reviewed list can't see what runs.
+            $head = $c.CommandElements[0]
+            $line = $c.Extent.StartLineNumber
+            $var = $head
+            while ($var -is [System.Management.Automation.Language.IndexExpressionAst]) { $var = $var.Target }
+            if ($var -is [System.Management.Automation.Language.VariableExpressionAst]) {
+                $vn = ($var.VariablePath.UserPath -replace '^(script|local|global):', '').ToLower()
+                if (-not $codeVars.ContainsKey($vn)) { $problems.Add("${rel}:${line}: runs `$$vn, which this file never sets to its own code") }
+            }
+            elseif ($head.Extent.Text -notmatch "^\(Join-Path\s+\`$\w+\s+'[^']+\.ps1'\)$") {
+                $problems.Add("${rel}:${line}: command name built at run time ($($head.Extent.Text))")
+            }
+            continue
+        }
         $lc = $name.ToLower()
         if ($internal.ContainsKey($lc)) { continue }
         if (-not $used.ContainsKey($name)) { $used[$name] = New-Object System.Collections.Generic.List[string] }
