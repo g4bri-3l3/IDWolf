@@ -224,6 +224,10 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Computer account with password not required'
         Description = 'An enabled computer account with PASSWD_NOTREQD can be joined or taken over with the predictable default machine password (usually the lowercase account name). Pre-created or pre-staged computer objects left in this state let an attacker who knows the name authenticate as the machine and set its password.'
         Remediation = 'Clear PASSWD_NOTREQD, complete or remove the pre-staged account, and reset the computer password. Delegate pre-staging to a controlled process.' }
+    timeroast_computer_password = @{ Category = 'Account Hygiene'; Severity = 'Medium'; Mitre = 'T1110.002'; Needs = @('computers')
+        Title = 'Pre-staged computer account still on the password set at creation (Timeroasting)'
+        Description = 'An enabled computer account has never logged on and its password was last set when the account was created: no machine ever joined with it, so the password is whatever the person or script that pre-staged it chose, often the lowercase name or a shared value. Without any credential, an attacker can ask a DC for an MS-SNTP time response signed with that password (Timeroasting) and crack it offline, then authenticate as the computer.'
+        Remediation = 'Join the machine (the join replaces the password with a random one), or reset the account password to a long random value, or delete the pre-staged account if it is no longer needed. Pre-stage with a random password, never the name.' }
 
     # ---------------- Domain configuration ----------------
     password_policy_short = @{ Category = 'Domain Configuration'; Severity = 'Medium'; Mitre = 'T1110'; Needs = @('domain.passwordPolicy')
@@ -679,6 +683,10 @@ function Get-NotEvaluatedChecks {
             $absentReasons['adcs.caWebEnrollment'] = "installed CA roles could not be identified on $(@($caNoWeb | ForEach-Object { $_.name }) -join ', ') (non-English server or no role information): check web enrollment by hand"
         }
     }
+    if (-not $Snapshot.meta.options.skipAdcs -and $Snapshot.adcs -and $Snapshot.adcs.collected -and -not $Snapshot.adcs.PSObject.Properties['caThumbprints']) {
+        $absentReasons['adcs.caCertificates'] = 'snapshot from an older collector (no CA certificate thumbprints to compare GPO root certificates with): re-collect'
+    }
+    if (-not $Snapshot.PSObject.Properties['bitlocker']) { $absentReasons['bitlocker'] = 'snapshot from an older collector (no BitLocker recovery objects): re-collect' }
     # Only an RODC has a password replication policy; without one there is nothing to read.
     if (@($Snapshot.domainControllers | Where-Object { $_ -and $_.isReadOnly -and -not $_.PSObject.Properties['rodcPolicy'] }).Count -gt 0) {
         $absentReasons['rodcPolicy'] = 'snapshot from an older collector (no RODC password replication policy): re-collect'
@@ -1225,6 +1233,14 @@ function Invoke-ADHygieneChecks {
             Add-Finding -Type precreated_computer_account -Object $c.samAccountName -ObjectType 'computer' -ObjectDn $c.distinguishedName `
                 -Detail "PASSWD_NOTREQD set on an enabled computer account (predictable default machine password). OS: $($c.operatingSystem)."
         }
+        # Never joined, password untouched since creation (within a day): open to Timeroasting.
+        elseif ($null -eq $c.lastLogonTimestamp -and "$($c.samAccountName)" -ine 'AZUREADSSOACC$') {
+            $pls = ConvertTo-UtcDate $c.pwdLastSet; $wcr = ConvertTo-UtcDate $c.whenCreated
+            if ($null -ne $pls -and $null -ne $wcr -and [Math]::Abs(($pls - $wcr).TotalHours) -le 24) {
+                Add-Finding -Type timeroast_computer_password -Object $c.samAccountName -ObjectType 'computer' -ObjectDn $c.distinguishedName `
+                    -Detail "Never logged on; password set $(Format-Age (Get-AgeDays $c.pwdLastSet)) ago, when the account was created.$(if ($c.operatingSystem) { " OS: $($c.operatingSystem)." } else { ' No OS recorded (never joined).' })"
+            }
+        }
         $ll = Get-AgeDays $c.lastLogonTimestamp
         $created = Get-AgeDays $c.whenCreated
         $stale = ($null -ne $ll -and $ll -gt $Config.StaleComputerDays) -or ($null -eq $ll -and $null -ne $created -and $created -gt $Config.StaleComputerDays)
@@ -1634,6 +1650,7 @@ function Invoke-ADHygieneChecks {
         GroupNesting  = { Invoke-GroupNestingCheck -Index $Index }
         Gpo           = { if (Get-Command Invoke-GpoChecks -ErrorAction SilentlyContinue) { Invoke-GpoChecks -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap } }
         PasswordQuality = { if (Get-Command Invoke-PasswordQualityChecks -ErrorAction SilentlyContinue) { Invoke-PasswordQualityChecks -Snapshot $Snapshot } }
+        BitLocker     = { if (Get-Command Invoke-BitLockerCheck -ErrorAction SilentlyContinue) { Invoke-BitLockerCheck -Snapshot $Snapshot -Index $Index -Config $Config } }
         LapsReaders   = { Invoke-LapsReaderCheck -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap }
         Health        = { Invoke-HealthChecks -Snapshot $Snapshot -Index $Index }
     }

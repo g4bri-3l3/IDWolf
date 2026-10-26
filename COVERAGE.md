@@ -2,7 +2,7 @@
 
 How IDWolf's checks line up against the references people actually use to
 judge an AD or Entra audit. One place, kept in sync with the code: every check
-named here exists in the catalog (169 AD, 90 Entra).
+named here exists in the catalog (182 AD, 90 Entra).
 
 **Legend**
 - **Yes**: detected directly.
@@ -57,7 +57,10 @@ Windows Server benchmark is mostly GPO hardening, which IDWolf reads from SYSVOL
 | Credential protection (WDigest, LSA PPL, cached logons) | GPO `wdigest_cleartext`, `lsass_not_protected`, `cached_credentials` |
 | Kerberos encryption types, armoring, ticket lifetimes | GPO `kerberos_rc4_allowed`, `kerberos_armoring_not_enforced`, `kerberos_ticket_lifetime_long` |
 | Netlogon secure channel, Print Spooler, WebClient, LLMNR, mDNS, UNC hardening | GPO `netlogon_vulnerable_channel`, `spooler_on_dc`, `webclient_not_disabled`, Live `webclient_on_dc`, `llmnr_enabled`, `mdns_enabled`, `unc_hardening_disabled` |
-| Firewall, Defender, TLS versions, BitLocker | Out (host build state) |
+| UAC, RDP session time limits | GPO `uac_weakened`, `rdp_session_timeout_missing` |
+| Firewall, BitLocker | GPO `firewall_disabled_gpo` (a GPO that turns a profile off); Yes `bitlocker_key_missing` (recovery keys escrowed to AD); the real state on each host Out |
+| Trusted root certificates pushed by GPO | GPO `gpo_trusted_root_added` (roots not published in this forest's PKI) |
+| Defender, TLS versions | Out (host build state) |
 
 ### PingCastle rules
 
@@ -109,7 +112,7 @@ by score. Rule list: pingcastle.com, engine 3.3.
 | LLMNR / mDNS / NBT-NS / WPAD poisoning | GPO `llmnr_enabled`, `mdns_enabled`; Live `nbtns_enabled_dc`; Yes `dns_dangerous_record`, `dns_zone_create_child` |
 | noPac (CVE-2021-42278/42287) | Live `nopac_unpatched_dc` (build and update revision), with `machine_account_quota` setting the severity |
 | Certifried (CVE-2022-26923) | Partial `machine_account_quota`; patch level Out |
-| Timeroasting | Partial `precreated_computer_account` (pre-created computers with a predictable password); the attack itself Out |
+| Timeroasting | Yes `timeroast_computer_password` (never-joined computer accounts still on the password set at creation), `precreated_computer_account` (PASSWD_NOTREQD, predictable password); the attack itself Out |
 | AD CS ESC5 (access to PKI objects), ESC14 (weak explicit certificate mappings) | Yes `adcs_esc5`, `altsecid_weak_mapping`; write access to `altSecurityIdentities` is a dangerous ACE |
 | Exchange privileges (PrivExchange, Exchange Windows Permissions) | Yes `dangerous_ace_tier0` (WriteDacl on the domain head or on Tier 0 groups, as for any non-Tier 0 principal; the Exchange groups get a PrivExchange note with the fix) |
 | SID history abuse, cross-forest trust tickets | Yes `sid_history`, `trust_sid_filtering_disabled`, `trust_tgt_delegation`, `trust_no_selective_auth`, `trust_rc4` |
@@ -117,7 +120,9 @@ by score. Rule list: pingcastle.com, engine 3.3.
 | Silver ticket for Entra Seamless SSO (`AZUREADSSOACC$`), cloud Kerberos trust key (`krbtgt_AzureAD`) | Yes `azuread_sso_key_old`, `cloud_kerberos_trust_key_old` |
 | DSRM admin persistence (DC local admin logon) | Live `dsrm_logon_behavior` (DsrmAdminLogonBehavior=2 on a DC) |
 | Tier 0 accounts authenticating with a reusable password | Yes `privileged_logon_unrestricted` (not in Protected Users, no smart card required) |
-| Local admin password reuse | Partial `laps_not_deployed`, `laps_missing` (the condition, not the reuse) |
+| Local admin password reuse | Partial `laps_not_deployed`, `laps_missing` (the condition, not the reuse); GPO `uac_weakened` (LocalAccountTokenFilterPolicy = 1 makes a local admin hash usable over the network) |
+| RDP session hijacking (tscon) | GPO `rdp_session_timeout_missing` (disconnected sessions kept with no limit); the hijack itself Out |
+| Rogue trusted root (TLS interception, code signing) | GPO `gpo_trusted_root_added` |
 | Writable shares | Yes `sysvol_writable` (NETLOGON and SYSVOL Policies); Partial `gpo_runs_code_from_share`; other shares Out (they need a connection to every machine) |
 | MSSQL, DCOM, RDP and WinRM rights, sessions on each host | Out (a live connection to every host); accounts with MSSQLSvc SPNs are covered by the Kerberoasting checks |
 | LSASS / SAM / DPAPI dumping, Skeleton Key, custom SSP, local privilege escalation | Out (attacks, or a DC's memory and local registry); mitigations `lsass_not_protected`, `wdigest_cleartext`, `cached_credentials` |
@@ -403,7 +408,7 @@ article by article yet.
 | (d) | Regularly testing and evaluating the measures | Not per check: running IDWolf regularly is the evidence |
 ## What stays out, on purpose
 
-- **Patch level and most live host state** (MS14-068, MS17-010, firewall, Defender): a directory snapshot does not have it. The exceptions are read over CIM on the DCs when the account has admin rights there: disk space, core services, Spooler, WebClient, NetBIOS per adapter, and the build plus update revision used for noPac (`nopac_unpatched_dc`). PingCastle gets some of it by touching every DC; IDWolf stays read-only from one snapshot.
+- **Patch level and most live host state** (MS14-068, MS17-010, the firewall and BitLocker state on each host, Defender): a directory snapshot does not have it. The exceptions are read over CIM on the DCs when the account has admin rights there: disk space, core services, Spooler, WebClient, NetBIOS per adapter, and the build plus update revision used for noPac (`nopac_unpatched_dc`). PingCastle gets some of it by touching every DC; IDWolf stays read-only from one snapshot.
 - **Password hashes**: only through the hashless DSInternals report, never in the snapshot.
 - **On-CA settings** (ESC6, ESC7, ESC8, ESC11, ESC16): read on the CA host over CIM when the account has admin rights there, otherwise listed for manual verification. The IIS side of ESC8 (HTTPS, EPA) is not read.
 - **Settings made by hand on a DC** instead of by GPO: invisible to the GPO-based checks.

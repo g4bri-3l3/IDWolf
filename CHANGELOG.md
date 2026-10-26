@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.9 - 2026-10-26
+
+Six AD checks taken from a comparison with ADcheck (176 to 182 checks). The synthetic totals
+move to demo 224 (26/81/84/33), partial 209, `-Deep` 229; Entra stays at 95.
+
+- `uac_weakened` (High): a GPO turns UAC off (`EnableLUA = 0`), sets
+  `LocalAccountTokenFilterPolicy = 1` (a local admin hash works over the network on every
+  machine in scope) or lets admins elevate with no prompt (`ConsentPromptBehaviorAdmin = 0`,
+  Medium on its own).
+- `firewall_disabled_gpo` (Medium): a GPO sets `EnableFirewall = 0` on a Windows Defender
+  Firewall profile. High when the domain profile is off.
+- `rdp_session_timeout_missing` (Low): no GPO limits disconnected (`MaxDisconnectionTime`) or
+  idle (`MaxIdleTime`) RDP sessions, on the machine or the user side. 0 counts as no limit.
+- `gpo_trusted_root_added` (Medium): a GPO puts a certificate in the Trusted Root or
+  Third-Party Root store that is not one of this forest's CA certificates. The collector now
+  keeps the SHA-1 thumbprints of the certificates in Certification Authorities, AIA and NTAuth
+  (`adcs.caThumbprints`). *Not evaluated* on older snapshots or when that read fails.
+- `bitlocker_key_missing` (Low): an active Windows workstation has no
+  `msFVE-RecoveryInformation` object under its computer account. When no computer has one,
+  a single finding on the domain. The collector lists only the object names (new `bitlocker`
+  section); the recovery password is never asked for. *Not evaluated* on older snapshots.
+- `timeroast_computer_password` (Medium): an enabled computer account that never logged on
+  and whose password dates from its creation: a pre-staged account with a hand-set password,
+  crackable offline through MS-SNTP (Timeroasting). PASSWD_NOTREQD accounts stay with
+  `precreated_computer_account`.
+- New MITRE technique names: T1006, T1110.002, T1548.002, T1553.004, T1562.004, T1563.002.
+  Compliance themes: `uac_` (privileged access), `firewall` (network), BitLocker and trusted
+  roots (cryptography).
+
 ## 1.8 - 2026-10-25
 
 Fixes from a full bug review, and the launcher's version check (committed after the 1.7 tag).

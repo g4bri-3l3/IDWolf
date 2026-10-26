@@ -50,8 +50,8 @@ $demo = Import-ADSnapshot (Join-Path $tmp 'demo.json')
 $r = Invoke-Analysis $demo
 $bySev = @{}; foreach ($s in 'Critical', 'High', 'Medium', 'Low') { $bySev[$s] = @($r.Findings | Where-Object { $_.Severity -eq $s }).Count }
 Write-Host ("  {0} findings (C {1} / H {2} / M {3} / L {4}), {5} Tier 0 principals" -f $r.Findings.Count, $bySev.Critical, $bySev.High, $bySev.Medium, $bySev.Low, $r.PrivMap.Principals.Count)
-Assert-True ($r.Findings.Count -eq 216) "demo total findings: expected 216, got $($r.Findings.Count)"
-Assert-True ($bySev.Critical -eq 26 -and $bySev.High -eq 79 -and $bySev.Medium -eq 82 -and $bySev.Low -eq 29) "demo severity split: expected 26/79/82/29 (got $($bySev.Critical)/$($bySev.High)/$($bySev.Medium)/$($bySev.Low))"
+Assert-True ($r.Findings.Count -eq 224) "demo total findings: expected 224, got $($r.Findings.Count)"
+Assert-True ($bySev.Critical -eq 26 -and $bySev.High -eq 81 -and $bySev.Medium -eq 84 -and $bySev.Low -eq 33) "demo severity split: expected 26/81/84/33 (got $($bySev.Critical)/$($bySev.High)/$($bySev.Medium)/$($bySev.Low))"
 # New checks: DSRM logon behavior on a DC, tombstone lifetime below 180, Tier 0 accounts
 # that log on with a reusable password (not in Protected Users, no smart card).
 Assert-True ((Has $r 'dsrm_logon_behavior' 'dc02.moosebank.local' 'High') -and @($r.Findings | Where-Object { $_.Type -eq 'dsrm_logon_behavior' }).Count -eq 1) 'demo: DsrmAdminLogonBehavior=2 on DC02 flagged, DC01 (0) clean'
@@ -439,7 +439,7 @@ $deep = Import-ADSnapshot (Join-Path $tmp 'deep.json')
 $rd = Invoke-Analysis $deep
 Assert-True (@($rd.NotEvaluated | Where-Object { $_.Type -eq 'dangerous_ace_anywhere' }).Count -eq 0) 'deep run evaluates dangerous_ace_anywhere'
 Assert-True (Has $rd 'dangerous_ace_anywhere' 'MOOSEBANK\Helpdesk' 'High') 'deep: non-priv GenericAll over a DA'
-Assert-True ($rd.Findings.Count -eq 221) "deep total findings: expected 221, got $($rd.Findings.Count)"
+Assert-True ($rd.Findings.Count -eq 229) "deep total findings: expected 229, got $($rd.Findings.Count)"
 Assert-True (Has $rd 'kds_root_key_readable' 'MOOSEBANK\Helpdesk' 'High') 'deep: Helpdesk can read the KDS root key (Golden gMSA)'
 Assert-True (-not (Has $rd 'kds_root_key_readable' 'MOOSEBANK\Domain Admins')) 'deep: Domain Admins on the KDS root key is the default'
 Assert-True (@($r.NotEvaluated | Where-Object { $_.Type -eq 'kds_root_key_readable' }).Count -eq 1) 'kds_root_key_readable not evaluated without -Deep'
@@ -491,8 +491,8 @@ Write-Host "[partial]"
 $partial = Import-ADSnapshot (Join-Path $tmp 'partial.json')
 $rp = Invoke-Analysis $partial
 $ne = @($rp.NotEvaluated | ForEach-Object { $_.Type })
-Assert-True ($rp.Findings.Count -eq 205) "partial total findings: expected 205, got $($rp.Findings.Count)"
-Assert-True (($ne -join ',') -eq 'fgpp_weak,dcsync_rights,sync_laps_rights,dangerous_ace_tier0,nonstandard_owner_tier0,gpp_cpassword,sysvol_writable,sysvol_script_secrets,dangerous_ace_anywhere,kds_root_key_readable,badsuccessor_dmsa_create,laps_readers,gpo_autologon_password,pwq_duplicate_passwords,pwq_default_password,pwq_empty_password,pwq_breached_password,pwq_cleartext_stored') "partial not-evaluated set: got $($ne -join ',')"
+Assert-True ($rp.Findings.Count -eq 209) "partial total findings: expected 209, got $($rp.Findings.Count)"
+Assert-True (($ne -join ',') -eq 'fgpp_weak,dcsync_rights,sync_laps_rights,dangerous_ace_tier0,nonstandard_owner_tier0,gpp_cpassword,sysvol_writable,sysvol_script_secrets,dangerous_ace_anywhere,kds_root_key_readable,badsuccessor_dmsa_create,laps_readers,gpo_autologon_password,gpo_trusted_root_added,bitlocker_key_missing,pwq_duplicate_passwords,pwq_default_password,pwq_empty_password,pwq_breached_password,pwq_cleartext_stored') "partial not-evaluated set: got $($ne -join ',')"
 
 # ------------------------------------------------------------- mutations
 Write-Host "[mutations]"
@@ -865,6 +865,58 @@ foreach ($gg in @($snapAdOld.gpo.gpos)) { $gg.PSObject.Properties.Remove('userPo
 @($snapAdOld.gpo.gpos | Where-Object { $_.displayName -eq 'Default Domain Policy' })[0].registryValues.PSObject.Properties.Remove('USER\Software\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated')
 $rAdOld = Invoke-Analysis $snapAdOld
 Assert-True (@($rAdOld.NotEvaluated | Where-Object { $_.Type -eq 'gpo_autologon_password' }).Count -eq 1 -and @($rAdOld.Findings | Where-Object { $_.Type -eq 'always_install_elevated' })[0].Detail -match 'user side was not collected') 'gpo: older snapshot: GPP autologon not evaluated, AlwaysInstallElevated says the user side is unknown'
+# UAC, firewall, RDP time limits and root certificates pushed by a GPO (from ADcheck).
+$uacF = @($r.Findings | Where-Object { $_.Type -eq 'uac_weakened' })
+Assert-True ($uacF.Count -eq 1 -and $uacF[0].Object -eq 'Client Hardening' -and $uacF[0].Severity -eq 'High' -and $uacF[0].Detail -match 'LocalAccountTokenFilterPolicy = 1' -and $uacF[0].Detail -match 'ConsentPromptBehaviorAdmin = 0' -and $uacF[0].Detail -notmatch 'EnableLUA') "gpo: UAC weakened (LocalAccountTokenFilterPolicy High, EnableLUA = 1 not reported) (got $($uacF.Detail))"
+$fwF = @($r.Findings | Where-Object { $_.Type -eq 'firewall_disabled_gpo' })
+Assert-True ($fwF.Count -eq 1 -and $fwF[0].Severity -eq 'High' -and $fwF[0].Detail -match 'domain, public profiles' -and $fwF[0].Detail -notmatch 'private') "gpo: firewall off on the domain and public profiles, High (got $($fwF.Detail))"
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'rdp_session_timeout_missing' -and $_.Object -eq 'moosebank.local' -and $_.Severity -eq 'Low' -and $_.Detail -match 'MaxDisconnectionTime' -and $_.Detail -notmatch 'MaxIdleTime' }).Count -eq 1) 'gpo: disconnected RDP sessions without a limit (0 = never), idle limit set on the user side'
+$trF = @($r.Findings | Where-Object { $_.Type -eq 'gpo_trusted_root_added' })
+Assert-True ($trF.Count -eq 1 -and $trF[0].Object -eq 'Client Hardening' -and $trF[0].Severity -eq 'Medium' -and $trF[0].Detail -match ('E5F60718' * 5) -and $trF[0].Detail -notmatch 'D4C3B2A1') "gpo: unknown root certificate flagged, the forest root CA not (got $($trF.Detail))"
+$snapGw = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$chRv = @($snapGw.gpo.gpos | Where-Object { $_.displayName -eq 'Client Hardening' })[0].registryValues
+foreach ($pp in 'LocalAccountTokenFilterPolicy', 'EnableLUA') { $chRv.PSObject.Properties.Remove("MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\$pp") }
+$chRv.PSObject.Properties.Remove('MACHINE\Software\Policies\Microsoft\WindowsFirewall\DomainProfile\EnableFirewall')
+$chRv.'MACHINE\Software\Policies\Microsoft\Windows NT\Terminal Services\MaxDisconnectionTime' = '4,3600000'
+$snapGw.adcs.caThumbprints = @($snapGw.adcs.caThumbprints) + @('E5F60718' * 5)
+$rGw = Invoke-Analysis $snapGw
+Assert-True ((Has $rGw 'uac_weakened' 'Client Hardening' 'Medium') -and (Has $rGw 'firewall_disabled_gpo' 'Client Hardening' 'Medium')) 'gpo: elevation without prompt alone is Medium, public profile off alone is Medium'
+Assert-True (-not @($rGw.Findings | Where-Object { $_.Type -in 'rdp_session_timeout_missing', 'gpo_trusted_root_added' }).Count) 'gpo: both RDP limits set and a root published in AD: no finding'
+$chRv | Add-Member -NotePropertyName 'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\EnableLUA' -NotePropertyValue '4,0'
+Assert-True (@((Invoke-Analysis $snapGw).Findings | Where-Object { $_.Type -eq 'uac_weakened' -and $_.Severity -eq 'High' -and $_.Detail -match 'EnableLUA = 0' }).Count -eq 1) 'gpo: UAC turned off is High'
+$snapTrOld = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$snapTrOld.adcs.PSObject.Properties.Remove('caThumbprints')
+$rTrOld = Invoke-Analysis $snapTrOld
+Assert-True (-not (Has $rTrOld 'gpo_trusted_root_added' 'Client Hardening') -and @($rTrOld.NotEvaluated | Where-Object { $_.Type -eq 'gpo_trusted_root_added' }).Count -eq 1) 'gpo: root certificates not evaluated (and silent) without the CA thumbprints'
+$snapTrE = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$snapTrE.meta.collectionErrors = @([PSCustomObject]@{ section = 'adcs.caCertificates'; message = 'Access is denied (synthetic)' })
+$rTrE = Invoke-Analysis $snapTrE
+Assert-True (-not (Has $rTrE 'gpo_trusted_root_added' 'Client Hardening') -and @($rTrE.NotEvaluated | Where-Object { $_.Type -eq 'gpo_trusted_root_added' }).Count -eq 1) 'gpo: CA certificate read failure: root certificates not evaluated and silent'
+$snapTrN = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$snapTrN.adcs = [PSCustomObject]@{ collected = $false; notDeployed = $true }
+$trN = @((Invoke-Analysis $snapTrN).Findings | Where-Object { $_.Type -eq 'gpo_trusted_root_added' })
+Assert-True ($trN.Count -eq 1 -and $trN[0].Detail -match '^2 trusted root') 'gpo: no AD CS in the forest: every root a GPO pushes is reported'
+# BitLocker recovery keys and pre-staged computers (Timeroasting).
+$blF = @($r.Findings | Where-Object { $_.Type -eq 'bitlocker_key_missing' })
+Assert-True ((($blF | ForEach-Object { $_.Object }) -join ',') -eq 'EVILPC$,WKS-019$,WKS-020$' -and @($blF | Where-Object { $_.Severity -ne 'Low' }).Count -eq 0) "bitlocker: active workstations without a key (stale, server, never-joined skipped) (got $(($blF | ForEach-Object { $_.Object }) -join ','))"
+$snapBl = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$snapBl.bitlocker.computersWithKey = @()
+$blN = @((Invoke-Analysis $snapBl).Findings | Where-Object { $_.Type -eq 'bitlocker_key_missing' })
+Assert-True ($blN.Count -eq 1 -and $blN[0].Object -eq 'moosebank.local' -and $blN[0].Detail -match 'None of the 20 active') "bitlocker: no key anywhere is one domain finding (got $(($blN | ForEach-Object { "$($_.Object): $($_.Detail)" }) -join ' | '))"
+$snapBlOld = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$snapBlOld.PSObject.Properties.Remove('bitlocker')
+$rBlOld = Invoke-Analysis $snapBlOld
+Assert-True (-not @($rBlOld.Findings | Where-Object { $_.Type -eq 'bitlocker_key_missing' }).Count -and @($rBlOld.NotEvaluated | Where-Object { $_.Type -eq 'bitlocker_key_missing' }).Count -eq 1) 'bitlocker: not evaluated (and silent) on an older snapshot'
+$snapBlE = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$snapBlE.meta.collectionErrors = @([PSCustomObject]@{ section = 'bitlocker'; message = 'Access is denied (synthetic)' })
+$rBlE = Invoke-Analysis $snapBlE
+Assert-True (-not @($rBlE.Findings | Where-Object { $_.Type -eq 'bitlocker_key_missing' }).Count -and @($rBlE.NotEvaluated | Where-Object { $_.Type -eq 'bitlocker_key_missing' }).Count -eq 1) 'bitlocker: read failure: not evaluated and silent'
+$trc = @($r.Findings | Where-Object { $_.Type -eq 'timeroast_computer_password' })
+Assert-True ($trc.Count -eq 1 -and $trc[0].Object -eq 'KIOSK-PRE01$' -and $trc[0].Severity -eq 'Medium' -and -not (Has $r 'timeroast_computer_password' 'PRESTAGE01$') -and -not (Has $r 'timeroast_computer_password' 'AZUREADSSOACC$')) "timeroast: never-joined account on its creation password flagged; PASSWD_NOTREQD (own check) and the SSO account not (got $(($trc | ForEach-Object { $_.Object }) -join ','))"
+$snapTr = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$kiosk = @($snapTr.computers | Where-Object { $_.samAccountName -eq 'KIOSK-PRE01$' })[0]
+$kiosk.pwdLastSet = (ConvertTo-UtcDate $kiosk.whenCreated).AddDays(3).ToString('o')
+Assert-True (-not (Has (Invoke-Analysis $snapTr) 'timeroast_computer_password' 'KIOSK-PRE01$')) 'timeroast: password changed after creation: no finding'
 Assert-True (Has $r 'webclient_on_dc' 'dc02.moosebank.local' 'High') 'live: WebClient running on DC02 (High)'
 Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'webclient_on_dc' }).Count -eq 1) 'live: WebClient absent on DC01 and unreadable RODC not flagged'
 $snapWl = Import-ADSnapshot (Join-Path $tmp 'demo.json')
@@ -1375,6 +1427,13 @@ $polFile = Join-Path $tmp 'user_registry.pol'; [System.IO.File]::WriteAllBytes($
 $polRead = ConvertFrom-RegistryPol $polFile 'USER'
 Assert-True ($polRead['USER\Software\Policies\Microsoft\Windows\Installer\AlwaysInstallElevated'] -eq '4,1' -and $polRead['USER\Software\Policies\Microsoft\Windows\WindowsUpdate\WUServer'] -eq '1,http://wsus01:8530' -and @($polRead.Keys).Count -eq 2) "registry.pol parser: USER hive, DWORD and string (got $(@($polRead.Keys | ForEach-Object { "$_=$($polRead[$_])" }) -join ' | '))"
 Assert-True (@((ConvertFrom-RegistryPol $polFile).Keys)[0] -like 'MACHINE\*') 'registry.pol parser: MACHINE is still the default hive'
+# A trusted root certificate (REG_BINARY blob) keeps its thumbprint in the key, and the entries after it still parse.
+$polCertKey = 'Software\Policies\Microsoft\SystemCertificates\Root\Certificates\' + ('E5F60718' * 5)
+$polBytes2 = [byte[]](@(0x50, 0x52, 0x65, 0x67, 1, 0, 0, 0) + (& $polEntry $polCertKey 'Blob' 3 ([byte[]](1..64))) +
+    (& $polEntry 'Software\Policies\Microsoft\WindowsFirewall\DomainProfile' 'EnableFirewall' 4 ([BitConverter]::GetBytes([int]0))))
+$polFile2 = Join-Path $tmp 'machine_registry.pol'; [System.IO.File]::WriteAllBytes($polFile2, $polBytes2)
+$polRead2 = ConvertFrom-RegistryPol $polFile2
+Assert-True ($polRead2.Contains("MACHINE\$polCertKey\Blob") -and $polRead2['MACHINE\Software\Policies\Microsoft\WindowsFirewall\DomainProfile\EnableFirewall'] -eq '4,0') "registry.pol parser: binary certificate blob, then a DWORD (got $(@($polRead2.Keys | ForEach-Object { "$_=$($polRead2[$_])" }) -join ' | '))"
 Remove-Item Function:\ConvertFrom-RegistryPol
 # altSecurityIdentities: mapping types only, never the values.
 . ([scriptblock]::Create($cAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'ConvertTo-AltSecIdTypes' }, $true).Extent.Text))
@@ -1409,7 +1468,7 @@ $tempBefore = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Di
 $bz = New-IDWolfBundle -Snapshot (Join-Path $tmp 'demo.json') -PasswordQuality (Join-Path $root 'examples\passwordquality.example.json') -OutFile (Join-Path $tmp 'bundle.zip')
 $bzCsv = Join-Path $tmp 'bundle.csv'
 & (Join-Path $root 'IDWolf.ps1') -Snapshot $bz -OutHtml (Join-Path $tmp 'bundle.html') -OutCsv $bzCsv -SkipLLM 6>&1 2>&1 | Out-Null
-Assert-True ((Test-Path $bzCsv) -and @(Import-Csv $bzCsv).Count -eq 224) "zip with snapshot + password quality analyzes like the two files (224 findings, got $(if (Test-Path $bzCsv) { @(Import-Csv $bzCsv).Count }))"
+Assert-True ((Test-Path $bzCsv) -and @(Import-Csv $bzCsv).Count -eq 232) "zip with snapshot + password quality analyzes like the two files (232 findings, got $(if (Test-Path $bzCsv) { @(Import-Csv $bzCsv).Count }))"
 $tempAfter = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Directory -Filter 'idwolf_bundle_*' -ErrorAction SilentlyContinue).Count
 Assert-True ($tempAfter -eq $tempBefore) 'extracted bundle removed from TEMP after the analysis'
 # A file changed inside the zip no longer matches the manifest.
@@ -1435,7 +1494,7 @@ $encRaw = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes(
 Assert-True ($encHead -eq 'IDWOLFENC1' -and $encZipMsg -and $encRaw -notmatch 'moosebank|snapshot\.json') 'encrypted bundle: IDWolf header, not readable as a zip, no plain names inside'
 $encCsv = Join-Path $tmp 'bundle_enc.csv'
 & (Join-Path $root 'IDWolf.ps1') -Snapshot $encBz -BundlePassword $encPw -OutHtml (Join-Path $tmp 'bundle_enc.html') -OutCsv $encCsv -SkipLLM 6>&1 2>&1 | Out-Null
-Assert-True ((Test-Path $encCsv) -and @(Import-Csv $encCsv).Count -eq 224) "encrypted bundle analyzes like the plain one with the right password (got $(if (Test-Path $encCsv) { @(Import-Csv $encCsv).Count }))"
+Assert-True ((Test-Path $encCsv) -and @(Import-Csv $encCsv).Count -eq 232) "encrypted bundle analyzes like the plain one with the right password (got $(if (Test-Path $encCsv) { @(Import-Csv $encCsv).Count }))"
 $wrongMsg = ''; try { Expand-IDWolfBundle -Path $encBz -Password (ConvertTo-SecureString 'wrong password here' -AsPlainText -Force) | Out-Null } catch { $wrongMsg = $_.Exception.Message }
 $tamper2 = Join-Path $tmp 'tampered.idwolf'; $tb = [System.IO.File]::ReadAllBytes($encBz); $tb[100] = $tb[100] -bxor 1; [System.IO.File]::WriteAllBytes($tamper2, $tb)
 $tamperMsg = ''; try { Expand-IDWolfBundle -Path $tamper2 -Password $encPw | Out-Null } catch { $tamperMsg = $_.Exception.Message }
@@ -1453,8 +1512,8 @@ $jl = Join-Path $tmp 'demo.jsonl'
 $jlRows = @([System.IO.File]::ReadAllLines($jl) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
 $jlFind = @($jlRows | Where-Object { $_.event_type -eq 'finding' })
 $jlSum = @($jlRows | Where-Object { $_.event_type -eq 'summary' })
-Assert-True ($jlFind.Count -eq 216 -and $jlSum.Count -eq 1) "jsonl: 216 findings + 1 summary (got $($jlFind.Count) + $($jlSum.Count))"
-Assert-True ($jlSum[0].critical -eq 26 -and $jlSum[0].findings -eq 216 -and $jlSum[0].score -ge 0 -and $jlSum[0].domain -eq 'moosebank.local') 'jsonl summary: counts, score, domain'
+Assert-True ($jlFind.Count -eq 224 -and $jlSum.Count -eq 1) "jsonl: 224 findings + 1 summary (got $($jlFind.Count) + $($jlSum.Count))"
+Assert-True ($jlSum[0].critical -eq 26 -and $jlSum[0].findings -eq 224 -and $jlSum[0].score -ge 0 -and $jlSum[0].domain -eq 'moosebank.local') 'jsonl summary: counts, score, domain'
 Assert-True (@($jlFind | Where-Object { $_.finding_id -notmatch '^[0-9a-f]{16}$' -or $_.severity_score -lt 1 }).Count -eq 0) 'jsonl: every finding has a finding_id and a severity_score'
 Assert-True (@($jlFind | ForEach-Object { $_.finding_id } | Select-Object -Unique).Count -eq $jlFind.Count) 'jsonl: finding_id unique within a run'
 Assert-True ((Get-FindingId 'x_check' 'Bob') -eq (Get-FindingId 'X_CHECK' 'bob')) 'finding_id ignores case, so it survives renames in case only'

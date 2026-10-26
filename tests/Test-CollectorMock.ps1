@@ -50,6 +50,11 @@ Check ((@($rodcPol.revealed) -join '|') -eq 'CN=Administrator,CN=Users,DC=mock,D
 Check (@($rodcPol.allowed).Count -eq 2 -and $rodcPol.managedBy -match '^CN=mario') 'RODC allowed list and managedBy collected'
 # AD CS: the 8 PKI containers, the CA object and the CA server's computer account.
 Check ($snap.adcs.collected -and @($snap.adcs.pkiAcls).Count -eq 10 -and @($snap.adcs.pkiAcls | Where-Object { $_.target -eq 'CA host:PC1$' }).Count -eq 1) "PKI object ACLs collected (got $(@($snap.adcs.pkiAcls).Count))"
+# CA certificates by thumbprint only (gpo_trusted_root_added compares GPO roots with them).
+Check (@($snap.adcs.caThumbprints).Count -eq 1 -and "$(@($snap.adcs.caThumbprints)[0])" -match '^[0-9A-F]{40}$') "CA certificate thumbprints collected (got $(@($snap.adcs.caThumbprints) -join ', '))"
+# BitLocker: the computer that owns the recovery object, past the escaped '+' in its name; no recovery password.
+Check ($snap.bitlocker.collected -and $snap.bitlocker.recoveryObjectCount -eq 1 -and (@($snap.bitlocker.computersWithKey) -join '|') -eq 'CN=PC1,CN=Computers,DC=mock,DC=local') "BitLocker recovery objects mapped to their computer (got $(@($snap.bitlocker.computersWithKey) -join '|'))"
+Check (-not ([System.IO.File]::ReadAllText($snapPath) -match 'msFVE-RecoveryPassword')) 'no BitLocker recovery password property in the snapshot'
 # Trusts: whenChanged is outside Get-ADTrust's default set, so it must be asked for (trust_inactive, trust_rc4 key age).
 $tr = @($snap.trusts)
 Check ($tr.Count -eq 1 -and $tr[0].whenChanged) "trust whenChanged collected (got $($tr | ConvertTo-Json -Compress))"

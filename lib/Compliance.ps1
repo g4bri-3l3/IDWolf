@@ -37,14 +37,14 @@ $script:ComplianceCategoryThemes = @{
 $script:ComplianceIdThemes = [ordered]@{
     auth   = 'password|kerberoast|asrep|krbtgt|laps|pwq_|des_enabled|spn_account|protected_users|lockout|banned_passwords|unix_password|lm_hash|lmcompat|wdigest|cached_credentials|precreated|credential|auth_methods|authenticator'
     mfa    = 'mfa|phishing_resistant|security_defaults|legacy_auth|device_code|authenticator|auth_methods|system_preferred|security_info_registration|risk_polic|sign_in_risk'
-    priv   = 'admin|privileged|dcsync|delegation|delegable|rbcd|operator|owner|dangerous_ace|gmsa|shadow|laps_readers|sync_laps|rodc|pim|role|silo|sid_history|primary_group|krbtgt|adcs_esc'
+    priv   = 'admin|privileged|uac_|dcsync|delegation|delegable|rbcd|operator|owner|dangerous_ace|gmsa|shadow|laps_readers|sync_laps|rodc|pim|role|silo|sid_history|primary_group|krbtgt|adcs_esc'
     access = 'inactive|never_logged|stale_|guest|orphaned|anonymous|pre_win2000|consent|register_apps|create_tenants|create_security_groups|create_m365|device_join|device_quota|access_review|access_package|b2b|cross_tenant|broad_local_group|machine_account_quota|precreated'
     config = 'policy|functional_level|recycle_bin|gpo|signing|channel_binding|unc_hardening|llmnr|spooler|smb1|netlogon|lsass|wdigest|cached_credentials|armoring|point_and_print|dns_|dhcp|trust_|sysvol_frs|app_management|redirect'
     vuln   = 'obsolete_os|netlogon_vulnerable|smb1|spooler|point_and_print|functional_level|des_enabled|lm_hash|sysvol_frs'
-    crypto = 'rc4|des_enabled|lm_hash|lmcompat|reversible|weak_ca_key|ca_cert_expiring|wdigest|signing|channel_binding|armoring|unix_password|token_protection'
+    crypto = 'rc4|des_enabled|lm_hash|lmcompat|reversible|weak_ca_key|ca_cert_expiring|wdigest|signing|channel_binding|armoring|unix_password|token_protection|^bitlocker|trusted_root'
     log    = 'audit|logging|cmdline'
     resil  = 'backup|replication|single_dc|fsmo|dc_unreachable|time_skew|low_disk|service_stopped|recycle_bin|sysvol_frs|emergency_access|global_admins_too_few|sync_stale|ca_cert_expiring'
-    net    = 'signing|channel_binding|llmnr|dns_|unc_hardening|anonymous_sam|smb1|dhcp|trust_|anonymous_ldap|trusted_locations|geo_restriction|cross_tenant|b2b'
+    net    = 'signing|channel_binding|llmnr|dns_|unc_hardening|anonymous_sam|smb1|dhcp|trust_|anonymous_ldap|trusted_locations|geo_restriction|cross_tenant|b2b|firewall'
 }
 
 # Framework -> control -> themes. Ids are short so they fit a CSV column and a SIEM field.

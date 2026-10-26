@@ -80,7 +80,7 @@ Param(
 # account with broad read rights. Without it those checks show up as
 # "not evaluated".
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.8"
+$script:CollectorVersion = "1.9"
 $script:Errors = New-Object System.Collections.Generic.List[object]
 
 # Connection diagnostics and the DC list (lib\Connection.ps1). Optional: a collector copied
@@ -757,6 +757,24 @@ try {
 }
 catch { Add-CollectionError 'computers' $_.Exception.Message }
 
+# BitLocker recovery objects: only their names, to know which computers escrowed a key.
+# The recovery password (a confidential attribute) is never asked for.
+$bitlocker = [ordered]@{ collected = $false; recoveryObjectCount = 0; computersWithKey = @() }
+try {
+    Start-CollectorPace
+    $raw = @(Invoke-WithSpinner -Message 'Reading BitLocker recovery objects' -ScriptBlock { param($c) Get-ADObject -LDAPFilter '(objectClass=msFVE-RecoveryInformation)' @c } -ArgumentList @(, $common) -Modules ActiveDirectory)
+    $owners = New-Object System.Collections.Generic.List[string]
+    foreach ($o in @($raw | Where-Object { $_ })) {
+        # The parent of "CN=<date>{<guid>},CN=PC01,..." is the computer.
+        if ("$($o.DistinguishedName)" -match '^CN=(?:[^,\\]|\\.)*,(?<parent>.+)$' -and -not $owners.Contains($Matches['parent'])) { $owners.Add($Matches['parent']) }
+    }
+    $bitlocker.recoveryObjectCount = @($raw | Where-Object { $_ }).Count
+    $bitlocker.computersWithKey = @($owners | Sort-Object)
+    $bitlocker.collected = $true
+    Write-Host "  $($bitlocker.recoveryObjectCount) BitLocker recovery object(s) on $($owners.Count) computer(s)"
+}
+catch { Add-CollectionError 'bitlocker' $_.Exception.Message }
+
 # --------------------------------------------------------------------------
 # Groups, direct members only. The analyzer resolves nesting by DN, which also
 # copes with foreign principals that Get-ADGroupMember -Recursive chokes on.
@@ -1155,11 +1173,32 @@ if (-not $SkipAdcs) {
             }
             catch { Add-CollectionError 'adcs.templates' $_.Exception.Message }
 
+            $ntauth = $null
             try {
                 $ntauth = Get-ADObject -Identity "CN=NTAuthCertificates,$pkiBase" -Properties cACertificate @common
                 $adcs.ntAuthCertCount = @($ntauth.cACertificate).Count
             }
             catch { $adcs.ntAuthCertCount = $null }   # optional, not used by any check; do not flag a gap
+
+            # SHA-1 thumbprints of the CA certificates this forest publishes (Certification Authorities,
+            # AIA, NTAuth): a root certificate pushed by a GPO is compared with them. Certificates only.
+            try {
+                $caThumbs = New-Object System.Collections.Generic.List[string]
+                $caCerts = @(Get-ADObject -SearchBase "CN=Certification Authorities,$pkiBase" -SearchScope OneLevel -LDAPFilter '(objectClass=certificationAuthority)' -Properties cACertificate @common) +
+                    @(Get-ADObject -SearchBase "CN=AIA,$pkiBase" -SearchScope OneLevel -LDAPFilter '(objectClass=certificationAuthority)' -Properties cACertificate @common) +
+                    @($ntauth)
+                foreach ($o in @($caCerts | Where-Object { $_ })) {
+                    foreach ($bytes in @($o.cACertificate | Where-Object { $_ })) {
+                        try {
+                            $tp = ([System.Security.Cryptography.X509Certificates.X509Certificate2]([byte[]]$bytes)).Thumbprint
+                            if ($tp -and -not $caThumbs.Contains($tp.ToUpper())) { $caThumbs.Add($tp.ToUpper()) }
+                        }
+                        catch { }
+                    }
+                }
+                $adcs.caThumbprints = @($caThumbs | Sort-Object)
+            }
+            catch { Add-CollectionError 'adcs.caCertificates' $_.Exception.Message }
 
             # Issuance policies linked to a group (msDS-OIDToGroupLink), for ESC13.
             try {
@@ -1835,6 +1874,7 @@ $snapshot = [ordered]@{
     users             = $users
     serviceAccounts   = $serviceAccounts
     computers         = $computers
+    bitlocker         = $bitlocker
     groups            = $groups
     foreignPrincipals = $fsps
     acls              = $acls

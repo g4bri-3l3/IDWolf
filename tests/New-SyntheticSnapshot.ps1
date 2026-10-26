@@ -153,6 +153,8 @@ $c.sql    = New-C 'SRV-SQL01' -Ou $srvOu -Os 'Windows Server 2022 Standard' -OsV
 $c.linux  = New-C 'LINUX01' -Ou $srvOu -Os 'Ubuntu 24.04' -OsVer '' -LapsV2 $null
 # Pre-staged computer left with PASSWD_NOTREQD (predictable default password).
 $c.prestaged = New-C 'PRESTAGE01' -Ou $srvOu -Os 'Windows Server 2022 Standard' -OsVer '10.0 (20348)' -Uac (0x1000 -bor $PNR)
+# Pre-staged 60 days ago with a hand-set password, never joined (no OS yet): timeroast_computer_password.
+$c.kiosk = New-C 'KIOSK-PRE01' -Os '' -OsVer '' -Logon $null -PwdAge 60 -Created 60 -LapsV2 $null
 # Seamless SSO account: never logs on (not stale), key rolled over 400 days ago: azuread_sso_key_old.
 $c.sso = New-C 'AZUREADSSOACC' -Ou "CN=Computers,$dn" -Os '' -OsVer '' -Logon $null -PwdAge 400 -Created 1500 -LapsV2 $null -Enc 24
 foreach ($i in 1..20) {
@@ -275,6 +277,8 @@ function CertTemplate {
 $duEnroll = @((Ace "$dom-513" 'MOOSEBANK\Domain Users' 'ExtendedRight' -ObjectType $ENROLL_GUID -Inh 'None'))
 $authEnroll = @((Ace 'S-1-5-11' 'NT AUTHORITY\Authenticated Users' 'ExtendedRight' -ObjectType $ENROLL_GUID -Inh 'None'))
 $pkiBase = "CN=Public Key Services,CN=Services,CN=Configuration,$dn"
+# SHA-1 thumbprints: the forest root and issuing CA (published in AD), and a TLS-inspection root nobody published.
+$caRootThumb = 'D4C3B2A1' * 5; $caIssuingThumb = 'A1B2C3D4' * 5; $proxyRootThumb = 'E5F60718' * 5
 function PkiAcl { param([string]$Target, [string]$Dn, [array]$Extra = @())
     [ordered]@{ target = $Target; distinguishedName = $Dn; objectClass = ''; ownerSid = "$dom-519"; ownerName = 'MOOSEBANK\Enterprise Admins'; aces = @(Default-Aces) + $Extra } }
 $certPub = (Ace "$dom-517" 'MOOSEBANK\Cert Publishers' 'ReadProperty, WriteProperty' -Inh 'None')
@@ -321,6 +325,7 @@ $adcs = [ordered]@{
         (CertTemplate -Name 'MooseUser' -Display 'Moose User' -Ekus @($EKU_CLIENT) -Aces @((Ace "$dom-512" 'MOOSEBANK\Domain Admins' 'ExtendedRight' -ObjectType $ENROLL_GUID -Inh 'None')))
     )
     ntAuthCertCount = 1
+    caThumbprints = @($caRootThumb, $caIssuingThumb)
     oidGroupLinks = @(
         [ordered]@{ oid = '1.3.6.1.4.1.311.21.8.1.1'; groupDn = "CN=Domain Admins,CN=Users,$dn"; name = 'High Assurance Policy' }
     )
@@ -453,6 +458,23 @@ $gpo = [ordered]@{
             kerberosPolicy = [ordered]@{ MaxTicketAge = '10'; MaxRenewAge = '30'; MaxServiceAge = '600'; MaxClockSkew = '5' }; userPolicyRead = $true
             # WebClient left on Manual: webclient_not_disabled.
             serviceStart = [ordered]@{ 'webclient' = 3 } }
+        [ordered]@{ guid = '{33333333-3333-3333-3333-333333333333}'; displayName = 'Client Hardening'
+            registryValues = [ordered]@{
+                # Full admin token for local accounts over the network, no elevation prompt: uac_weakened (High).
+                'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\LocalAccountTokenFilterPolicy' = '4,1'
+                'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\ConsentPromptBehaviorAdmin' = '4,0'
+                'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\EnableLUA' = '4,1'
+                # Domain and public profiles off, private on: firewall_disabled_gpo (High).
+                'MACHINE\Software\Policies\Microsoft\WindowsFirewall\DomainProfile\EnableFirewall' = '4,0'
+                'MACHINE\Software\Policies\Microsoft\WindowsFirewall\StandardProfile\EnableFirewall' = '4,1'
+                'MACHINE\Software\Policies\Microsoft\WindowsFirewall\PublicProfile\EnableFirewall' = '4,0'
+                # The forest root CA (known) and a proxy CA nobody published: gpo_trusted_root_added.
+                "MACHINE\Software\Policies\Microsoft\SystemCertificates\Root\Certificates\$caRootThumb\Blob" = '1,'
+                "MACHINE\Software\Policies\Microsoft\SystemCertificates\Root\Certificates\$proxyRootThumb\Blob" = '1,'
+                # Idle limit set, disconnected sessions kept forever: rdp_session_timeout_missing.
+                'USER\Software\Policies\Microsoft\Windows NT\Terminal Services\MaxIdleTime' = '4,7200000'
+                'MACHINE\Software\Policies\Microsoft\Windows NT\Terminal Services\MaxDisconnectionTime' = '4,0' }
+            privilegeRights = [ordered]@{}; systemAccess = [ordered]@{}; kerberosPolicy = [ordered]@{}; serviceStart = [ordered]@{}; userPolicyRead = $true; auditPolicy = [ordered]@{} }
     )
     # What the GPOs run and which local groups they fill.
     execution = @(
@@ -543,6 +565,9 @@ $snapshot = [ordered]@{
     users = $users
     serviceAccounts = $msas
     computers = @($c.Values)
+    # Recovery keys for WKS-001..018: WKS-019, WKS-020 and EVILPC have none (bitlocker_key_missing).
+    bitlocker = [ordered]@{ collected = $true; recoveryObjectCount = 20
+        computersWithKey = @(@(1..18 | ForEach-Object { "wks$_" }) + @($c.Keys | Where-Object { $_ -like 'bulkc*' }) | ForEach-Object { $c[$_].distinguishedName }) }
     groups = @($g.Values)
     foreignPrincipals = @([ordered]@{ distinguishedName = $fspDn; sid = 'S-1-5-21-999999999-999999999-999999999-1105'; name = 'PARTNER\ext.admin' })
     acls = $acls
@@ -619,6 +644,9 @@ $snapshot = [ordered]@{
             [ordered]@{ dc = 'rodc01.moosebank.local'; systemDrive = $null; freeGB = $null; sizeGB = $null; stoppedServices = @(); error = 'not reachable' })
     }
 }
+
+# An older collector read neither the BitLocker objects nor the CA thumbprints.
+if ($Scenario -eq 'partial') { $snapshot.Remove('bitlocker'); $adcs.Remove('caThumbprints') }
 
 if (-not $OutFile) { $OutFile = Join-Path $PSScriptRoot "..\examples\synthetic_$Scenario.json" }
 $json = $snapshot | ConvertTo-Json -Depth 10

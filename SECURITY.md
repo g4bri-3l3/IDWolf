@@ -26,7 +26,9 @@ real directory data in the report.
   the installed roles (ESC6/7/8/11/16). On the DCs it also reads the state of the
   EFS, DFS Namespace and EventLog services and looks for the coercion interface
   UUIDs in the RPC filter store (BFE, read-only); no RPC interface is ever
-  called. There is no command in the code
+  called. For BitLocker it lists only the names of the recovery objects, to
+  know which computers escrowed a key; the recovery password is never asked
+  for. There is no command in the code
   that creates, changes or deletes anything in AD, DNS, DHCP or GPOs.
 - **Entra ID: reads only.** Read-only Graph scopes and GET requests only.
 - **No binaries, no hidden code.** Plain PowerShell you can read. No

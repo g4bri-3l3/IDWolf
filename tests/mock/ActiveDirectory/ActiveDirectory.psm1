@@ -56,6 +56,18 @@ function Get-ADObject {
         return [PSCustomObject]@{ name = 'MOCK-CA'; DistinguishedName = "CN=MOCK-CA,$SearchBase"; dNSHostName = 'pc1.mock.local'; certificateTemplates = @(); cACertificate = $null; flags = 0 }
     }
     if ($LDAPFilter -like '*pKICertificateTemplate*' -or $LDAPFilter -like '*msPKI-Enterprise-Oid*') { return @() }
+    # A self-signed root in Certification Authorities, nothing in AIA: one CA thumbprint.
+    if ($LDAPFilter -eq '(objectClass=certificationAuthority)') {
+        if ($SearchBase -notlike 'CN=Certification Authorities,*') { return @() }
+        $rsa = [System.Security.Cryptography.RSA]::Create(2048)
+        $req = New-Object System.Security.Cryptography.X509Certificates.CertificateRequest('CN=MOCK-ROOT', $rsa, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+        $cert = $req.CreateSelfSigned([DateTimeOffset]::UtcNow.AddDays(-1), [DateTimeOffset]::UtcNow.AddYears(5))
+        return [PSCustomObject]@{ Name = 'MOCK-ROOT'; cACertificate = @(, $cert.RawData) }
+    }
+    # One BitLocker recovery object under PC1; the '+' of the time zone is escaped in the DN.
+    if ($LDAPFilter -eq '(objectClass=msFVE-RecoveryInformation)') {
+        return [PSCustomObject]@{ DistinguishedName = "CN=2026-09-01T10:00:00\+02:00{6A1F0C2E-1111-2222-3333-444455556666},CN=PC1,CN=Computers,$script:DN" }
+    }
     if ($Properties -contains 'nTSecurityDescriptor') {
         if ($Identity -like 'OU=Domain Controllers*') { throw 'Access is denied (mock)' }
         $sd = [PSCustomObject]@{ Owner = "$script:Dom-512"; Pki = ("$Identity" -like '*Public Key Services*'); Dns = ("$Identity" -like '*CN=MicrosoftDNS*'); Ou = ("$Identity" -like 'OU=Staff,*'); Sccm = ("$Identity" -like 'CN=System Management,*') }

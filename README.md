@@ -32,7 +32,7 @@ nothing but the native ActiveDirectory module, then analyzes that snapshot
 **offline** and gives you an HTML report, a findings CSV and, if you want, JSON
 Lines for your SIEM.
 
-On the AD side it runs **176 checks**: Kerberos, privileged access, account
+On the AD side it runs **182 checks**: Kerberos, privileged access, account
 hygiene, domain configuration, permissions, DNS, AD CS (ESC1-5, 9, 10, 13, 15),
 operational health (replication, DHCP, backups), host hardening read from the
 GPOs (SMB and LDAP signing, NTLM, LM hash, user rights) and password quality,
@@ -158,7 +158,7 @@ October 2026. If something here is out of date or wrong, please say so.
 | Proves it can't write to the directory (built-in code review) | **Yes** | – | – | – | – (has a fix mode) | – | – (attacks by design, after operator confirmation) |
 | Collect once, analyze later on another machine, offline | **Yes** | partial (re-renders its XML report) | – | yes (import into the server) | – | – | – |
 | AI summary, remediation plan, attack-path story, fix scripts, exploitability ranking | **Yes** (names tokenized first, nothing sent without consent) | – | – | – | – | – | – |
-| AD hygiene checklist | 176 checks | yes | yes | – (paths, not a checklist) | – | – | – (104 attack techniques, tried rather than audited) |
+| AD hygiene checklist | 182 checks | yes | yes | – (paths, not a checklist) | – | – | – (104 attack techniques, tried rather than audited) |
 | AD CS (ESC) | ESC1-5, 9, 10, 13, 15; 6, 7, 8, 11, 16 read on the CA | some | some | yes, as graph edges | **broadest**, with fixes | – | template enumeration; ESC1-16 exploitation in PRO |
 | Password quality (duplicates, breached) | yes, hashless | – | – | – | – | – | spraying and cracking (an attack, not an audit) |
 | Host hardening read from GPOs | yes | yes | yes | – | – | – | – (some preconditions probed live) |
@@ -468,7 +468,8 @@ you need more.
 | Tier 0 ACLs, SYSVOL scan (including the NETLOGON and Policies folder permissions), GPO ACLs | `dcsync_rights`, `dangerous_ace_tier0`, `gpp_cpassword`, `sysvol_writable`, `gpo_dangerous_acl`... | standard user |
 | ACLs of every OU and top-level container (create and control rights only) | `badsuccessor_dmsa_create` | standard user |
 | ACL of the SCCM System Management container and the management points published there | `sccm_system_management_writable` | standard user |
-| AD CS templates, CAs, issuance policies | `adcs_*` | standard user |
+| AD CS templates, CAs, issuance policies, CA certificate thumbprints | `adcs_*`, `gpo_trusted_root_added` | standard user |
+| BitLocker recovery objects (names only, never the recovery password) | `bitlocker_key_missing` | standard user: the objects are listable, the recovery password is a confidential attribute and is never asked for. Where the objects were hidden from the collecting account, the domain-level finding says it may be that |
 | CA registry and installed roles (CIM on each CA host) | `adcs_esc6`, `adcs_esc7`, `adcs_esc8`, `adcs_esc11`, `adcs_esc16` | local admin on the CA host (CA servers are Tier 0, so usually Domain Admins). Otherwise *not evaluated* and `adcs_manual_checks` |
 | GPO templates in SYSVOL (GptTmpl.inf, machine and user registry.pol, audit.csv) | host hardening, `adcs_esc10` | standard user |
 | DNS zones | `dns_*` | standard user over LDAP; zone transfer needs DnsAdmins or admin on the DNS server |
@@ -747,6 +748,7 @@ particular object.
 | `laps_stale` | Low | T1550.002 | LAPS password overdue |
 | `machine_account_quota` | Medium | T1136.002 | Users can join computers to the domain |
 | `precreated_computer_account` | Medium | T1078.002 | Computer account with password not required |
+| `timeroast_computer_password` | Medium | T1110.002 | Pre-staged computer account still on the password set at creation (Timeroasting) |
 
 **Domain Configuration**
 
@@ -880,9 +882,14 @@ particular object.
 | `ipv6_dhcpv6_takeover` | Low | T1557 | IPv6 left on without a GPO against rogue DHCPv6 (mitm6) |
 | `wsh_enabled` | Low | T1059.005 | Windows Script Host not disabled by GPO |
 | `wpad_not_disabled` | Low | T1557.001 | WPAD auto-discovery not disabled by GPO |
+| `uac_weakened` | High | T1548.002 | GPO weakens User Account Control |
+| `firewall_disabled_gpo` | Medium | T1562.004 | GPO turns Windows Firewall off |
+| `rdp_session_timeout_missing` | Low | T1563.002 | No GPO limits idle or disconnected RDP sessions |
+| `gpo_trusted_root_added` | Medium | T1553.004 | GPO adds a trusted root certificate from outside this forest's PKI |
 | `spooler_on_dc` | Medium | T1547.012 | Print Spooler not disabled on domain controllers |
 | `cached_credentials` | Medium | T1003.005 | Too many cached logon credentials |
 | `smb1_server_enabled` | High | T1210 | SMBv1 not disabled on domain controllers |
+| `bitlocker_key_missing` | Low | T1006 | Active workstation with no BitLocker recovery key in AD |
 | `unc_hardening_disabled` | Medium | T1557 | UNC hardened paths not configured for SYSVOL / NETLOGON |
 | `cmdline_audit_not_enabled` | Medium | T1562.002 | Command-line auditing not enabled in process creation events |
 | `powershell_logging_not_enabled` | Medium | T1562.002 | PowerShell script block / module logging not enabled |
@@ -1295,10 +1302,10 @@ collections run there, and some bugs only show up there.
   fake Graph.
 - The AI layer is tested offline: no real name in the prompt, the token round
   trip, and invented check IDs being dropped.
-- Reference results: the AD `demo` gives **216 findings** (26 Critical, 79 High,
-  82 Medium, 29 Low) and 17 Tier 0 principals, and 224 with the example
-  password report. `-Deep` gives 221. `partial` gives 205. The Entra tenant
-  gives 95. In total there are **658 assertions**.
+- Reference results: the AD `demo` gives **224 findings** (26 Critical, 81 High,
+  84 Medium, 33 Low) and 17 Tier 0 principals, and 232 with the example
+  password report. `-Deep` gives 229. `partial` gives 209. The Entra tenant
+  gives 95. In total there are **699 assertions**.
 - `tests/lab/` is for a throw-away lab domain, never for production.
   `New-LabAttackPaths.ps1` plants a four-step ACL chain and a few delegation
   findings. It **writes to AD**, asks you to type the domain name first, and has

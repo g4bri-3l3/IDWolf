@@ -138,6 +138,22 @@ $script:HostCheckCatalog = [ordered]@{
         Title = 'WPAD auto-discovery not disabled by GPO'
         Description = 'No GPO turns off Web Proxy Auto-Discovery (WinHttp DisableWpad = 1, or the WinHTTP Web Proxy Auto-Discovery service disabled). Clients keep looking for a "wpad" host through DNS, LLMNR, mDNS and NBT-NS, and whoever answers becomes their proxy and can capture NTLM authentication.'
         Remediation = 'Set HKLM\SYSTEM\CurrentControlSet\Services\WinHttp\Parameters\DisableWpad = 1 by GPO (or disable the WinHttpAutoProxySvc service) where no proxy auto-discovery is used, and keep "wpad" in the DNS global query block list.' }
+    uac_weakened = @{ Category = 'Host Hardening'; Severity = 'High'; Mitre = 'T1548.002'; Needs = @('gpo')
+        Title = 'GPO weakens User Account Control'
+        Description = 'A GPO turns UAC off (EnableLUA = 0), sets LocalAccountTokenFilterPolicy = 1, or lets administrators elevate without any prompt (ConsentPromptBehaviorAdmin = 0). LocalAccountTokenFilterPolicy gives every local administrator a full token over the network, so one local admin hash works for pass-the-hash on every machine in scope; with UAC off every admin process runs elevated. Only values in registry.pol or the security template are read: a Group Policy Preferences registry item is not visible here.'
+        Remediation = 'Remove the setting from the GPO: keep EnableLUA = 1, leave LocalAccountTokenFilterPolicy unset or 0 ("Apply UAC restrictions to local accounts on network logons" from the Microsoft security baseline), and set ConsentPromptBehaviorAdmin to 2 (prompt for consent on the secure desktop).' }
+    firewall_disabled_gpo = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1562.004'; Needs = @('gpo')
+        Title = 'GPO turns Windows Firewall off'
+        Description = 'A GPO sets EnableFirewall = 0 for a Windows Defender Firewall profile. Every machine in scope then accepts any inbound connection on that profile: SMB, RPC, WinRM and RDP are reachable from the whole network, which helps lateral movement and coercion. High when the domain profile, the one used on the corporate network, is turned off.'
+        Remediation = 'Set EnableFirewall = 1 on every profile and open only the ports each tier needs with inbound rules scoped to admin and management hosts.' }
+    rdp_session_timeout_missing = @{ Category = 'Host Hardening'; Severity = 'Low'; Mitre = 'T1563.002'; Needs = @('gpo')
+        Title = 'No GPO limits idle or disconnected RDP sessions'
+        Description = 'No GPO sets a time limit for disconnected Remote Desktop sessions (MaxDisconnectionTime) or for idle sessions (MaxIdleTime). Disconnected sessions, often of administrators, stay on servers for days with their credentials in memory, where a local admin can take them over (tscon session hijacking) or dump them.'
+        Remediation = 'In Remote Desktop Session Host > Session Time Limits, set "Set time limit for disconnected sessions" (for example 1 hour) and "Set time limit for active but idle sessions" (for example 2 hours) in a GPO for servers.' }
+    gpo_trusted_root_added = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1553.004'; Needs = @('gpo', 'adcs', 'adcs.caCertificates')
+        Title = 'GPO adds a trusted root certificate from outside this forest''s PKI'
+        Description = 'A GPO puts a certificate in the Trusted Root (or Third-Party Root) Certification Authorities store of every machine in scope, and that certificate is not one of the CA certificates published in this forest (Certification Authorities, AIA, NTAuth). Whoever holds its private key can issue TLS, code-signing or e-mail certificates that those machines trust, and intercept or sign anything. Often a TLS-inspection proxy or a partner CA: legitimate, but it must be known and guarded.'
+        Remediation = 'Identify each listed thumbprint. Remove the certificate from the GPO if nobody owns it; otherwise document it, check where its key is kept, and scope the GPO to the machines that need it. Add an exception once it is reviewed.' }
     spooler_on_dc = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1547.012'; Needs = @('gpo')
         Title = 'Print Spooler not disabled on domain controllers'
         Description = 'No GPO disables the Print Spooler service on the DCs. A running spooler on a DC is the lever for coercion attacks (PrinterBug / MS-RPRN) that force the DC to authenticate to an attacker, feeding NTLM relay and unconstrained-delegation chains.'
@@ -150,6 +166,10 @@ $script:HostCheckCatalog = [ordered]@{
         Title = 'SMBv1 not disabled on domain controllers'
         Description = 'No effective GPO disables the SMBv1 server (mrxsmb10 driver start or SMB1 parameter). SMBv1 is obsolete, exploitable (EternalBlue / MS17-010) and should not run on a domain controller.'
         Remediation = 'Disable the SMBv1 server and client via GPO (set mrxsmb10 Start to 4 and SMB1 to 0), then confirm no legacy client still needs it.' }
+    bitlocker_key_missing = @{ Category = 'Host Hardening'; Severity = 'Low'; Mitre = 'T1006'; Needs = @('computers', 'bitlocker')
+        Title = 'Active workstation with no BitLocker recovery key in AD'
+        Description = 'An enabled, recently active Windows workstation has no BitLocker recovery object (msFVE-RecoveryInformation) under its computer account. Either the disk is not encrypted, so a lost or stolen laptop gives away its cached credentials and data, or the key was never escrowed and the machine cannot be recovered. When no computer at all has a key in AD, one finding on the domain is raised instead. Only the presence of the objects is read, never a recovery password.'
+        Remediation = 'Enforce BitLocker with a GPO or Intune policy that requires the recovery key to be backed up to AD DS before encryption starts ("Do not enable BitLocker until recovery information is stored to AD DS"). If keys are escrowed to Entra ID or MBAM instead, add an exception.' }
     unc_hardening_disabled = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1557'; Needs = @('gpo')
         Title = 'UNC hardened paths not configured for SYSVOL / NETLOGON'
         Description = 'Hardened UNC paths for \\*\SYSVOL and \\*\NETLOGON (RequireMutualAuthentication and RequireIntegrity) are not enforced. Without them, GPO and logon-script delivery can be tampered with or spoofed on the path to the DC (a GPO-over-SMB attack vector).'
@@ -700,6 +720,65 @@ function Invoke-GpoChecks {
         Add-Finding -Type wsh_enabled -Object $domName -ObjectType 'domain' -Detail 'No GPO sets Windows Script Host Settings\Enabled = 0.'
     }
 
+    # UAC and firewall switched off by a GPO: one finding per GPO, the worst setting sets the severity.
+    $uacKey = 'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System'
+    $fwKey = 'MACHINE\Software\Policies\Microsoft\WindowsFirewall'
+    $fwProfiles = [ordered]@{ DomainProfile = 'domain'; StandardProfile = 'private'; PublicProfile = 'public' }
+    foreach ($g in $allGpos) {
+        $uac = @(); $uacSev = 'Medium'
+        if ((Get-RegInt (& $regOf $g "$uacKey\EnableLUA")) -eq 0) { $uac += 'EnableLUA = 0 (UAC off)'; $uacSev = 'High' }
+        if ((Get-RegInt (& $regOf $g "$uacKey\LocalAccountTokenFilterPolicy")) -eq 1) { $uac += 'LocalAccountTokenFilterPolicy = 1 (full admin token for local accounts over the network)'; $uacSev = 'High' }
+        if ((Get-RegInt (& $regOf $g "$uacKey\ConsentPromptBehaviorAdmin")) -eq 0) { $uac += 'ConsentPromptBehaviorAdmin = 0 (admins elevate without a prompt)' }
+        if ($uac.Count) {
+            Add-Finding -Type uac_weakened -Object "$($g.displayName)" -ObjectType 'gpo' -ObjectDn $g.guid -Severity $uacSev -Detail "$($uac -join '; '). GPO $(& $linkText $g)."
+        }
+        $fwOff = @(foreach ($p in $fwProfiles.Keys) { if ((Get-RegInt (& $regOf $g "$fwKey\$p\EnableFirewall")) -eq 0) { $fwProfiles[$p] } })
+        if ($fwOff.Count) {
+            Add-Finding -Type firewall_disabled_gpo -Object "$($g.displayName)" -ObjectType 'gpo' -ObjectDn $g.guid -Severity $(if ($fwOff -contains 'domain') { 'High' } else { 'Medium' }) `
+                -Detail "EnableFirewall = 0 for the $($fwOff -join ', ') profile$(if ($fwOff.Count -gt 1) { 's' }). GPO $(& $linkText $g)."
+        }
+    }
+
+    # RDP session time limits: machine or user side, 0 means never.
+    $tsKey = 'Software\Policies\Microsoft\Windows NT\Terminal Services'
+    $tsMissing = @()
+    foreach ($n in 'MaxDisconnectionTime', 'MaxIdleTime') {
+        $set = $false
+        foreach ($g in $allGpos) { foreach ($hive in 'MACHINE', 'USER') { if ((Get-RegInt (& $regOf $g "$hive\$tsKey\$n")) -gt 0) { $set = $true } } }
+        if (-not $set) { $tsMissing += $n }
+    }
+    if ($tsMissing.Count) {
+        Add-Finding -Type rdp_session_timeout_missing -Object $domName -ObjectType 'domain' -Detail "No GPO sets $($tsMissing -join ' or ') (Remote Desktop session time limits)."
+    }
+
+    # Root certificates a GPO pushes, against the CA certificates published in this forest. No AD CS at all
+    # means nothing is known; a snapshot without the thumbprints (older collector, failed read) stays silent.
+    $caKnown = $null
+    $adcsSnap = $Snapshot.adcs
+    if (-not $Snapshot.meta.options.skipAdcs -and $adcsSnap) {
+        if ($adcsSnap.notDeployed) { $caKnown = @{} }
+        elseif ($adcsSnap.collected -and $adcsSnap.PSObject.Properties['caThumbprints'] -and -not ($Index -and $Index.CollectionErrorSections.ContainsKey('adcs.caCertificates'))) {
+            $caKnown = @{}
+            foreach ($t in @($adcsSnap.caThumbprints | Where-Object { $_ })) { $caKnown["$t".ToUpper()] = $true }
+        }
+    }
+    if ($null -ne $caKnown) {
+        foreach ($g in $allGpos) {
+            $rv = Get-Member2 $g 'registryValues'
+            $keys = if ($rv -is [System.Collections.IDictionary]) { @($rv.Keys) } elseif ($rv) { @($rv.PSObject.Properties | ForEach-Object { $_.Name }) } else { @() }
+            $roots = New-Object System.Collections.Generic.List[string]
+            foreach ($k in $keys) {
+                if ("$k" -notmatch '^(?i)MACHINE\\Software\\Policies\\Microsoft\\SystemCertificates\\(Root|AuthRoot)\\Certificates\\(?<tp>[0-9A-F]{40})\\') { continue }
+                $tp = $Matches['tp'].ToUpper()
+                if (-not $caKnown.ContainsKey($tp) -and -not $roots.Contains($tp)) { $roots.Add($tp) }
+            }
+            if ($roots.Count) {
+                Add-Finding -Type gpo_trusted_root_added -Object "$($g.displayName)" -ObjectType 'gpo' -ObjectDn $g.guid `
+                    -Detail "$($roots.Count) trusted root certificate(s) not published in this forest's AD, SHA-1 thumbprint: $($roots.ToArray() -join ', '). GPO $(& $linkText $g)."
+            }
+        }
+    }
+
     # Snapshots from older collectors have no execution / localGroups: listed
     # as not evaluated, and silent here.
     if (-not $gpo.PSObject.Properties['execution']) { return }
@@ -745,6 +824,37 @@ function Invoke-GpoChecks {
         $via = if ("$($m.source)" -eq 'Restricted Groups') { 'Restricted Groups' } else { 'Group Policy Preferences' }
         Add-Finding -Type gpo_broad_local_group -Object "$($m.gpo): local $tName" -ObjectType 'gpo' -ObjectDn $m.guid -Severity $sev `
             -Detail "$mName added to local $tName through $via$(if ($scope) { ", GPO linked to $scope" })."
+    }
+}
+
+# --------------------------------------------------------------------------
+# BitLocker recovery keys escrowed to AD
+# --------------------------------------------------------------------------
+# The collector lists the computers that hold a msFVE-RecoveryInformation object
+# (never the recovery password). Active Windows workstations without one are reported.
+function Invoke-BitLockerCheck {
+    param($Snapshot, $Index, [hashtable]$Config)
+    $bl = $Snapshot.bitlocker
+    if (-not $bl -or -not $bl.collected -or $Index.CollectionErrorSections.ContainsKey('bitlocker')) { return }
+    $withKey = @{}
+    foreach ($d in @($bl.computersWithKey | Where-Object { $_ })) { $withKey["$d".ToLower()] = $true }
+    $missing = @()
+    foreach ($c in @($Index.Computers | Where-Object { $_.enabled -and -not $_._isDc })) {
+        if ("$($c.operatingSystem)" -notmatch '(?i)windows' -or "$($c.operatingSystem)" -match '(?i)server') { continue }
+        $ll = Get-AgeDays $c.lastLogonTimestamp
+        if ($null -eq $ll -or $ll -gt $Config.StaleComputerDays) { continue }
+        if (-not $withKey.ContainsKey("$($c.distinguishedName)".ToLower())) { $missing += $c }
+    }
+    if (-not $missing.Count) { return }
+    # No key anywhere: one finding on the domain, not one per workstation.
+    if ($withKey.Count -eq 0) {
+        Add-Finding -Type bitlocker_key_missing -Object "$($Snapshot.domain.dnsRoot)" -ObjectType 'domain' -ObjectDn $Snapshot.domain.distinguishedName `
+            -Detail "None of the $($missing.Count) active Windows workstation(s) has a BitLocker recovery object in AD: keys are not escrowed to AD DS (or only to Entra ID / MBAM), or the collecting account cannot list them."
+        return
+    }
+    foreach ($c in $missing) {
+        Add-Finding -Type bitlocker_key_missing -Object $c.samAccountName -ObjectType 'computer' -ObjectDn $c.distinguishedName `
+            -Detail "No BitLocker recovery object under the computer account ($($withKey.Count) computer(s) in the domain have one). OS: $($c.operatingSystem)."
     }
 }
 
