@@ -86,36 +86,116 @@ try {
     if ($m) { $script:LauncherVersion = $m.Matches[0].Groups[1].Value }
 } catch { }
 
+# Box-drawing rule and middle dot when the console can show them (OEM and UTF-8 code pages
+# can; a legacy ANSI one prints '?'), ASCII otherwise. Built from code points: the file stays ASCII.
+$script:UiRule = '-'; $script:UiDot = '|'
+try {
+    $enc = [Console]::OutputEncoding
+    $probe = [string][char]0x2500 + [char]0x00B7
+    if ($enc.GetString($enc.GetBytes($probe)) -eq $probe) { $script:UiRule = [string][char]0x2500; $script:UiDot = [string][char]0x00B7 }
+} catch { }
+$script:UiWidth = 72
+
+function Write-Rule { Write-Host ('  ' + ($script:UiRule * ($script:UiWidth - 2))) -ForegroundColor DarkGray }
+
+# "  -- Title ------...": a section header, as wide as the banner.
+function Write-MenuSection {
+    param([string]$Title, [ConsoleColor]$Color = 'DarkYellow')
+    Write-Host ''
+    Write-Host ('  ' + ($script:UiRule * 2) + ' ') -NoNewline -ForegroundColor DarkGray
+    Write-Host $Title -NoNewline -ForegroundColor $Color
+    Write-Host (' ' + ($script:UiRule * [Math]::Max(3, $script:UiWidth - 6 - $Title.Length))) -ForegroundColor DarkGray
+}
+
+function Write-MenuItem {
+    param([string]$Key, [string]$Label, [string]$Hint = '')
+    Write-Host '   ' -NoNewline
+    Write-Host $Key -NoNewline -ForegroundColor Yellow
+    Write-Host ('  ' + $Label.PadRight(30)) -NoNewline -ForegroundColor White
+    Write-Host $Hint -ForegroundColor DarkGray
+}
+
+# One line on what this window can do: elevation, RSAT, the DC the next AD collection uses,
+# default settings. Green = ready, Yellow = a limit worth knowing, DarkGray = not known.
+function Write-MenuStatus {
+    $s = $script:Session
+    $dc = if ($script:ServerOverride) { $script:ServerOverride } elseif ($script:State.launcher.Server) { "$($script:State.launcher.Server)" } else { 'automatic' }
+    $parts = @(
+        @('admin', $(if ($null -eq $s.Elevated) { '?' } elseif ($s.Elevated) { 'yes' } else { 'no' }), $(if ($null -eq $s.Elevated) { 'DarkGray' } elseif ($s.Elevated) { 'Green' } else { 'Yellow' })),
+        @('RSAT', $(if ($null -eq $s.Rsat) { '?' } elseif ($s.Rsat) { 'yes' } else { 'no' }), $(if ($null -eq $s.Rsat) { 'DarkGray' } elseif ($s.Rsat) { 'Green' } else { 'Yellow' })),
+        @('DC', $dc, 'Cyan'),
+        @('defaults', $(if ($script:State.defaults.Count) { 'set' } else { 'not set' }), $(if ($script:State.defaults.Count) { 'Green' } else { 'DarkGray' }))
+    )
+    Write-Host '   ' -NoNewline
+    for ($i = 0; $i -lt $parts.Count; $i++) {
+        if ($i) { Write-Host "  $script:UiDot  " -NoNewline -ForegroundColor DarkGray }
+        Write-Host "$($parts[$i][0]) " -NoNewline -ForegroundColor DarkGray
+        Write-Host $parts[$i][1] -NoNewline -ForegroundColor $parts[$i][2]
+    }
+    Write-Host ''
+}
+
+function Show-Menu {
+    Write-MenuSection 'Collect and analyze'
+    Write-MenuItem '1' 'Full AD run' 'collect, then analyze or package'
+    Write-MenuItem '2' 'Full Entra run' 'collect, then analyze or package'
+    Write-MenuSection 'Collect only'
+    Write-MenuItem '3' 'AD snapshot' 'RSAT; a workgroup PC asks for the DC'
+    Write-MenuItem '4' 'Password quality' 'DSInternals + DCSync rights, hashless'
+    Write-MenuItem '5' 'Entra ID snapshot' 'Microsoft Graph'
+    Write-MenuSection 'Analyze and share'
+    Write-MenuItem '6' 'Analyze a snapshot' 'report, optional AI summary'
+    Write-MenuItem '7' 'Package for another machine' 'snapshot + password quality, one zip'
+    Write-MenuSection 'Tools'
+    Write-MenuItem 'D' 'Domain controllers' 'list them, test the connection'
+    Write-MenuItem 'S' 'Settings' 'default settings, remembered answers'
+    Write-MenuItem 'Q' 'Quit'
+    Write-Host ''
+    Write-Rule
+    Write-MenuStatus
+    Write-Rule
+}
+
 function Show-Banner {
     $ver = if ($script:LauncherVersion) { 'v' + $script:LauncherVersion } else { '' }
-    $b = @'
-######################################################################
-#                      .
-#                     / V\
-#                   / `  /
-#                  <<   |                I D W o l f   {VERSION}
-#                  /    |                AD / Entra hygiene
-#                /      |
-#              /        |
-#            /    \  \ /
-#           (      ) | |
-#   ________|   _/_  | |
-# <__________\______)\__)
-#
-#                https://github.com/g4bri-3l3/IDWolf
-######################################################################
-'@
-    $b = $b.Replace('{VERSION}', $ver)
-    # Close the box on the right: pad every inner line to the border width.
-    $b = (($b -split "`r?`n") | ForEach-Object { if ($_ -match '^#' -and $_ -notmatch '^#{10,}$') { $_.PadRight(69) + '#' } else { $_ } }) -join "`n"
-    Write-Host $b -ForegroundColor DarkYellow
+    $wolf = @(
+        '                      .',
+        '                     / V\',
+        '                   / `  /',
+        '                  <<   |',
+        '                  /    |',
+        '                /      |',
+        '              /        |',
+        '            /    \  \ /',
+        '           (      ) | |',
+        '   ________|   _/_  | |',
+        ' <__________\______)\__)'
+    )
+    # Text beside the wolf, by line: the name, what it is, where it lives.
+    $side = @{
+        3 = @("I D W o l f  $ver", 'White')
+        4 = @('Active Directory / Entra ID hygiene', 'Gray')
+        6 = @('read-only collection, offline analysis', 'DarkGray')
+        7 = @('github.com/g4bri-3l3/IDWolf', 'DarkGray')
+    }
+    Write-Host ''
+    for ($i = 0; $i -lt $wolf.Count; $i++) {
+        if ($side.ContainsKey($i)) {
+            Write-Host $wolf[$i].PadRight(36) -NoNewline -ForegroundColor DarkYellow
+            Write-Host $side[$i][0] -ForegroundColor $side[$i][1]
+        }
+        else { Write-Host $wolf[$i] -ForegroundColor DarkYellow }
+    }
+    Write-Host ''
+    Write-Rule
 }
 
 function Invoke-Sub {
     param([string]$Script, [hashtable]$Params = @{})
     $path = Join-Path $root $Script
     if (-not (Test-Path -LiteralPath $path)) { Write-Host "Missing $Script next to the launcher." -ForegroundColor Red; return }
-    Write-Host "`n--- $Script ---`n" -ForegroundColor Cyan
+    Write-MenuSection "Running $Script" Cyan
+    Write-Host ''
     # A failing step must not kill the menu: report it and return.
     try { & $path @Params }
     catch { Write-Host "$Script stopped: $($_.Exception.Message)" -ForegroundColor Red }
@@ -692,17 +772,7 @@ elseif (@('1', '2') -contains $script:State.launcher.LastRun) {
 }
 
 while ($true) {
-    Write-Host ""
-    Write-Host "  [1] Full AD run                 (collect, then analyze or package)" -ForegroundColor White
-    Write-Host "  [2] Full Entra run              (collect, then analyze or package)" -ForegroundColor White
-    Write-Host "  [3] Collect AD snapshot         (RSAT; a workgroup PC asks for the DC)" -ForegroundColor White
-    Write-Host "  [4] Collect password quality    (DSInternals + DCSync rights, hashless)" -ForegroundColor White
-    Write-Host "  [5] Collect Entra ID snapshot   (Microsoft Graph)" -ForegroundColor White
-    Write-Host "  [6] Analyze a snapshot          (report, optional AI summary)" -ForegroundColor White
-    Write-Host "  [7] Package for another machine (snapshot + password quality in one zip)" -ForegroundColor White
-    Write-Host "  [D] Domain controllers and connection test" -ForegroundColor White
-    Write-Host "  [S] Settings                    (default settings: $(if ($script:State.defaults.Count) { 'set' } else { 'not set' }); forget remembered answers)" -ForegroundColor White
-    Write-Host "  [Q] Quit" -ForegroundColor White
+    Show-Menu
     if ($script:QueuedChoice) { $choice = $script:QueuedChoice; $script:QueuedChoice = $null; Write-Host "`nChoice: $choice (repeating the last run)" }
     else { $script:Replay = $false; $choice = (Read-Host "`nChoice").Trim().ToUpper() }
     $script:Preset = $null
@@ -748,9 +818,10 @@ while ($true) {
             }
         }
         'S' {
-            Write-Host ""
-            Write-Host "  [1] Default settings            ($(if ($script:State.defaults.Count) { 'set: each collection and analysis asks whether to use them' } else { 'not set' }))" -ForegroundColor White
-            Write-Host "  [2] Forget remembered answers   (DCs, tenants, paths, last run, pending snapshot; default settings kept)" -ForegroundColor White
+            Write-MenuSection 'Settings'
+            Write-MenuItem '1' 'Default settings' $(if ($script:State.defaults.Count) { 'set: each run asks whether to use them' } else { 'not set' })
+            Write-MenuItem '2' 'Forget remembered answers' 'DCs, tenants, paths, last run; defaults kept'
+            Write-Host ''
             switch ((Read-Host 'Choice (Enter = back)').Trim()) {
                 '1' { Edit-DefaultSettings }
                 '2' {

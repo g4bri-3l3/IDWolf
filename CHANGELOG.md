@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.10 - 2026-10-30
+
+- Launcher: new menu layout. The options are grouped (collect and analyze, collect only,
+  analyze and share, tools), the keys are highlighted and the hints are dimmed. A status line
+  shows elevation, RSAT, the DC the next AD collection uses and whether default settings are
+  set. The banner is redrawn without the `#` frame. Box-drawing characters are used only when
+  the console code page can show them, with ASCII otherwise. Keys and prompts are unchanged.
+
 ## 1.9 - 2026-10-26
 
 Six AD checks taken from a comparison with ADcheck (176 to 182 checks). The synthetic totals

@@ -80,7 +80,7 @@ Param(
 # account with broad read rights. Without it those checks show up as
 # "not evaluated".
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.9"
+$script:CollectorVersion = "1.10"
 $script:Errors = New-Object System.Collections.Generic.List[object]
 
 # Connection diagnostics and the DC list (lib\Connection.ps1). Optional: a collector copied

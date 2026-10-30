@@ -55,7 +55,7 @@ Param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.9"
+$script:CollectorVersion = "1.10"
 $script:Errors = New-Object System.Collections.Generic.List[object]
 function Add-CollectionError {
     param([string]$Section, [string]$Message)

@@ -1757,7 +1757,7 @@ try {
         $in8 = @('2', '', '', 'n', 'Z', '2', 'contoso.example', 'Q', 'Q') -join "`n"
         $o8 = $in8 | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
         $st = Read-IDWolfState
-        Assert-True ($o8 -match 'Settings:' -and $o8 -match 'Tenant \(empty = sign-in default\)\s+contoso\.example' -and $o8 -match 'Cancelled: nothing collected' -and $o8 -notmatch 'Collect-EntraSnapshot\.ps1 ---' -and $st.launcher.Tenant -eq 'contoso.example' -and $st.launcher.LastRun -eq '2') "full run shows the settings screen, remembers an edit, Q collects nothing: $(if ($o8 -notmatch 'Cancelled: nothing collected') { $o8 })"
+        Assert-True ($o8 -match 'Settings:' -and $o8 -match 'Tenant \(empty = sign-in default\)\s+contoso\.example' -and $o8 -match 'Cancelled: nothing collected' -and $o8 -notmatch 'Running Collect-EntraSnapshot\.ps1' -and $st.launcher.Tenant -eq 'contoso.example' -and $st.launcher.LastRun -eq '2') "full run shows the settings screen, remembers an edit, Q collects nothing: $(if ($o8 -notmatch 'Cancelled: nothing collected') { $o8 })"
         $oR = (@('', 'Q', 'Q') -join "`n") | & $wizExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'Start-IDWolf.ps1') 2>&1 | Out-String
         Assert-True ($oR -match 'Last time: full Entra run, tenant contoso\.example' -and $oR -match 'as last time' -and $oR -match 'Settings:' -and $oR -match 'Cancelled: nothing collected') "repeating the last run goes straight to the settings screen: $(if ($oR -notmatch 'Settings:') { $oR })"
         # Single Entra collection (5): same screen, "Then" starts at S whatever the full run
