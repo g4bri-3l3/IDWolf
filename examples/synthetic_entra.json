@@ -2,7 +2,7 @@
   "meta": {
     "tool": "IDWolf",
     "kind": "entra",
-    "schemaVersion": 10,
+    "schemaVersion": 11,
     "collectorVersion": "synthetic",
     "collectedAtUtc": "2026-09-30T08:00:00.0000000Z",
     "tenantId": "11111111-2222-3333-4444-555555555555",
@@ -50,6 +50,12 @@
       "state": "enabled"
     }
   ],
+  "tapSettings": {
+    "state": "enabled",
+    "isUsableOnce": false,
+    "defaultLifetimeInMinutes": 60,
+    "maxLifetimeInMinutes": 4320
+  },
   "passwordSettings": {
     "configured": true,
     "enableBannedPasswordCheck": false,
@@ -155,7 +161,9 @@
   },
   "onPremSync": {
     "syncEnabled": true,
-    "passwordHashSync": false
+    "passwordHashSync": false,
+    "blockSoftMatch": false,
+    "blockCloudObjectTakeover": true
   },
   "accessReviews": [
     {
