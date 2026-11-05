@@ -2,7 +2,7 @@
 
 How IDWolf's checks line up against the references people actually use to
 judge an AD or Entra audit. One place, kept in sync with the code: every check
-named here exists in the catalog (182 AD, 90 Entra).
+named here exists in the catalog (182 AD, 92 Entra).
 
 **Legend**
 - **Yes**: detected directly.
