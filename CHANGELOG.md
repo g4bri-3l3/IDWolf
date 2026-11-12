@@ -1,5 +1,74 @@
 # Changelog
 
+## 1.11 - 2026-11-12
+
+CIS and DISA STIG items are now part of the report, and four GPO checks taken from them.
+
+- **Benchmarks, item by item** (`$script:Benchmarks` in `lib/Compliance.ps1`): the CIS
+  Microsoft 365 Foundations Benchmark v7.0.0 (65 items, 58 measured) in an Entra report and
+  the DISA Active Directory Domain STIG V3R6 (36 items, 18 measured) in an AD one. Unlike the
+  regulatory frameworks, which are matched by theme, this mapping is written out item by item,
+  and every item IDWolf cannot see is listed with the reason (manual in the portal, procedural,
+  or not visible in a directory snapshot). The version is pinned, because CIS renumbers between
+  major releases and DISA reuses V-ids. Each check lists its items in the report, the CSV
+  gained a `Benchmarks` column and the JSON Lines a `benchmarks` field, and each report has a
+  table per benchmark. There is no benchmark score: with partial visibility the denominator
+  would be a lie.
+- `winrm_basic_auth` (High, Medium client-side only): a GPO lets the WinRM service or client
+  use Basic authentication or send unencrypted traffic, so the credential travels readable.
+- `machine_password_rotation_off` (Medium, Low on a long maximum age): a GPO stops machine
+  account passwords from changing (`DisablePasswordChange`) or lets them live far past the
+  30-day default. That password signs silver tickets for every service of the host.
+- `ldap_client_signing_not_required` (Medium): `LDAPClientIntegrity = 0` set on purpose, so a
+  client accepts an unsigned LDAP session that can be relayed. Unset is the safe default and is
+  not reported.
+- `machine_inactivity_limit_missing` (Low): no effective GPO locks the console
+  (`InactivityTimeoutSecs` absent, 0 or above 900 seconds).
+- New MITRE technique name: T1021.006. The synthetic domain triggers the first three and leaves
+  the fourth unset. The synthetic totals move to demo 228 (26/82/86/34), partial 213,
+  `-Deep` 233, Entra 95 (unchanged).
+
+Fixes from a bug hunt on the rule that a collection gap must never look like an all-clear,
+both ways round: a section that could not be read must neither invent findings nor pass for
+clean.
+
+- `fsmo_holder_invalid`: the holder is compared with every DC name the snapshot knows (the DC
+  list and the computer objects together). A failed `Get-ADDomainController` used to turn all
+  three (or five) FSMO roles into "holder is not a domain controller"; with neither of the two
+  reads the check is now listed as not evaluated instead.
+- `dhcp_on_dc`: the same DC name set, so a failed computer read no longer makes DHCP on a
+  domain controller look clean. Both checks name the new `dcIdentity` gap.
+- `privileged_foreign_member`: a Tier 0 member whose DN does not resolve is reported only when
+  the users, service accounts, computers, groups and foreign principals were all read -
+  otherwise it may simply be an account that was never collected (14 invented High findings on
+  a demo snapshot without `users`). Those sections are now in its `Needs`.
+- `gmsa_password_readable`: `Needs` names `serviceAccounts`, where the gMSAs live; a failed read
+  there used to leave the check silently clean.
+- `sccm_system_management_writable`: a SID that does not resolve cannot be told from a site
+  server, so those ACEs are not reported when the principal reads failed (`Needs`: computers,
+  groups).
+- Entra: who counts as an admin comes from `directoryRoles` and PIM. Without those reads every
+  group or app owner looked like a non-admin, so `entra_ca_excluded_group_weak`,
+  `entra_privileged_group_owner`, `entra_privileged_app_owner` and
+  `entra_catalog_role_privileged_group` stay quiet about that part, and they, together with
+  `entra_access_package_grants_admin` and `entra_app_scoped_admin_privileged`, name the sections
+  they really need.
+- AI step: the address of a DHCP server is pseudonymized like any other identifier (`IP-1`). It
+  used to reach the prompt in clear, and the leak check now covers it as well.
+- The findings CSV is written through .NET: UTF-8 without a BOM on Windows PowerShell 5.1 too
+  (`Export-Csv -Encoding UTF8` wrote one there), and the JSON Lines hold `<`, `>`, `&` and `'`
+  as characters on both engines (5.1 wrote `\u003c` and friends). The same snapshot now gives a
+  byte-identical CSV and JSONL whichever engine ran it. In the safety review `ConvertTo-Csv`
+  replaces `Export-Csv` on the allowed list: it only formats rows in memory.
+- `-CompareTo` with a path that is not there is refused before the analysis, naming the file,
+  instead of an `Import-Csv` error after every check had run and no report written.
+- A snapshot without a usable `domain` section is refused by `Import-ADSnapshot` with a clear
+  message, and objects without a `distinguishedName` are ignored with a warning instead of
+  stopping the indexing.
+
+732 assertions on PowerShell 7 and 5.1, with a new "collection gaps" section that checks both
+directions of the rule and a "benchmarks" one that keeps the mapping and COVERAGE.md in step.
+
 ## 1.10 - 2026-10-30
 
 - Launcher: new menu layout. The options are grouped (collect and analyze, collect only,

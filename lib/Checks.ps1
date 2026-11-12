@@ -130,7 +130,7 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Computer account in privileged group'
         Description = 'SYSTEM on that host acts as a Tier 0 principal: compromising the machine compromises the domain.'
         Remediation = 'Remove the computer account from the group and grant only the specific rights required.' }
-    privileged_foreign_member = @{ Category = 'Privileged Access'; Severity = 'High'; Mitre = 'T1078.002'; Needs = @('groups')
+    privileged_foreign_member = @{ Category = 'Privileged Access'; Severity = 'High'; Mitre = 'T1078.002'; Needs = @('groups', 'users', 'serviceAccounts', 'computers', 'foreignSecurityPrincipals')
         Title = 'Foreign or unresolved principal in privileged group'
         Description = 'A principal from another domain or forest (or one that cannot be resolved) holds Tier 0 rights here: the security of this domain then depends on the other one.'
         Remediation = 'Remove cross-domain members from privileged groups, or treat the trusted domain as part of the same Tier 0.' }
@@ -350,7 +350,7 @@ $script:CheckCatalog = [ordered]@{
         Remediation = 'Remove the record unless explicitly required, and use the DNS global query block list for WPAD and ISATAP.' }
 
     # ---------------- Operational Health (AD-adjacent) ----------------
-    fsmo_holder_invalid = @{ Category = 'Operational Health'; Severity = 'High'; Mitre = ''; Needs = @('health', 'health.fsmo')
+    fsmo_holder_invalid = @{ Category = 'Operational Health'; Severity = 'High'; Mitre = ''; Needs = @('health', 'health.fsmo', 'dcIdentity')
         Title = 'FSMO role held by a server that is not a DC'
         Description = 'An operations master role points to a server that is no longer a domain controller (usually one that was removed without moving its roles). Password changes, new objects or schema updates depending on that role will fail.'
         Remediation = 'Move the role to a healthy DC (Move-ADDirectoryServerOperationMasterRole), or seize it if the old DC is gone for good, then run a metadata cleanup.' }
@@ -386,7 +386,7 @@ $script:CheckCatalog = [ordered]@{
         Title = 'DSRM administrator allowed to log on'
         Description = 'DsrmAdminLogonBehavior is 2 on a domain controller: the Directory Services Restore Mode local administrator (a password that never expires and is not managed by AD) can log on while the DC runs normally. It is a classic Tier 0 persistence foothold that survives a domain password reset.'
         Remediation = 'Set HKLM\System\CurrentControlSet\Control\Lsa\DsrmAdminLogonBehavior to 0 (or 1) on the DCs, and rotate the DSRM password (for example with ntdsutil "set dsrm password").' }
-    dhcp_on_dc = @{ Category = 'Operational Health'; Severity = 'Medium'; Mitre = 'T1557'; Needs = @('health')
+    dhcp_on_dc = @{ Category = 'Operational Health'; Severity = 'Medium'; Mitre = 'T1557'; Needs = @('health', 'dcIdentity')
         Title = 'DHCP server running on a domain controller'
         Description = 'An authorized DHCP server is also a domain controller. DHCP on a DC runs dynamic DNS registration as the DC machine account (the DnsUpdateProxy / record-ownership problem) and widens the DC attack surface; it is a long-standing Microsoft anti-pattern.'
         Remediation = 'Move the DHCP role off the domain controllers to dedicated member servers.' }
@@ -432,7 +432,7 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Non-Tier 0 principal can create dMSAs (BadSuccessor)'
         Description = 'A principal outside Tier 0 can create objects in an OU or container (CreateChild for all classes or for msDS-DelegatedManagedServiceAccount, GenericAll, WriteDacl, WriteOwner, or ownership). With a Windows Server 2025 DC in the domain it can create a delegated managed service account, mark it as the successor of any account (a Domain Admin, krbtgt) and authenticate with that account''s privileges and keys (BadSuccessor). The August 2025 update (CVE-2025-53779, build 26100.4946) requires a two-sided link, which closes the direct takeover, but the right to create dMSAs should still belong to Tier 0 only. Reported only when a Windows Server 2025 DC is present: High while one is unpatched or its patch level could not be read, Medium once all are patched.'
         Remediation = 'Install the August 2025 cumulative update (or later) on every Windows Server 2025 DC. Remove CreateChild (all classes or dMSA), GenericAll, WriteDacl and WriteOwner from non-Tier 0 principals on OUs and containers, scope delegations to the object classes really needed (user, group, computer), and give ownership of OUs back to Domain Admins. Akamai''s Get-BadSuccessorOUPermissions.ps1 lists the same rights.' }
-    sccm_system_management_writable = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1072'; Needs = @('sccm')
+    sccm_system_management_writable = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1072'; Needs = @('sccm', 'computers', 'groups')
         Title = 'Non-site-server principal can write to the SCCM System Management container'
         Description = 'SCCM / MECM site servers publish their sites and management points in CN=System Management,CN=System, and clients use what is published there to find a management point. A principal that is neither Tier 0 nor a site server (a computer account, or a group of computer accounts only) can create or change objects there: it can publish a rogue management point that clients will contact, and collect their authentication or the network access account. Site servers themselves hold Full Control by design, so the detail lists them: they control every client of the site and belong in Tier 0 when DCs or admin workstations are among those clients.'
         Remediation = 'Remove the write, create, WriteDacl and WriteOwner rights of everyone but the site server computer accounts (or a group that contains only them) and Tier 0 from the System Management container; give each site server Full Control as Microsoft documents, nothing more. Protect the site servers and the SCCM admins at the tier of the most sensitive client they manage.' }
@@ -445,7 +445,7 @@ $script:CheckCatalog = [ordered]@{
         Description = 'The Pre-Windows 2000 Compatible Access group grants broad read of the directory. With Anonymous Logon or Everyone as a member, an unauthenticated attacker can enumerate accounts and groups.'
         Remediation = 'Remove Anonymous Logon (S-1-5-7) and Everyone (S-1-1-0) from the group once no legacy system depends on it.' }
 
-    gmsa_password_readable = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1649'; Needs = @('users', 'groups')
+    gmsa_password_readable = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1649'; Needs = @('users', 'serviceAccounts', 'groups')
         Title = 'gMSA password readable by a non-Tier 0 principal'
         Description = 'msDS-GroupMSAMembership (PrincipalsAllowedToRetrieveManagedPassword) lets the listed principals retrieve the managed password of this group managed service account. When that principal is not Tier 0, anyone who controls it can recover the gMSA credential and impersonate the service (BloodHound ReadGMSAPassword edge).'
         Remediation = 'Restrict PrincipalsAllowedToRetrieveManagedPassword to the specific host or Tier-matched group that runs the service. Remove broad or non-Tier 0 principals.' }
@@ -714,6 +714,10 @@ function Get-NotEvaluatedChecks {
     elseif ("$($Snapshot.dns.source)" -eq 'ldap') { $absentReasons['dnsTransfer'] = 'DNS zones read over LDAP (no DNS RPC rights): the zone transfer setting is only in the DNS server registry; collect as DnsAdmins/admin to evaluate it' }
     if ($Snapshot.dns.collected -and @($Snapshot.dns.zones | Where-Object { $_ -and $_.isAdIntegrated -and -not $_.PSObject.Properties['createChildSids'] }).Count -gt 0) {
         $absentReasons['dnsZoneAcl'] = 'snapshot from an older collector (no DNS zone permissions): re-collect'
+    }
+    # Checks that have to tell a DC from any other server need at least one of the two reads.
+    if (@($Index.DcHostNames.Keys).Count -eq 0) {
+        $absentReasons['dcIdentity'] = 'no domain controller could be identified (the domain controller list and the computer objects were both unreadable)'
     }
     if ($Snapshot.meta.options.skipHealth) { $absentReasons['health'] = 'operational health collection skipped (-SkipHealth)' }
     elseif (-not $Snapshot.health -or -not $Snapshot.health.collected) { $absentReasons['health'] = 'operational health not collected (replication/DHCP/backup metadata unavailable)' }
@@ -1035,10 +1039,15 @@ function Invoke-ADHygieneChecks {
         }
     }
 
+    # A member DN that doesn't resolve is only news when the principals were all read: with a
+    # failed users / computers / groups read it may be an account that was never collected, so
+    # those are left to the "not evaluated" list instead of being reported as foreign.
+    $principalsUnread = @(@('users', 'serviceAccounts', 'computers', 'groups', 'foreignSecurityPrincipals') | Where-Object { $Index.CollectionErrorSections.ContainsKey($_) })
     foreach ($rec in $PrivMap.Principals.Values) {
         $p = $rec.Principal
         $groupsText = $rec.Groups -join ', '
         if (-not $p -or $rec.Type -eq 'foreign' -or $rec.Type -eq 'unresolved') {
+            if (-not $p -and $principalsUnread.Count -gt 0) { continue }
             # In a child domain the forest root's Enterprise Admins is a default member of the builtin
             # Administrators, through a foreign security principal. That is expected, not a finding.
             if ($p -and $rec.Type -eq 'foreign' -and $Index.RootSid -and $Index.RootSid -ne $Index.DomainSid -and "$($p.sid)" -eq "$($Index.RootSid)-519") { continue }
@@ -1853,11 +1862,10 @@ function Invoke-HealthChecks {
         Add-Finding -Type ad_backup_overdue -Object $Snapshot.domain.dnsRoot -ObjectType 'domain' -ObjectDn $Snapshot.domain.distinguishedName `
             -Detail "Last AD backup of the domain naming context was $bAge days ago (threshold 7)."
     }
-    $dcHosts = @{}
-    foreach ($c in @($Index.Computers | Where-Object { $_._isDc })) {
-        if ($c.dnsHostName) { $dcHosts["$($c.dnsHostName)".ToLower()] = $true }
-        if ($c.samAccountName) { $dcHosts["$("$($c.samAccountName)".TrimEnd('$'))".ToLower()] = $true }
-    }
+    # Every name this snapshot knows a DC by, already lowercased: the DC list and the computer
+    # objects together (New-SnapshotIndex). Taking it from the computers alone made the check
+    # quietly find nothing when the computer read had failed.
+    $dcHosts = $Index.DcHostNames
     foreach ($d in @($h.dhcpServers | Where-Object { $_ })) {
         $dn = "$($d.name)".ToLower()
         $short = ($dn -split '\.')[0]
@@ -1867,9 +1875,12 @@ function Invoke-HealthChecks {
     }
 
     # FSMO roles must sit on a current DC. Forest roles only count in the forest root.
-    if ($h.PSObject.Properties['fsmo'] -and $h.fsmo) {
-        $known = @{}
-        foreach ($d in @($Snapshot.domainControllers | Where-Object { $_ })) { $known["$($d.hostName)".ToLower()] = $true; $known["$($d.name)".ToLower()] = $true }
+    # The holder is compared with every DC name the snapshot knows (the DC list and the computer
+    # objects, through New-SnapshotIndex). With neither of the two reads there is nothing to
+    # compare against: without this guard a failed DC read turned every FSMO role into a
+    # "holder is not a domain controller" finding (Get-NotEvaluatedChecks lists it instead).
+    if ($h.PSObject.Properties['fsmo'] -and $h.fsmo -and $Index.DcHostNames.Count -gt 0) {
+        $known = $Index.DcHostNames
         $roles = @('PDCEmulator', 'RIDMaster', 'InfrastructureMaster'); if ($h.forestRoot) { $roles += 'SchemaMaster', 'DomainNamingMaster' }
         foreach ($r in $roles) {
             $holder = "$($h.fsmo.$r)"; $hl = $holder.ToLower()
@@ -2155,10 +2166,14 @@ function Invoke-SccmChecks {
     if (-not $Snapshot.PSObject.Properties['sccm'] -or -not $Snapshot.sccm -or -not $Snapshot.sccm.present -or -not $Snapshot.sccm.acl) { return }
     $acl = $Snapshot.sccm.acl
     $tier0 = Get-Tier0SidSet $Index $PrivMap
+    # With a failed users / computers / groups read a SID that does not resolve cannot be told
+    # from a site server, and its rights there are normal: those ACEs are left to the
+    # "not evaluated" list instead of being reported (Needs: computers, groups).
+    $siteServerUnknown = @(@('users', 'serviceAccounts', 'computers', 'groups') | Where-Object { $Index.CollectionErrorSections.ContainsKey($_) }).Count -gt 0
     $isSiteServer = {
         param([string]$Sid)
         $o = $Index.BySid[$Sid]
-        if (-not $o) { return $false }
+        if (-not $o) { return $siteServerUnknown }
         if ($o._type -eq 'computer') { return $true }
         # Domain Computers is all computer accounts too, but it is every machine, not the site servers.
         if ($o._type -ne 'group' -or "$($o.sid)" -match '-515$') { return $false }

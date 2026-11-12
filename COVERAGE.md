@@ -2,7 +2,7 @@
 
 How IDWolf's checks line up against the references people actually use to
 judge an AD or Entra audit. One place, kept in sync with the code: every check
-named here exists in the catalog (182 AD, 92 Entra).
+named here exists in the catalog (186 AD, 92 Entra).
 
 **Legend**
 - **Yes**: detected directly.
@@ -58,9 +58,43 @@ Windows Server benchmark is mostly GPO hardening, which IDWolf reads from SYSVOL
 | Kerberos encryption types, armoring, ticket lifetimes | GPO `kerberos_rc4_allowed`, `kerberos_armoring_not_enforced`, `kerberos_ticket_lifetime_long` |
 | Netlogon secure channel, Print Spooler, WebClient, LLMNR, mDNS, UNC hardening | GPO `netlogon_vulnerable_channel`, `spooler_on_dc`, `webclient_not_disabled`, Live `webclient_on_dc`, `llmnr_enabled`, `mdns_enabled`, `unc_hardening_disabled` |
 | UAC, RDP session time limits | GPO `uac_weakened`, `rdp_session_timeout_missing` |
+| WinRM Basic authentication and unencrypted traffic | GPO `winrm_basic_auth` |
+| Machine account password changes and maximum age | GPO `machine_password_rotation_off` |
+| LDAP client signing requirements | GPO `ldap_client_signing_not_required` |
+| Machine inactivity limit (console lock) | GPO `machine_inactivity_limit_missing` |
 | Firewall, BitLocker | GPO `firewall_disabled_gpo` (a GPO that turns a profile off); Yes `bitlocker_key_missing` (recovery keys escrowed to AD); the real state on each host Out |
 | Trusted root certificates pushed by GPO | GPO `gpo_trusted_root_added` (roots not published in this forest's PKI) |
 | Defender, TLS versions | Out (host build state) |
+
+### DISA Active Directory Domain STIG, V3R6 (5 January 2026)
+
+The domain STIG, not the Windows Server one: 36 requirements about the directory
+itself. IDWolf measures 18 of them; the rest are procedural or about the network
+around AD. The mapping lives in `lib/Compliance.ps1` (`$script:Benchmarks`) and
+the report prints it item by item, with the reason for every item it cannot see.
+
+| STIG | Severity | Requirement | IDWolf |
+|---|---|---|---|
+| V-243466 | CAT I | Enterprise Admins restricted to forest management accounts | Yes `schema_enterprise_admins_populated` |
+| V-243467 | CAT I | Domain Admins restricted to domain management accounts | Yes `privileged_group_oversized`, `privileged_kerberoastable`, `privileged_computer_member` |
+| V-243470 | CAT I | Delegation of privileged accounts prohibited | Yes `privileged_account_delegable` |
+| V-243471 | CAT II | Local administrator passwords not shared | Yes `laps_not_deployed`, `laps_missing`, `laps_stale` |
+| V-243476 | CAT II | Smart-card NT hash rotated every 60 days | Yes `smartcard_password_not_rotated` (pass `-PasswordMaxAgeDays 60`) |
+| V-243477 | CAT II | Domain administrators in Protected Users | Yes `protected_users_empty`, `privileged_logon_unrestricted` |
+| V-243478 | CAT II | No unconstrained delegation outside the DCs | Yes `unconstrained_delegation` |
+| V-243480 | CAT II | Domain functional level still supported | Yes `functional_level_outdated` |
+| V-243484 | CAT II | SID filtering on external and forest trusts | Yes `trust_sid_filtering_disabled`, `sid_history` |
+| V-243485 | CAT II | Selective Authentication on outgoing forest trusts | Yes `trust_no_selective_auth` |
+| V-243486 | CAT II | Anonymous Logon / Everyone out of Pre-Windows 2000 | Yes `pre_win2000_anonymous` |
+| V-243487 | CAT II | GPO Creator Owners and Forest Trust Builders limited | Partial: those members count as Tier 0, no check of their own |
+| V-243488 | CAT III | Delegated accounts out of built-in admin groups | Yes `operator_groups_populated` |
+| V-243489 | CAT II | RODC architecture and configuration | Yes `rodc_prp_too_broad`, `rodc_tier0_revealed`, `rodc_tier0_unprotected`, `rodc_krbtgt_password_old` |
+| V-243490 | CAT II | Use of administrative accounts monitored | GPO `audit_policy_insufficient`, `audit_advanced_policy_missing` |
+| V-243493 | CAT II | AD data backed up daily | Yes `ad_backup_overdue` (threshold 7 days) |
+| V-243496 | CAT II | Outside accounts out of privileged groups | Yes `privileged_foreign_member` |
+| V-243497 | CAT II | Inter-site replication at least daily | Yes `replication_stale`, `replication_failures` |
+| V-243500 | CAT II | Multiple domain controllers | Yes `single_dc` |
+| V-243468/469/472/473/475/479/481/482/483/491/492/494/495/498/499/501, V-269097 | – | Separate admin accounts per tier, separate smart cards, DCs off the Internet, DSRM password age, cross-domain solutions, monitoring, VPN and IDS, documentation, CPCON, Kerberos logging on the CA hosts | Out: procedural, network state, or read on the host rather than from the directory |
 
 ### PingCastle rules
 

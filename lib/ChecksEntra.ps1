@@ -300,19 +300,19 @@ $script:EntraCheckCatalog = [ordered]@{
         Title = 'Multi-tenant app without App instance property lock'
         Description = 'A multi-tenant app registration with credentials does not lock the sensitive properties of its service principals. In a tenant where the app is installed, someone with rights on the service principal can add a credential to it and use the permissions granted there.'
         Remediation = 'Enable App instance property lock for all properties (servicePrincipalLockConfiguration) on multi-tenant apps.' }
-    entra_access_package_grants_admin = @{ Category = 'Entra Identity'; Severity = 'High'; Mitre = 'T1098.003'; Needs = @('accessPackages', 'accessPackageGrants', 'groups', 'schema7')
+    entra_access_package_grants_admin = @{ Category = 'Entra Identity'; Severity = 'High'; Mitre = 'T1098.003'; Needs = @('accessPackages', 'accessPackageGrants', 'groups', 'directoryRoles', 'pim', 'schema7')
         Title = 'Access package grants admin access through self-request without approval'
         Description = 'An access package that a broad population can request for itself, without approval, grants a privileged Entra role or membership of a group that holds one. Any account in that population gets admin rights by asking.'
         Remediation = 'Require approval (by admins of the same tier) on that policy, restrict who can request it, or remove the privileged resource from the package.' }
-    entra_app_scoped_admin_privileged = @{ Category = 'Entra Applications'; Severity = 'High'; Mitre = 'T1098.001'; Needs = @('roleAssignments', 'servicePrincipals', 'schema7')
+    entra_app_scoped_admin_privileged = @{ Category = 'Entra Applications'; Severity = 'High'; Mitre = 'T1098.001'; Needs = @('roleAssignments', 'servicePrincipals', 'applications', 'directoryRoles', 'schema7')
         Title = 'App administrator scoped to a privileged application'
         Description = 'Application Administrator or Cloud Application Administrator is assigned with the scope of a single app, and that app holds an admin role or a tenant-takeover permission. The scoped admin can add a credential to the app and act with its permissions: a delegated "just this app" role that is in fact tenant takeover.'
         Remediation = 'Remove the scoped assignment, or move the privileged permission out of that app; treat whoever manages a privileged app as an admin of the same tier.' }
-    entra_ca_excluded_group_weak = @{ Category = 'Entra Access Policy'; Severity = 'High'; Mitre = 'T1556.009'; Needs = @('conditionalAccess', 'groups', 'schema6')
+    entra_ca_excluded_group_weak = @{ Category = 'Entra Access Policy'; Severity = 'High'; Mitre = 'T1556.009'; Needs = @('conditionalAccess', 'groups', 'directoryRoles', 'pim', 'schema6')
         Title = 'Conditional Access exclusion group anyone can get into'
         Description = 'A group excluded from an enabled Conditional Access policy is a public Microsoft 365 group (anyone can join), a dynamic group whose rule uses attributes a user or guest can influence, or a group owned by non-admins (who can add anyone). Getting into that group switches the policy off for that account, MFA included.'
         Remediation = 'Exclude only dedicated, role-assignable or admin-owned security groups (for example the emergency access accounts), make the group private and assigned, remove non-admin owners, and review the exclusion with an access review.' }
-    entra_privileged_group_owner = @{ Category = 'Entra Identity'; Severity = 'High'; Mitre = 'T1098.003'; Needs = @('directoryRoles', 'groups', 'schema6', 'pimForGroups')
+    entra_privileged_group_owner = @{ Category = 'Entra Identity'; Severity = 'High'; Mitre = 'T1098.003'; Needs = @('directoryRoles', 'pim', 'groups', 'schema6', 'pimForGroups')
         Title = 'Group holding an admin role owned by a non-admin'
         Description = 'A group that holds a privileged Entra role (active or eligible) has an owner who is not an admin, or a guest or service principal as owner. The owner can add any account, including their own, to the group and so take the role.'
         Remediation = 'Remove those owners: groups that hold roles should be owned by admins of the same tier only (or by nobody, managed through PIM for Groups), and the group must be role-assignable.' }
@@ -324,7 +324,7 @@ $script:EntraCheckCatalog = [ordered]@{
         Title = 'Service principal name with look-alike characters'
         Description = 'A service principal name mixes Latin letters with look-alike letters from another script (Cyrillic, Greek, full-width) or hides invisible characters. That is how consent-phishing apps pose as Microsoft or a trusted vendor in consent prompts and in the admin portal.'
         Remediation = 'Check who published the app and what it was granted; if it is not a known app, revoke its grants and delete the service principal.' }
-    entra_privileged_app_owner = @{ Category = 'Entra Applications'; Severity = 'High'; Mitre = 'T1098.001'; Needs = @('servicePrincipals', 'appOwners', 'schema4')
+    entra_privileged_app_owner = @{ Category = 'Entra Applications'; Severity = 'High'; Mitre = 'T1098.001'; Needs = @('servicePrincipals', 'appOwners', 'users', 'directoryRoles', 'schema4')
         Title = 'Regular user owns an app with tenant-takeover permissions'
         Description = 'A user who is not an admin owns an app (or its service principal) holding permissions such as RoleManagement.ReadWrite.Directory. An owner can add a secret and act as the app, so that user is effectively a Global Admin.'
         Remediation = 'Remove user owners from privileged apps, or treat those owners as Tier 0 (admin roles, phishing-resistant MFA, PIM).' }
@@ -392,7 +392,7 @@ $script:EntraCheckCatalog = [ordered]@{
         Title = 'App still holds permissions on the retired Azure AD Graph'
         Description = 'An app registration requests permissions on Azure AD Graph (graph.windows.net, resource 00000002-0000-0000-c000-000000000000), or a service principal was granted some. Microsoft has retired that API: the app either already fails or depends on something that is going away, and permission reviews built on Microsoft Graph do not show what it was allowed to do there (Directory.ReadWrite.All on Azure AD Graph is as strong as on Microsoft Graph).'
         Remediation = 'Ask the owner to move the app to Microsoft Graph. Then remove the Azure AD Graph entries from its API permissions and revoke the grants (application permissions and delegated consents) on the Windows Azure Active Directory service principal; delete the app if nobody claims it.' }
-    entra_catalog_role_privileged_group = @{ Category = 'Entra Identity'; Severity = 'High'; Mitre = 'T1098.003'; Needs = @('entitlementCatalogs', 'catalogRoles', 'accessPackageGrants', 'groups', 'directoryRoles', 'schema10')
+    entra_catalog_role_privileged_group = @{ Category = 'Entra Identity'; Severity = 'High'; Mitre = 'T1098.003'; Needs = @('entitlementCatalogs', 'catalogRoles', 'accessPackageGrants', 'groups', 'directoryRoles', 'pim', 'schema10')
         Title = 'Non-admin manages an entitlement catalog that holds an admin group'
         Description = 'An entitlement management catalog holds a group that has a privileged Entra role (active or eligible), and someone who is not an admin is its catalog owner or access package manager (they can put the group in an access package and assign it, to themselves too), or its access package assignment manager while a package of the catalog already hands out the group. Through the catalog they can make themselves a member of the group and take the role.'
         Remediation = 'Keep groups that hold admin roles out of catalogs managed by non-admins: move them to a catalog whose owners and managers are admins of the same tier, or remove those catalog roles. Treat catalog roles on such a catalog as Tier 0.' }
@@ -958,6 +958,10 @@ function Invoke-EntraChecks {
         # Admins: privileged role members, plus eligible principals of privileged roles.
         $adminIds = @{}; foreach ($k in $privMembers.Keys) { $adminIds["$k"] = $true }
         foreach ($a in @($Snapshot.pim.eligible | Where-Object { $_ })) { if ($script:EntraPrivRoleTemplates.ContainsKey("$($a.roleDefinitionId)")) { $adminIds["$($a.principalId)"] = $true } }
+        # Who is an admin is known only when the roles and PIM were read: otherwise nobody is in
+        # $adminIds and every owner would look like a non-admin. The checks that rest on it stay
+        # quiet about that part and are listed as not evaluated (Needs: directoryRoles, pim).
+        $adminsUnread = ($failedSections.ContainsKey('directoryRoles') -or $failedSections.ContainsKey('pim'))
         $ownerIssues = {
             param($g)
             $out = @()
@@ -966,7 +970,7 @@ function Invoke-EntraChecks {
                 foreach ($pe in @($g.pimEligible | Where-Object { $_ -and "$($_.accessId)" -eq 'owner' })) {
                     $peu = $usersById["$($pe.principalId)"]
                     if ($peu -and $peu.userType -eq 'Guest') { $out += "eligible owner guest $($peu.upn)" }
-                    elseif (-not $adminIds.ContainsKey("$($pe.principalId)")) { $out += "eligible owner non-admin $(if ($peu) { $peu.upn } else { $pe.principalId })" }
+                    elseif (-not $adminsUnread -and -not $adminIds.ContainsKey("$($pe.principalId)")) { $out += "eligible owner non-admin $(if ($peu) { $peu.upn } else { $pe.principalId })" }
                 }
             }
             foreach ($op in @($g.ownerTypes.PSObject.Properties)) {
@@ -974,7 +978,7 @@ function Invoke-EntraChecks {
                 if ($ot -eq 'servicePrincipal') { $out += "service principal $(if ($spById[$oid]) { $spById[$oid].displayName } else { $oid })"; continue }
                 $ou = $usersById[$oid]
                 if ($ou -and $ou.userType -eq 'Guest') { $out += "guest $($ou.upn)"; continue }
-                if (-not $adminIds.ContainsKey($oid)) { $out += "non-admin $(if ($ou) { $ou.upn } else { $oid })" }
+                if (-not $adminsUnread -and -not $adminIds.ContainsKey($oid)) { $out += "non-admin $(if ($ou) { $ou.upn } else { $oid })" }
             }
             $out
         }
@@ -1269,9 +1273,9 @@ function Invoke-EntraChecks {
                     $pid2 = "$($ra.principalId)"; $pt = "$($ra.principalType)"
                     $u = $usersById[$pid2]
                     if ($pt -eq 'servicePrincipal') { $name = if ($spById[$pid2]) { "$($spById[$pid2].displayName)" } else { $pid2 }; $kind = 'service principal' }
-                    elseif ($pt -eq 'group') { if ($adminIds.ContainsKey($pid2)) { continue }; $name = if ($grpName[$pid2]) { $grpName[$pid2] } else { $pid2 }; $kind = 'group' }
+                    elseif ($pt -eq 'group') { if ($adminsUnread -or $adminIds.ContainsKey($pid2)) { continue }; $name = if ($grpName[$pid2]) { $grpName[$pid2] } else { $pid2 }; $kind = 'group' }
                     elseif ($u -and $u.userType -eq 'Guest') { $name = "$($u.upn)"; $kind = 'guest' }
-                    else { if ($adminIds.ContainsKey($pid2)) { continue }; $name = if ($u) { "$($u.upn)" } else { $pid2 }; $kind = 'non-admin' }
+                    else { if ($adminsUnread -or $adminIds.ContainsKey($pid2)) { continue }; $name = if ($u) { "$($u.upn)" } else { $pid2 }; $kind = 'non-admin' }
                     $groupsText = @($reach | ForEach-Object { if ($grpName[$_]) { $grpName[$_] } else { $_ } }) -join ', '
                     Add-EntraFinding -Type entra_catalog_role_privileged_group -Object "$($cat.displayName): $name" -ObjectType 'catalog' -ObjectDn "$($cat.id)" `
                         -Detail "$rn ($kind $name) on catalog $($cat.displayName), which holds $groupsText (admin role). $(if ($rn -eq 'Access package assignment manager') { 'A package of the catalog already grants it: they can assign it to themselves.' } else { 'They can put it in an access package and assign it, to themselves too.' })"
@@ -1305,8 +1309,10 @@ function Invoke-EntraChecks {
     }
 
     if ($sv -ge 4) {
-        # Users owning apps that hold tenant-takeover permissions.
-        if (-not $failedSections.ContainsKey('appOwners')) {
+        # Users owning apps that hold tenant-takeover permissions. Telling an admin owner from a
+        # plain one needs the users and the role members: without them every owner would look
+        # like a non-admin, so the check is left to the "not evaluated" list.
+        if (-not $failedSections.ContainsKey('appOwners') -and -not $failedSections.ContainsKey('users') -and -not $failedSections.ContainsKey('directoryRoles')) {
             foreach ($sp in @($Snapshot.servicePrincipals | Where-Object { $_ -and $_.PSObject.Properties['owners'] })) {
                 $risk = @($sp.appRoleIds | Where-Object { $script:EntraHighRiskAppRoles.ContainsKey("$_") })
                 if (-not $risk.Count) { continue }
@@ -1591,6 +1597,10 @@ function ConvertTo-EntraReportHtml {
         try { & $w (ConvertTo-ComplianceHtml -Catalog $script:EntraCheckCatalog -Findings $Findings -NotEvaluated $NotEvaluated) }
         catch { Write-Warning "Regulatory mapping skipped: $($_.Exception.Message)" }
     }
+    if (Get-Command ConvertTo-BenchmarkHtml -ErrorAction SilentlyContinue) {
+        try { & $w (ConvertTo-BenchmarkHtml -Catalog $script:EntraCheckCatalog -Findings $Findings -NotEvaluated $NotEvaluated -Kind 'entra') }
+        catch { Write-Warning "Benchmark mapping skipped: $($_.Exception.Message)" }
+    }
 
     & $w '<details open><summary><h2>Findings by check</h2></summary>'
     if (@($Findings).Count -eq 0) { & $w '<p>No findings.</p>' }
@@ -1606,6 +1616,7 @@ function ConvertTo-EntraReportHtml {
         & $w "<div class=`"kv`"><b>Remediation.</b> $(& $H $meta.Remediation)</div>"
         $attack = Format-CheckAttackHtml $t.Type $meta; if ($attack) { & $w $attack }
         if (Get-Command Format-CheckControls -ErrorAction SilentlyContinue) { & $w "<div class=`"kv`"><b>Regulatory controls.</b> $(& $H (Format-CheckControls $t.Type))</div>" }
+        if (Get-Command Format-CheckBenchmarks -ErrorAction SilentlyContinue) { $bm = Format-CheckBenchmarks $t.Type; if ($bm) { & $w "<div class=`"kv`"><b>Benchmarks.</b> $(& $H $bm)</div>" } }
         & $w '<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>'
         foreach ($f in ($t.Items | Sort-Object { - $script:SeverityRank[$_.Severity] }, Object)) {
             & $w "<tr class=`"data-row`"><td>$(Get-SevPill $f.Severity)</td><td><b>$(& $H $f.Object)</b></td><td>$(& $H $f.Detail)</td></tr>"

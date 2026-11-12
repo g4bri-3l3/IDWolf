@@ -418,6 +418,13 @@ $gpo = [ordered]@{
                 'MACHINE\System\CurrentControlSet\Services\Kdc\StrongCertificateBindingEnforcement' = '4,1'
                 'MACHINE\System\CurrentControlSet\Services\LanmanServer\Parameters\SMB1' = '4,1'
                 'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\RequireStrongKey' = '4,0'
+                # WinRM with Basic authentication on the service: winrm_basic_auth (High).
+                'MACHINE\Software\Policies\Microsoft\Windows\WinRM\Service\AllowBasic' = '4,1'
+                # Machine account passwords frozen: machine_password_rotation_off.
+                'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\DisablePasswordChange' = '4,1'
+                # LDAP client signing set to None: ldap_client_signing_not_required.
+                'MACHINE\System\CurrentControlSet\Services\LDAP\LDAPClientIntegrity' = '4,0'
+                # No InactivityTimeoutSecs anywhere: machine_inactivity_limit_missing (not configured).
                 # Null sessions opened: anonymous_sam_enum lists them (the default pipes are not reported).
                 'MACHINE\System\CurrentControlSet\Control\Lsa\EveryoneIncludesAnonymous' = '4,1'
                 'MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters\NullSessionShares' = '7,COMCFG,DFS$'

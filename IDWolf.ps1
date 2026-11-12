@@ -103,7 +103,7 @@ Param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:IDWolfVersion = "1.10"
+$script:IDWolfVersion = "1.11"
 
 $libDir = Join-Path $PSScriptRoot 'lib'
 foreach ($f in @('Common.ps1', 'Checks.ps1', 'ChecksHost.ps1', 'Reporting.ps1', 'Graph.ps1', 'AI.ps1', 'ChecksEntra.ps1', 'Compliance.ps1', 'Bundle.ps1', 'Wizard.ps1')) {
@@ -473,6 +473,11 @@ if ($Snapshot -and (Test-IDWolfBundleFile $Snapshot)) {
 else { $snap = Import-ADSnapshot -Path $Snapshot }
 $script:RefDate = ConvertTo-UtcDate $snap.meta.collectedAtUtc
 if ($null -eq $script:RefDate) { throw "Snapshot has no valid meta.collectedAtUtc." }
+# Checked here, not after the analysis: a wrong path used to come out of Import-Csv once every
+# check had already run, and the report was never written.
+if ($CompareTo -and -not (Test-Path -LiteralPath $CompareTo -PathType Leaf)) {
+    throw "Comparison CSV not found: $CompareTo. -CompareTo takes the findings CSV of an earlier run."
+}
 
 # ==========================================================================
 # Entra snapshots take their own, shorter path.

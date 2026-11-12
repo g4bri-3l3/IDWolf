@@ -101,6 +101,9 @@ function New-Pseudonymizer {
     foreach ($mp in @($Snapshot.sccm.managementPoints | Where-Object { $_ })) { & $add "$($mp.siteCode)" 'SITE'; & $add "$($mp.host)" 'HOSTFQDN' }
     $zones = @(@($Snapshot.dns.zones | Where-Object { $_ }) | ForEach-Object { "$($_.name)" } | Where-Object { $_ -and $_ -notmatch '^(?i)(RootDNSServers|TrustAnchors|\.\.TrustAnchors|\.\.RootHints)$' })
     foreach ($z in $zones) { & $add $z 'ZONE' }
+    # DHCP servers reach a finding by name and by address; an address is as much of an
+    # identifier as a host name, so it is tokenized too and the leak check then covers it.
+    foreach ($d in @($Snapshot.health.dhcpServers | Where-Object { $_ })) { & $add "$($d.name)" 'HOSTFQDN'; & $add "$($d.ip)" 'IP' }
 
     # Longest first, so "adm.rossi.old" is replaced before "adm.rossi".
     $pz.Ordered = @($pz.Forward.Keys | Sort-Object { $_.Length } -Descending)

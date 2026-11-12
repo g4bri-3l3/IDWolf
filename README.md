@@ -32,7 +32,7 @@ nothing but the native ActiveDirectory module, then analyzes that snapshot
 **offline** and gives you an HTML report, a findings CSV and, if you want, JSON
 Lines for your SIEM.
 
-On the AD side it runs **182 checks**: Kerberos, privileged access, account
+On the AD side it runs **186 checks**: Kerberos, privileged access, account
 hygiene, domain configuration, permissions, DNS, AD CS (ESC1-5, 9, 10, 13, 15),
 operational health (replication, DHCP, backups), host hardening read from the
 GPOs (SMB and LDAP signing, NTLM, LM hash, user rights) and password quality,
@@ -145,6 +145,15 @@ make anyone compliant: policies, processes, people and other systems are
 outside a directory snapshot. The full table, with the reasoning, is in
 [`COVERAGE.md`](COVERAGE.md#regulations).
 
+Beside the frameworks, the report maps two benchmarks item by item: the **CIS
+Microsoft 365 Foundations Benchmark v7.0.0** (65 items, 58 of them measured) in
+an Entra report and the **DISA Active Directory Domain STIG V3R6** (36 items, 18
+measured) in an AD one. Each check lists the items it gives evidence for, the
+CSV and the JSON Lines carry them in `Benchmarks` / `benchmarks`, and the report
+has a table per benchmark. Items IDWolf cannot see say why: manual in the
+portal, procedural, or not visible in a directory snapshot. There is no
+benchmark score: partial visibility would make the denominator a lie.
+
 ## How it compares
 
 These are the tools people usually reach for to do a similar job, in their free
@@ -158,7 +167,7 @@ October 2026. If something here is out of date or wrong, please say so.
 | Proves it can't write to the directory (built-in code review) | **Yes** | – | – | – | – (has a fix mode) | – | – (attacks by design, after operator confirmation) |
 | Collect once, analyze later on another machine, offline | **Yes** | partial (re-renders its XML report) | – | yes (import into the server) | – | – | – |
 | AI summary, remediation plan, attack-path story, fix scripts, exploitability ranking | **Yes** (names tokenized first, nothing sent without consent) | – | – | – | – | – | – |
-| AD hygiene checklist | 182 checks | yes | yes | – (paths, not a checklist) | – | – | – (104 attack techniques, tried rather than audited) |
+| AD hygiene checklist | 186 checks | yes | yes | – (paths, not a checklist) | – | – | – (104 attack techniques, tried rather than audited) |
 | AD CS (ESC) | ESC1-5, 9, 10, 13, 15; 6, 7, 8, 11, 16 read on the CA | some | some | yes, as graph edges | **broadest**, with fixes | – | template enumeration; ESC1-16 exploitation in PRO |
 | Password quality (duplicates, breached) | yes, hashless | – | – | – | – | – | spraying and cracking (an attack, not an audit) |
 | Host hardening read from GPOs | yes | yes | yes | – | – | – | – (some preconditions probed live) |
@@ -202,7 +211,7 @@ documentation as of October 2026; pricing and details change often.
 | Response / auto-remediation | – (gives a plan and scripts to review) | partial (via XDR) | **Yes**, plus forest recovery | partial |
 | SIEM / XDR integration | JSON Lines | **Yes** (Defender XDR, Sentinel) | yes | yes |
 | Attack-path view | yes (report + BloodHound export) | yes (Exposure Management) | yes | **yes**, a strong point |
-| Hygiene / posture checklist | 182 AD + 92 Entra, with CIS/MITRE/NIS2… | via Secure Score | yes (indicators) | yes (indicators) |
+| Hygiene / posture checklist | 186 AD + 92 Entra, with CIS/MITRE/NIS2… | via Secure Score | yes (indicators) | yes (indicators) |
 | AI review with chaining and a compromise verdict | **Yes** (names tokenized first) | – | – | – |
 | Support | community | vendor, SLA | vendor, SLA | vendor, SLA |
 
@@ -852,6 +861,10 @@ particular object.
 | `smb_signing_not_required` | High | T1557.001 | SMB signing not required on domain controllers |
 | `ldap_signing_not_required` | High | T1557.001 | LDAP server signing not required |
 | `ldap_channel_binding_off` | Medium | T1557.001 | LDAP channel binding not enforced |
+| `ldap_client_signing_not_required` | Medium | T1557.001 | LDAP client signing not required |
+| `winrm_basic_auth` | High | T1021.006 | WinRM allows Basic authentication or unencrypted traffic |
+| `machine_password_rotation_off` | Medium | T1558.002 | Machine account password changes disabled or too rare |
+| `machine_inactivity_limit_missing` | Low | – | No machine inactivity limit on the domain controllers |
 | `lm_hash_stored` | High | T1003 | LM hash storage not disabled |
 | `ntlm_weak_lmcompat` | Medium | T1550.002 | Weak LM/NTLM compatibility level |
 | `ntlm_not_restricted` | Low | T1550.002 | NTLM neither audited nor restricted on domain controllers |
@@ -1128,7 +1141,7 @@ The model is asked for defensive output only.
   accepted risks and a filterable table of everything. Printing shows both tabs,
   and so does a browser with scripts disabled. When fewer than half of the checks
   could be evaluated, the score shows as "n/a" instead of a misleading grade.
-- **CSV**: one row per check and object, with its regulatory controls in the `Controls` column. Feed it back with `-CompareTo`.
+- **CSV**: one row per check and object, with its regulatory controls in the `Controls` column and its CIS / STIG items in `Benchmarks`. Feed it back with `-CompareTo`.
 - **JSON Lines** (`-OutJson`), for a SIEM: one JSON object per line with flat
   fields, and `time` set to the snapshot time. More on that below.
 
@@ -1302,10 +1315,10 @@ collections run there, and some bugs only show up there.
   fake Graph.
 - The AI layer is tested offline: no real name in the prompt, the token round
   trip, and invented check IDs being dropped.
-- Reference results: the AD `demo` gives **224 findings** (26 Critical, 81 High,
-  84 Medium, 33 Low) and 17 Tier 0 principals, and 232 with the example
-  password report. `-Deep` gives 229. `partial` gives 209. The Entra tenant
-  gives 95. In total there are **699 assertions**.
+- Reference results: the AD `demo` gives **228 findings** (26 Critical, 82 High,
+  86 Medium, 34 Low) and 17 Tier 0 principals, and 236 with the example
+  password report. `-Deep` gives 233. `partial` gives 213. The Entra tenant
+  gives 95. In total there are **732 assertions**.
 - `tests/lab/` is for a throw-away lab domain, never for production.
   `New-LabAttackPaths.ps1` plants a four-step ACL chain and a few delegation
   findings. It **writes to AD**, asks you to type the domain name first, and has

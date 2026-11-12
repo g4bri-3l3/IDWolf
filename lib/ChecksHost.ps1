@@ -17,6 +17,22 @@ $script:HostCheckCatalog = [ordered]@{
         Title = 'LDAP channel binding not enforced'
         Description = 'LdapEnforceChannelBinding is not set to Always. Channel binding blocks relaying LDAPS authentication.'
         Remediation = 'Set LDAP channel binding to "When supported" then "Always" after validating clients.' }
+    ldap_client_signing_not_required = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1557.001'; Needs = @('gpo')
+        Title = 'LDAP client signing not required'
+        Description = 'A GPO sets the LDAP client signing requirement to None (LDAPClientIntegrity = 0), so a client accepts an unsigned LDAP session and its authentication can be relayed. Left alone Windows negotiates signing, so only an explicit 0 is reported.'
+        Remediation = 'Set "Network security: LDAP client signing requirements" to "Negotiate signing" or "Require signing" (CIS 2.3.11.8).' }
+    winrm_basic_auth = @{ Category = 'Host Hardening'; Severity = 'High'; Mitre = 'T1021.006'; Needs = @('gpo')
+        Title = 'WinRM allows Basic authentication or unencrypted traffic'
+        Description = 'A GPO lets the WinRM service or the WinRM client use Basic authentication or send unencrypted traffic. Basic carries the password base64-encoded, and unencrypted WinRM carries the whole session in clear: whoever sits on the path to a domain controller reads the credential and replays it.'
+        Remediation = 'Set AllowBasic and AllowUnencryptedTraffic to Disabled for both the WinRM service and the WinRM client, and leave the authentication to Kerberos (CIS 18.10.89).' }
+    machine_password_rotation_off = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1558.002'; Needs = @('gpo')
+        Title = 'Machine account password changes disabled or too rare'
+        Description = 'A GPO stops domain members from changing their machine account password, or lets it live far longer than the 30-day default. That password is the key of the computer account: once it is stolen it stays valid, and it signs silver tickets for every service of that host.'
+        Remediation = 'Leave "Domain member: Disable machine account password changes" disabled and keep "Domain member: Maximum machine account password age" at 30 days (CIS 2.3.6.1 and 2.3.6.2).' }
+    machine_inactivity_limit_missing = @{ Category = 'Host Hardening'; Severity = 'Low'; Mitre = ''; Needs = @('gpo')
+        Title = 'No machine inactivity limit on the domain controllers'
+        Description = 'No effective GPO locks the console after a while (InactivityTimeoutSecs), or the limit is longer than 15 minutes. A session left open on a domain controller or an admin host is a logged-on Tier 0 token waiting for whoever walks past it.'
+        Remediation = 'Set "Interactive logon: Machine inactivity limit" to 900 seconds or less (CIS 2.3.7.3).' }
     lm_hash_stored = @{ Category = 'Host Hardening'; Severity = 'High'; Mitre = 'T1003'; Needs = @('gpo')
         Title = 'LM hash storage not disabled'
         Description = 'NoLMHash is not enforced, so LM hashes (trivially crackable) may be stored for accounts, weakening every password against offline cracking.'
@@ -355,6 +371,40 @@ function Invoke-GpoChecks {
     $cb = Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Services\NTDS\Parameters\LdapEnforceChannelBinding')
     if ($null -eq $cb -or $cb -lt 2) {
         Add-Finding -Type ldap_channel_binding_off -Object $dcLabel -ObjectType 'gpo' -Detail "LdapEnforceChannelBinding = $(if ($null -eq $cb) { 'not configured' } else { $cb }) (2 = always)."
+    }
+    # Only an explicit "None" counts: unset, Windows negotiates signing.
+    $ldapC = Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Services\LDAP\LDAPClientIntegrity')
+    if ($null -ne $ldapC -and $ldapC -lt 1) {
+        Add-Finding -Type ldap_client_signing_not_required -Object $dcLabel -ObjectType 'gpo' -Detail "LDAPClientIntegrity = $ldapC (0 = none, 1 = negotiate, 2 = require)."
+    }
+    # WinRM Basic authentication and unencrypted traffic, service side and client side.
+    $winrm = New-Object System.Collections.Generic.List[string]
+    $winrmSvc = $false
+    foreach ($side in 'Service', 'Client') {
+        foreach ($name in 'AllowBasic', 'AllowUnencryptedTraffic') {
+            if ((Get-RegInt (Get-EffectiveRegValue $order "MACHINE\Software\Policies\Microsoft\Windows\WinRM\$side\$name")) -eq 1) {
+                $winrm.Add("$side $name = 1")
+                if ($side -eq 'Service') { $winrmSvc = $true }
+            }
+        }
+    }
+    if ($winrm.Count -gt 0) {
+        Add-Finding -Type winrm_basic_auth -Object $dcLabel -ObjectType 'gpo' -Severity $(if ($winrmSvc) { 'High' } else { 'Medium' }) `
+            -Detail "$($winrm.ToArray() -join ', ')$(if (-not $winrmSvc) { ' (client side only, the service refuses Basic)' })."
+    }
+    # Machine account password: never changed, or far past the 30-day default.
+    $mpc = Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\DisablePasswordChange')
+    $mpa = Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\MaximumPasswordAge')
+    if ($mpc -eq 1) {
+        Add-Finding -Type machine_password_rotation_off -Object $dcLabel -ObjectType 'gpo' -Detail "DisablePasswordChange = 1: machine account passwords never change$(if ($null -ne $mpa) { ", MaximumPasswordAge = $mpa days" })."
+    }
+    elseif ($null -ne $mpa -and $mpa -gt 30) {
+        Add-Finding -Type machine_password_rotation_off -Object $dcLabel -ObjectType 'gpo' -Severity 'Low' -Detail "MaximumPasswordAge = $mpa days (the default is 30)."
+    }
+    # Console lock: CIS and the STIG want 900 seconds or less; 0 never locks.
+    $inact = Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\InactivityTimeoutSecs')
+    if ($null -eq $inact -or $inact -eq 0 -or $inact -gt 900) {
+        Add-Finding -Type machine_inactivity_limit_missing -Object $dcLabel -ObjectType 'gpo' -Detail "InactivityTimeoutSecs = $(if ($null -eq $inact) { 'not configured' } elseif ($inact -eq 0) { '0, the console never locks' } else { "$inact seconds (limit 900)" })."
     }
     $lm = Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Control\Lsa\NoLMHash')
     if ($null -eq $lm -or $lm -ne 1) {

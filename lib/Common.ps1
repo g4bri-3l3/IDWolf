@@ -127,6 +127,11 @@ function Import-ADSnapshot {
     if (-not $snap.meta -or @('IDWolf', 'ADSheep', 'MooseAD') -notcontains "$($snap.meta.tool)") {
         throw "File does not look like an IDWolf snapshot (missing meta.tool): $Path"
     }
+    # Every AD check reads the domain section (an Entra snapshot has none): say so here
+    # instead of failing somewhere inside the checks.
+    if ("$($snap.meta.kind)" -ne 'entra' -and (-not $snap.domain -or -not $snap.domain.distinguishedName)) {
+        throw "Snapshot has no usable 'domain' section (truncated or hand-edited file): $Path"
+    }
     return $snap
 }
 
@@ -148,11 +153,19 @@ function New-SnapshotIndex {
     $idx.Users = @($idx.Users | Where-Object { $_ })
     $idx.Computers = @($idx.Computers | Where-Object { $_ })
     $idx.Groups = @($idx.Groups | Where-Object { $_ })
+    # Everything here is keyed by DN: an object without one can't be indexed or referenced, and
+    # trying threw "cannot call a method on a null-valued expression" on a truncated snapshot.
+    $before = @($idx.Users).Count + @($idx.Computers).Count + @($idx.Groups).Count
+    $idx.Users = @($idx.Users | Where-Object { $_.distinguishedName })
+    $idx.Computers = @($idx.Computers | Where-Object { $_.distinguishedName })
+    $idx.Groups = @($idx.Groups | Where-Object { $_.distinguishedName })
+    $dropped = $before - (@($idx.Users).Count + @($idx.Computers).Count + @($idx.Groups).Count)
+    if ($dropped -gt 0) { Write-Warning "$dropped object(s) without a distinguishedName ignored: the snapshot looks incomplete." }
 
     foreach ($u in $idx.Users) { $u | Add-Member -NotePropertyName '_type' -NotePropertyValue 'user' -Force; $idx.ByDn[$u.distinguishedName.ToLower()] = $u; if ($u.sid) { $idx.BySid[$u.sid] = $u } }
     foreach ($c in $idx.Computers) { $c | Add-Member -NotePropertyName '_type' -NotePropertyValue 'computer' -Force; $idx.ByDn[$c.distinguishedName.ToLower()] = $c; if ($c.sid) { $idx.BySid[$c.sid] = $c } }
     foreach ($g in $idx.Groups) { $g | Add-Member -NotePropertyName '_type' -NotePropertyValue 'group' -Force; $idx.ByDn[$g.distinguishedName.ToLower()] = $g; if ($g.sid) { $idx.BySid[$g.sid] = $g } }
-    foreach ($f in @($Snapshot.foreignPrincipals | Where-Object { $_ })) {
+    foreach ($f in @($Snapshot.foreignPrincipals | Where-Object { $_ -and $_.distinguishedName })) {
         $f | Add-Member -NotePropertyName '_type' -NotePropertyValue 'foreign' -Force
         $idx.ByDn[$f.distinguishedName.ToLower()] = $f
     }
@@ -168,7 +181,7 @@ function New-SnapshotIndex {
         $c | Add-Member -NotePropertyName '_isDc' -NotePropertyValue $isDc -Force
         if ($isDc) {
             if ($c.dnsHostName) { $idx.DcHostNames[$c.dnsHostName.ToLower()] = $true }
-            $idx.DcHostNames[$c.samAccountName.TrimEnd('$').ToLower()] = $true
+            if ($c.samAccountName) { $idx.DcHostNames[$c.samAccountName.TrimEnd('$').ToLower()] = $true }
         }
     }
 

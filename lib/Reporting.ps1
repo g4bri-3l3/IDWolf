@@ -1,7 +1,8 @@
 # IDWolf reporting: HTML report, findings CSV, JSON Lines (SIEM) and
 # comparison with a previous run.
 
-# Regulatory controls of a check (lib\Compliance.ps1), empty when that file isn't loaded.
+# Regulatory controls and benchmark items of a check (lib\Compliance.ps1), empty when that
+# file isn't loaded.
 function Get-FindingControls {
     param([string]$Type)
     # Get-CheckControls hands back one array object: assign it, don't wrap it in @() again.
@@ -9,15 +10,24 @@ function Get-FindingControls {
     return , [string[]]@()
 }
 
+# "CIS M365 5.1.2.2", "STIG AD V-243478"... one benchmark item per entry.
+function Get-FindingBenchmarks {
+    param([string]$Type)
+    if (Get-Command Get-CheckBenchmarks -ErrorAction SilentlyContinue) { $b = Get-CheckBenchmarks $Type; return , [string[]]$b }
+    return , [string[]]@()
+}
+
+# Every file IDWolf writes is UTF-8 without a BOM: Export-Csv -Encoding UTF8 writes one on
+# Windows PowerShell 5.1 and none on 7, so the same findings gave two different files.
+$script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+
 function Export-FindingsCsv {
     param($Findings, [string]$Path)
-    $rows = @($Findings | Select-Object Severity, Type, Title, Category, Object, ObjectType, ObjectDn, Detail, Mitre, @{ Name = 'Controls'; Expression = { (Get-FindingControls $_.Type) -join '; ' } })
-    if ($rows.Count -eq 0) {
-        # Keep the header so -CompareTo works against a clean run.
-        'Severity,Type,Title,Category,Object,ObjectType,ObjectDn,Detail,Mitre,Controls' | Set-Content -LiteralPath $Path -Encoding UTF8
-        return
-    }
-    $rows | Export-Csv -LiteralPath $Path -NoTypeInformation -Encoding UTF8
+    $rows = @($Findings | Select-Object Severity, Type, Title, Category, Object, ObjectType, ObjectDn, Detail, Mitre, @{ Name = 'Controls'; Expression = { (Get-FindingControls $_.Type) -join '; ' } }, @{ Name = 'Benchmarks'; Expression = { (Get-FindingBenchmarks $_.Type) -join '; ' } })
+    # Keep the header so -CompareTo works against a clean run.
+    $lines = if ($rows.Count -eq 0) { @('"Severity","Type","Title","Category","Object","ObjectType","ObjectDn","Detail","Mitre","Controls","Benchmarks"') }
+    else { @($rows | ConvertTo-Csv -NoTypeInformation) }
+    [System.IO.File]::WriteAllText($Path, (($lines -join "`r`n") + "`r`n"), $script:Utf8NoBom)
 }
 
 # One JSON object per line, flat fields, for any SIEM (Splunk _json, Sentinel,
@@ -28,6 +38,18 @@ function Export-FindingsCsv {
 # finding_id is the same for the same check on the same object in every run,
 # so a SIEM can follow one issue over time. run_id groups the lines of a run.
 $script:SeverityScore = @{ Critical = 4; High = 3; Medium = 2; Low = 1 }
+
+# One JSON line, the same text on both engines: 5.1 writes < > & ' as \u003c \u003e \u0026
+# \u0027, 7 writes the characters. Inside a JSON string the two mean exactly the same, so the
+# escapes are put back as characters and a SIEM gets identical lines whoever wrote them. An
+# escape with a backslash of its own in front of it is data ("\\u003e") and is left alone.
+function ConvertTo-StableJsonLine {
+    param([string]$Json)
+    return [regex]::Replace($Json, '(?i)(?<!\\)((?:\\\\)*)\\u00(3c|3e|26|27)', {
+            param($m)
+            "$($m.Groups[1].Value)$([char][Convert]::ToInt32($m.Groups[2].Value, 16))"
+        })
+}
 
 function Get-FindingId {
     param([string]$Type, [string]$Object)
@@ -76,9 +98,10 @@ function Export-FindingsJsonl {
         $o['detail'] = $f.Detail
         $o['mitre'] = $f.Mitre
         $o['controls'] = Get-FindingControls $f.Type
+        $o['benchmarks'] = Get-FindingBenchmarks $f.Type
         $o['finding_id'] = Get-FindingId $f.Type $f.Object
         $o['status'] = $(if (-not $Comparison) { $null } elseif ($newKeys.ContainsKey("$($f.Type)|$($f.Object)".ToLower())) { 'new' } else { 'persisting' })
-        [void]$sb.AppendLine(($o | ConvertTo-Json -Compress -Depth 3))
+        [void]$sb.AppendLine((ConvertTo-StableJsonLine ($o | ConvertTo-Json -Compress -Depth 3)))
     }
     if ($Comparison) {
         foreach ($r in @($Comparison.Resolved)) {
@@ -90,7 +113,7 @@ function Export-FindingsJsonl {
             $o['object'] = $r.Object
             $o['finding_id'] = Get-FindingId $r.Type $r.Object
             $o['status'] = 'resolved'
-            [void]$sb.AppendLine(($o | ConvertTo-Json -Compress -Depth 3))
+            [void]$sb.AppendLine((ConvertTo-StableJsonLine ($o | ConvertTo-Json -Compress -Depth 3)))
         }
     }
     if ($Score) {
@@ -106,7 +129,7 @@ function Export-FindingsJsonl {
         $o['resolved'] = $(if ($Comparison) { @($Comparison.Resolved).Count } else { $null })
         $o['not_evaluated'] = @($NotEvaluated).Count
         $o['not_evaluated_checks'] = [string[]]@($NotEvaluated | ForEach-Object { $_.Type })
-        [void]$sb.AppendLine(($o | ConvertTo-Json -Compress -Depth 3))
+        [void]$sb.AppendLine((ConvertTo-StableJsonLine ($o | ConvertTo-Json -Compress -Depth 3)))
     }
     [System.IO.File]::WriteAllText($Path, $sb.ToString(), (New-Object System.Text.UTF8Encoding($false)))
 }
@@ -147,6 +170,7 @@ $script:MitreTechniqueNames = @{
     'T1003.006' = 'OS Credential Dumping: DCSync'
     'T1006'     = 'Direct Volume Access'
     'T1021.001' = 'Remote Services: Remote Desktop Protocol'
+    'T1021.006' = 'Remote Services: Windows Remote Management'
     'T1036'     = 'Masquerading'
     'T1059.005' = 'Command and Scripting Interpreter: Visual Basic'
     'T1068'     = 'Exploitation for Privilege Escalation'
@@ -965,6 +989,10 @@ function ConvertTo-ReportHtml {
         try { & $w (ConvertTo-ComplianceHtml -Catalog $script:CheckCatalog -Findings $findings -NotEvaluated $NotEvaluated) }
         catch { Write-Warning "Regulatory mapping skipped: $($_.Exception.Message)" }
     }
+    if (Get-Command ConvertTo-BenchmarkHtml -ErrorAction SilentlyContinue) {
+        try { & $w (ConvertTo-BenchmarkHtml -Catalog $script:CheckCatalog -Findings $findings -NotEvaluated $NotEvaluated -Kind 'ad') }
+        catch { Write-Warning "Benchmark mapping skipped: $($_.Exception.Message)" }
+    }
 
     # ---------------- Checks ----------------
     & $w '<details open><summary><h2>Findings by check</h2></summary>'
@@ -982,6 +1010,7 @@ function ConvertTo-ReportHtml {
         & $w "<div class=`"kv`"><b>Remediation.</b> $(& $H $meta.Remediation)</div>"
         $attack = Format-CheckAttackHtml $t.Type $meta; if ($attack) { & $w $attack }
         if (Get-Command Format-CheckControls -ErrorAction SilentlyContinue) { & $w "<div class=`"kv`"><b>Regulatory controls.</b> $(& $H (Format-CheckControls $t.Type))</div>" }
+        if (Get-Command Format-CheckBenchmarks -ErrorAction SilentlyContinue) { $bm = Format-CheckBenchmarks $t.Type; if ($bm) { & $w "<div class=`"kv`"><b>Benchmarks.</b> $(& $H $bm)</div>" } }
         & $w '<div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Type</th><th>Detail</th></tr>'
         foreach ($f in ($t.Items | Sort-Object { - $script:SeverityRank[$_.Severity] }, Object)) {
             & $w "<tr class=`"data-row`"><td>$(Get-SevPill $f.Severity)</td><td title=`"$(& $H $f.ObjectDn)`"><b>$(& $H $f.Object)</b></td><td>$(& $H $f.ObjectType)</td><td>$(& $H $f.Detail)</td></tr>"
