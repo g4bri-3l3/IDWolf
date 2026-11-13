@@ -243,7 +243,7 @@ document.addEventListener('DOMContentLoaded', function () {
           (      ) | |
   ________|   _/_  | |
 &lt;__________\______)\__)</pre><span>IDWolf: Entra ID Hygiene Report</span></h1>
-<div class="meta">Tenant <b>MooseBank Cloud</b> (11111111-2222-3333-4444-555555555555) &middot; snapshot 2026-09-30 08:00 UTC &middot; IDWolf v1.10 &middot; analysis 1,2s</div>
+<div class="meta">Tenant <b>MooseBank Cloud</b> (11111111-2222-3333-4444-555555555555) &middot; snapshot 2026-09-30 08:00 UTC &middot; IDWolf v1.12 &middot; analysis 0,4s</div>
 <blockquote>Synthetic snapshot for testing. No real tenant data.</blockquote>
 <nav class="tabs" role="tablist"><button type="button" class="tab-btn" role="tab" data-tab="dashboard" aria-selected="true" onclick="idwTab('dashboard')">Dashboard</button><button type="button" class="tab-btn" role="tab" data-tab="details" aria-selected="false" onclick="idwTab('details')">Details</button></nav>
 <section id="tab-dashboard" class="tab-pane" role="tabpanel">
@@ -398,12 +398,85 @@ document.addEventListener('DOMContentLoaded', function () {
 </table></div>
 <p class="meta">Each check lists its controls under "Findings by check"; the CSV and the JSON Lines carry them in the Controls / controls field.</p></details>
 
+<details><summary><h2>Benchmarks (CIS, DISA STIG)</h2></summary>
+<blockquote>Which benchmark items this report measures, one row each. The list is partial on purpose: an item with no check says why. A row with no findings is evidence for the part a directory snapshot can see, not a passed audit, and IDWolf never turns a benchmark into a score.</blockquote>
+<h3>CIS Microsoft 365 Foundations Benchmark v7.0.0</h3><p class="meta">Section 5 is the Microsoft Entra admin center, section 1 holds the admin accounts. The Microsoft 365 workload items (Exchange, Teams, Purview and the rest) are outside an identity snapshot and are not listed. E5 marks items that need an E5 / Entra ID P2 licence. Measured here: 58 of 65 items.</p>
+<div class="table-wrap"><table><tr><th>Item</th><th>Level</th><th>Requirement</th><th>Checks</th><th>Not evaluated</th><th>Findings</th><th>Worst</th><th>Status</th></tr>
+<tr class="data-row"><td><b>1.1.1</b></td><td>L1</td><td>Administrative accounts are cloud-only</td><td><code>entra_admin_synced_from_onprem</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-high">High</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>1.1.2</b></td><td>L1</td><td>Two emergency access accounts defined</td><td><code>entra_no_emergency_access</code>, <code>entra_global_admins_too_few</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>1.1.3</b></td><td>L1</td><td>Between two and four Global Admins</td><td><code>entra_global_admins_too_few</code>, <code>entra_global_admins_excessive</code></td><td>0</td><td>0</td><td></td><td>No findings</td></tr>
+<tr class="data-row"><td><b>1.1.4</b></td><td>L1</td><td>Admin accounts use licences with a reduced application footprint</td><td><code>entra_admin_licensed</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>1.3.1</b></td><td>L1</td><td>Password expiration policy set to never expire</td><td><code>entra_password_expiry_set</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>1.3.2</b></td><td>L2</td><td>Idle session timeout for unmanaged devices</td><td><code>entra_idle_timeout_missing</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.2.1</b></td><td>L1</td><td>Per-user MFA disabled in favour of Conditional Access<br><span class="meta">Admin accounts only: the per-user MFA state costs one Graph call per user.</span></td><td><code>entra_per_user_mfa_admins</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.2.2</b></td><td>L1</td><td>Third-party integrated applications not allowed</td><td><code>entra_users_can_register_apps</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.2.3</b></td><td>L1</td><td>Non-admin users cannot create tenants</td><td><code>entra_users_can_create_tenants</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.2.4</b></td><td>L1</td><td>Access to the Entra admin center restricted<br><span class="meta">Manual: no Graph API for this setting.</span></td><td><span class="meta">none</span></td><td>0</td><td>0</td><td></td><td>No check</td></tr>
+<tr class="data-row"><td><b>5.1.2.5</b></td><td>L2</td><td>Stay signed in option hidden</td><td><code>entra_kmsi_shown</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.2.6</b></td><td>L2</td><td>LinkedIn account connections disabled<br><span class="meta">Manual: no Graph API for this setting.</span></td><td><span class="meta">none</span></td><td>0</td><td>0</td><td></td><td>No check</td></tr>
+<tr class="data-row"><td><b>5.1.3.1</b></td><td>L1</td><td>Users cannot create security groups</td><td><code>entra_users_can_create_security_groups</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.3.2</b></td><td>L2</td><td>Users cannot use the My Groups features<br><span class="meta">Manual: no Graph API for this setting.</span></td><td><span class="meta">none</span></td><td>0</td><td>0</td><td></td><td>No check</td></tr>
+<tr class="data-row"><td><b>5.1.3.3</b></td><td>L1</td><td>Owners cannot manage membership requests in My Groups<br><span class="meta">Manual: no Graph API for this setting.</span></td><td><span class="meta">none</span></td><td>0</td><td>0</td><td></td><td>No check</td></tr>
+<tr class="data-row"><td><b>5.1.3.4</b></td><td>L2</td><td>Users cannot create Microsoft 365 groups</td><td><code>entra_users_can_create_m365_groups</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.4.1</b></td><td>L2</td><td>Device join restricted to selected users</td><td><code>entra_device_join_unrestricted</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.4.2</b></td><td>L1</td><td>Maximum number of devices per user limited</td><td><code>entra_device_quota_high</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.4.3</b></td><td>L1</td><td>Global Admins not added as local admins on join</td><td><code>entra_device_join_ga_local_admin</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.4.4</b></td><td>L1</td><td>Registering user not added as local admin</td><td><code>entra_device_join_user_local_admin</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.4.5</b></td><td>L1</td><td>LAPS enabled for Entra-joined devices</td><td><code>entra_device_laps_off</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.4.6</b></td><td>L2</td><td>Users cannot recover their own BitLocker keys</td><td><code>entra_users_read_bitlocker_keys</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.5.1</b></td><td>L2</td><td>User consent to applications not allowed</td><td><code>entra_user_consent_allowed</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.5.2</b></td><td>L1</td><td>Admin consent workflow enabled</td><td><code>entra_users_can_consent</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.5.3</b></td><td>L2</td><td>Password (secret) addition blocked for applications</td><td><code>entra_app_management_policy_weak</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.5.4</b></td><td>L1</td><td>Application secret lifetime 180 days or less</td><td><code>entra_app_management_policy_weak</code>, <code>entra_app_secret_long_lived</code></td><td>0</td><td>2</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.5.5</b></td><td>L1</td><td>New application secrets are system-generated</td><td><code>entra_app_management_policy_weak</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.5.6</b></td><td>L1</td><td>Application certificate lifetime 180 days or less</td><td><code>entra_app_management_policy_weak</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.6.1</b></td><td>L2</td><td>Guest invitations only to allowed domains<br><span class="meta">Manual: no supported Graph v1.0 API for the domain allow list.</span></td><td><span class="meta">none</span></td><td>0</td><td>0</td><td></td><td>No check</td></tr>
+<tr class="data-row"><td><b>5.1.6.2</b></td><td>L1</td><td>Guest user access restricted</td><td><code>entra_guest_access_not_restricted</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.6.3</b></td><td>L2</td><td>Only administrators can invite guests</td><td><code>entra_guest_invite_open</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.1.8.1</b></td><td>L1</td><td>Password hash sync enabled for hybrid tenants</td><td><code>entra_password_hash_sync_off</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.2.1</b></td><td>L1</td><td>MFA required for administrative roles</td><td><code>entra_no_ca_mfa_admins</code>, <code>entra_admins_without_mfa</code></td><td>0</td><td>3</td><td><span class="sev-pill sev-pill-critical">Critical</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.2.2</b></td><td>L1</td><td>MFA required for all users</td><td><code>entra_security_defaults_off</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-high">High</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.2.3</b></td><td>L1</td><td>Legacy authentication blocked</td><td><code>entra_legacy_auth_allowed</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-high">High</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.2.4</b></td><td>L1</td><td>Sign-in frequency and non-persistent browser for admins</td><td><code>entra_admin_sign_in_frequency</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.2.5</b></td><td>L2</td><td>Phishing-resistant MFA strength for admins</td><td><code>entra_no_phishing_resistant_admins</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.2.6</b></td><td>E5 L1</td><td>User risk policy enabled</td><td><code>entra_risk_policies_missing</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.2.7</b></td><td>E5 L1</td><td>Sign-in risk policy enabled</td><td><code>entra_risk_policies_missing</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.2.8</b></td><td>E5 L2</td><td>Medium and high sign-in risk blocked</td><td><code>entra_sign_in_risk_not_blocked</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.2.9</b></td><td>L1</td><td>Managed device required for authentication</td><td><code>entra_no_managed_device</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.2.10</b></td><td>L1</td><td>Managed device required to register security info</td><td><code>entra_security_info_registration</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.2.11</b></td><td>L1</td><td>Sign-in frequency every time for Intune enrollment</td><td><code>entra_intune_enrollment_reauth</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.2.12</b></td><td>L1</td><td>Device code flow blocked</td><td><code>entra_device_code_flow_allowed</code></td><td>0</td><td>0</td><td></td><td>No findings</td></tr>
+<tr class="data-row"><td><b>5.2.2.13</b></td><td>L1</td><td>Periodic reauthentication for all users</td><td><code>entra_no_periodic_reauth</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.2.14</b></td><td>L2</td><td>Trusted named locations defined</td><td><code>entra_no_trusted_locations</code></td><td>0</td><td>0</td><td></td><td>No findings</td></tr>
+<tr class="data-row"><td><b>5.2.2.15</b></td><td>L2</td><td>Geographic access restrictions in use</td><td><code>entra_no_geo_restriction</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.2.16</b></td><td>L2</td><td>Token protection enforced</td><td><code>entra_token_protection_off</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.2.17</b></td><td>L1</td><td>Authentication transfer blocked</td><td><code>entra_auth_transfer_allowed</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.3.1</b></td><td>L1</td><td>Authenticator shows application name and location</td><td><code>entra_authenticator_context_off</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.3.2</b></td><td>L1</td><td>Custom banned password list in use</td><td><code>entra_banned_passwords_off</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.3.3</b></td><td>L1</td><td>Password protection enabled on-premises<br><span class="meta">Out: needs the password protection agent on the DCs.</span></td><td><span class="meta">none</span></td><td>0</td><td>0</td><td></td><td>No check</td></tr>
+<tr class="data-row"><td><b>5.2.3.4</b></td><td>L1</td><td>All member users are MFA capable</td><td><code>entra_users_not_mfa_capable</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.3.5</b></td><td>L1</td><td>SMS and voice call disabled as methods</td><td><code>entra_weak_auth_methods</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.3.6</b></td><td>L1</td><td>System-preferred MFA enabled</td><td><code>entra_system_preferred_mfa_off</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.3.7</b></td><td>L2</td><td>Email OTP disabled</td><td><code>entra_weak_auth_methods</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.3.8</b></td><td>L1</td><td>Account lockout threshold 10 or less</td><td><code>entra_smart_lockout_weak</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.3.9</b></td><td>L1</td><td>Account lockout duration 60 seconds or more</td><td><code>entra_smart_lockout_weak</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.3.10</b></td><td>L1</td><td>Authenticator Lite (companion apps) disabled</td><td><code>entra_authenticator_lite_on</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.2.4.1-5</b></td><td>L1/L2</td><td>Self-service password reset settings<br><span class="meta">Manual: Graph does not expose the SSPR settings.</span></td><td><span class="meta">none</span></td><td>0</td><td>0</td><td></td><td>No check</td></tr>
+<tr class="data-row"><td><b>5.3.1</b></td><td>E5 L2</td><td>PIM manages privileged roles</td><td><code>entra_pim_not_used</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.3.2</b></td><td>E5 L1</td><td>Access reviews for guest users</td><td><code>entra_no_guest_access_review</code></td><td>0</td><td>0</td><td></td><td>No findings</td></tr>
+<tr class="data-row"><td><b>5.3.3</b></td><td>E5 L1</td><td>Access reviews for privileged roles</td><td><code>entra_no_admin_access_review</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-low">Low</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.3.4</b></td><td>E5 L1</td><td>Approval required for Global Admin activation</td><td><code>entra_pim_activation_no_approval</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+<tr class="data-row"><td><b>5.3.5</b></td><td>E5 L1</td><td>Approval required for Privileged Role Admin activation</td><td><code>entra_pim_activation_no_approval</code></td><td>0</td><td>1</td><td><span class="sev-pill sev-pill-medium">Medium</span></td><td>Gaps found</td></tr>
+</table></div>
+<p class="meta">Each check lists its items under "Findings by check"; the CSV and the JSON Lines carry them in the Benchmarks / benchmarks field.</p></details>
+
 <details open><summary><h2>Findings by check</h2></summary>
 <details class="check" id="chk-entra_admins_without_mfa"><summary><span class="sev-pill sev-pill-critical">Critical</span><span class="check-title">Privileged role member without MFA registered</span><span class="check-id">entra_admins_without_mfa &middot; Entra Identity</span><span class="count">2</span></summary><div class="body">
 <div class="kv"><b>Why it matters.</b> A member of a control-plane admin role has no MFA method registered. A single phished or sprayed password yields tenant-level control.</div>
 <div class="kv"><b>Remediation.</b> Require and register phishing-resistant MFA for every admin; add them to a CA policy that enforces it, and prefer PIM eligible over permanent assignment.</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts<br>Seen in attacks: Password spraying and credential stuffing against admins.</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.18, A.8.2, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.2.1</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-critical">Critical</span></td><td><b>bob.admin@moosebank.onmicrosoft.com</b></td><td>No MFA method registered. Roles: Global Administrator.</td></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-critical">Critical</span></td><td><b>carol.sec@moosebank.onmicrosoft.com</b></td><td>No MFA method registered. Roles: Security Administrator.</td></tr>
@@ -449,6 +522,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Enable security defaults, or (with Entra ID P1/P2) an enabled CA policy that requires MFA for all users, plus a policy blocking legacy authentication.</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1556/006/" target="_blank" rel="noopener">T1556.006</a> Modify Authentication Process: Multi-Factor Authentication</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.2.2</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>MooseBank Cloud</b></td><td>Security defaults disabled and no enabled CA policy requires MFA for all users.</td></tr>
 </table></div></div></details>
@@ -457,6 +531,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Create an enabled CA policy scoped to admin roles requiring MFA (ideally phishing-resistant).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1556/006/" target="_blank" rel="noopener">T1556.006</a> Modify Authentication Process: Multi-Factor Authentication</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.2.1</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>admin roles</b></td><td>No enabled CA policy with an MFA grant control targets admin roles or all users.</td></tr>
 </table></div></div></details>
@@ -465,6 +540,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Add an enabled CA policy that blocks legacy authentication for all users.</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1110/" target="_blank" rel="noopener">T1110</a> Brute Force<br>Seen in attacks: Password spraying through legacy authentication.</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.2.3</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>tenant</b></td><td>No enabled CA policy blocks legacy authentication.</td></tr>
 </table></div></div></details>
@@ -481,6 +557,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Give Entra admin roles to cloud-only accounts, separate from the on-premises identity (CIS 1.1.1).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts<br>Seen in attacks: Hybrid identity abuse: synced admins (Entra Connect, SyncJacking, 2025).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i); ISO27001 A.5.15, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 1.1.1</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-high">High</span></td><td><b>dave.appadmin@moosebank.onmicrosoft.com</b></td><td>Synced from on-premises AD. Roles: Application Administrator.</td></tr>
 </table></div></div></details>
@@ -579,6 +656,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Set &quot;Users can register applications&quot; to No; delegate app registration to a controlled group.</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/001/" target="_blank" rel="noopener">T1098.001</a> Account Manipulation: Additional Cloud Credentials</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.2.2</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>authorizationPolicy</b></td><td>defaultUserRolePermissions.allowedToCreateApps = true.</td></tr>
 </table></div></div></details>
@@ -587,6 +665,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Restrict user consent to verified publishers / low-risk permissions and enable the admin consent request workflow.</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1528/" target="_blank" rel="noopener">T1528</a> Steal Application Access Token<br>Seen in attacks: OAuth consent phishing.</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.5.2</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>adminConsentRequestPolicy</b></td><td>Admin consent request workflow is not enabled.</td></tr>
 </table></div></div></details>
@@ -595,6 +674,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Make admin roles eligible in PIM with MFA and approval on activation. Keep permanent Global Admin only for the two emergency access accounts (CIS 5.3.1).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i); ISO27001 A.5.15, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.3.1</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>admin roles</b></td><td>4 principals hold admin roles permanently (expected at most 2 emergency accounts); 2 eligible assignments in PIM. Permanent: alice.ceo@moosebank.onmicrosoft.com, bob.admin@moosebank.onmicrosoft.com, ext.partner_gmail.com#EXT#@moosebank.onmicrosoft.com, carol.sec@moosebank.onmicrosoft.com.</td></tr>
 </table></div></div></details>
@@ -603,6 +683,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Require the &quot;Phishing-resistant MFA&quot; authentication strength (FIDO2, Windows Hello, certificate) for all admin roles (CIS 5.2.2.5).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1556/006/" target="_blank" rel="noopener">T1556.006</a> Modify Authentication Process: Multi-Factor Authentication<br>Seen in attacks: Adversary-in-the-middle phishing and session token theft.</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.2.5</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>admin roles</b></td><td>No enabled CA policy for admin roles requires the phishing-resistant MFA strength.</td></tr>
 </table></div></div></details>
@@ -611,6 +692,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> With Entra ID P2, require a secure password change for high user risk and MFA for medium/high sign-in risk (CIS 5.2.2.6, 5.2.2.7).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.2.6, 5.2.2.7</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>tenant</b></td><td>No enabled CA policy on user risk.</td></tr>
 </table></div></div></details>
@@ -619,6 +701,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Disable SMS, voice and email OTP in the authentication methods policy once users have Authenticator or passkeys (CIS 5.2.3.5, 5.2.3.7).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1111/" target="_blank" rel="noopener">T1111</a> Multi-Factor Authentication Interception</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.17, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.3.5, 5.2.3.7</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>authenticationMethodsPolicy</b></td><td>Enabled: Sms, Email.</td></tr>
 </table></div></div></details>
@@ -627,6 +710,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Set user consent to &quot;Do not allow&quot; and route requests through the admin consent workflow (CIS 5.1.5.1, 5.1.5.2).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1528/" target="_blank" rel="noopener">T1528</a> Steal Application Access Token</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.5.1</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>authorizationPolicy</b></td><td>Users can consent to any app, for any permission it asks.</td></tr>
 </table></div></div></details>
@@ -642,6 +726,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Why it matters.</b> No user or group is excluded from every enabled Conditional Access policy. A broken policy or an MFA outage can then lock every admin out of the tenant.</div>
 <div class="kv"><b>Remediation.</b> Create two cloud-only emergency access accounts with Global Admin, exclude them from Conditional Access, protect them with FIDO2 keys and alert on every sign-in (CIS 1.1.2).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(c), 21(2)(i); ISO27001 A.5.15, A.5.18, A.8.2, A.8.13, A.8.14; DORA 9(4)(c), 12(1); GDPR 32(1)(b), 32(1)(c)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 1.1.2</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>Conditional Access</b></td><td>No user or group is excluded from all 2 enabled policies.</td></tr>
 </table></div></div></details>
@@ -650,6 +735,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Require registration for everyone, protect the registration itself with Conditional Access, and follow up on the accounts listed (CIS 5.2.3.4).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.18, A.8.2, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.3.4</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>4 users</b></td><td>Not MFA capable: bob.admin@moosebank.onmicrosoft.com, carol.sec@moosebank.onmicrosoft.com, user7@moosebank.onmicrosoft.com, user8@moosebank.onmicrosoft.com.</td></tr>
 </table></div></div></details>
@@ -658,6 +744,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Set &quot;Registering user is added as local administrator&quot; to None (CIS 5.1.4.4).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/003/" target="_blank" rel="noopener">T1078.003</a> Valid Accounts: Local Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.4.4</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>deviceRegistrationPolicy</b></td><td>Registering users made local admin: all.</td></tr>
 </table></div></div></details>
@@ -666,6 +753,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Enable Microsoft Entra LAPS and push the LAPS policy through Intune (CIS 5.1.4.5).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1550/002/" target="_blank" rel="noopener">T1550.002</a> Use Alternate Authentication Material: Pass the Hash</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.17, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.4.5</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>deviceRegistrationPolicy</b></td><td>Microsoft Entra LAPS is not enabled.</td></tr>
 </table></div></div></details>
@@ -674,6 +762,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Require a compliant or hybrid-joined device for all users (CIS 5.2.2.9).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.2.9</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>all users</b></td><td>No enabled CA policy for all users requires a compliant or hybrid-joined device.</td></tr>
 </table></div></div></details>
@@ -682,6 +771,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Show the application name and the geographic location in Microsoft Authenticator notifications (CIS 5.2.3.1).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1621/" target="_blank" rel="noopener">T1621</a> Multi-Factor Authentication Request Generation</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.17, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.3.1</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>Microsoft Authenticator</b></td><td>App name: enabled; location: default.</td></tr>
 </table></div></div></details>
@@ -690,6 +780,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Require approval to activate Global Administrator and Privileged Role Administrator (CIS 5.3.4, 5.3.5).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i); ISO27001 A.5.15, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.3.4, 5.3.5</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-medium">Medium</span></td><td><b>PIM</b></td><td>Activation without approval: Privileged Role Administrator.</td></tr>
 </table></div></div></details>
@@ -802,6 +893,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Let only admins and the Guest Inviter role send invitations (CIS 5.1.6.3).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1136/003/" target="_blank" rel="noopener">T1136.003</a> Create Account: Cloud Account</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.6.3</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>authorizationPolicy</b></td><td>allowInvitesFrom = everyone (everyone, guests included).</td></tr>
 </table></div></div></details>
@@ -817,6 +909,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Set a sign-in frequency (for example 4 hours) and a non-persistent browser session for admin roles (CIS 5.2.2.4).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1550/001/" target="_blank" rel="noopener">T1550.001</a> Use Alternate Authentication Material: Application Access Token</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.2.4</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>admin roles</b></td><td>No enabled CA policy for admin roles sets a sign-in frequency or a non-persistent browser session.</td></tr>
 </table></div></div></details>
@@ -824,6 +917,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Why it matters.</b> Any user can create a new Entra tenant. The creator becomes its Global Admin, outside your policies and monitoring.</div>
 <div class="kv"><b>Remediation.</b> Set &quot;Restrict non-admin users from creating tenants&quot; to Yes (CIS 5.1.2.3).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.2.3</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>authorizationPolicy</b></td><td>defaultUserRolePermissions.allowedToCreateTenants = true.</td></tr>
 </table></div></div></details>
@@ -832,6 +926,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Set guest user access to &quot;restricted to properties and memberships of their own directory objects&quot; (CIS 5.1.6.2).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1087/004/" target="_blank" rel="noopener">T1087.004</a> Account Discovery: Cloud Account</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.6.2</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>authorizationPolicy</b></td><td>Guest user access: limited (default).</td></tr>
 </table></div></div></details>
@@ -840,6 +935,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Enable the custom banned password list with organisation-specific words (CIS 5.2.3.2), and Password Protection on-premises for hybrid tenants.</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1110/003/" target="_blank" rel="noopener">T1110.003</a> Brute Force: Password Spraying<br>Seen in attacks: Password spraying, the main cloud initial access vector (Microsoft, 2026).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.17, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.3.2</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>Password Rule Settings</b></td><td>Custom banned list enforced: False; entries: 0.</td></tr>
 </table></div></div></details>
@@ -848,6 +944,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Keep the lockout threshold at 10 or less and the lockout duration at 60 seconds or more (CIS 5.2.3.8, 5.2.3.9).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1110/001/" target="_blank" rel="noopener">T1110.001</a> Brute Force: Password Guessing<br>Seen in attacks: Password spraying, the main cloud initial access vector (Microsoft, 2026).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.17, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.3.8, 5.2.3.9</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>Password Rule Settings</b></td><td>Lockout threshold 20, duration 30 s (baseline: 10 or less, 60 s or more).</td></tr>
 </table></div></div></details>
@@ -855,6 +952,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Why it matters.</b> Any user can create security groups. Groups that nobody owns or reviews end up granting access to apps and data.</div>
 <div class="kv"><b>Remediation.</b> Set &quot;Users can create security groups in Azure portals, API or PowerShell&quot; to No (CIS 5.1.3.1).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.3.1</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>authorizationPolicy</b></td><td>defaultUserRolePermissions.allowedToCreateSecurityGroups = true.</td></tr>
 </table></div></div></details>
@@ -863,6 +961,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Add a Conditional Access policy with a sign-in frequency for all users (CIS 5.2.2.13).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1550/001/" target="_blank" rel="noopener">T1550.001</a> Use Alternate Authentication Material: Application Access Token</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.2.13</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>all users</b></td><td>No enabled CA policy for all users sets a sign-in frequency.</td></tr>
 </table></div></div></details>
@@ -871,6 +970,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> With Entra ID P2, block medium and high sign-in risk (CIS 5.2.2.8), with an exclusion for the emergency access accounts.</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.2.8</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>tenant</b></td><td>No enabled CA policy blocks medium and high sign-in risk.</td></tr>
 </table></div></div></details>
@@ -879,6 +979,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Keep admin accounts separate and give them no productivity licence, or only Entra ID P1/P2 (CIS 1.1.4).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1566/" target="_blank" rel="noopener">T1566</a> Phishing</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i); ISO27001 A.5.15, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 1.1.4</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>alice.ceo@moosebank.onmicrosoft.com</b></td><td>Licences with mail / productivity apps: SPE_E5. Roles: Global Administrator.</td></tr>
 </table></div></div></details>
@@ -886,6 +987,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Why it matters.</b> Some admin accounts still use the old per-user MFA setting. It bypasses Conditional Access logic and makes the real policy hard to reason about.</div>
 <div class="kv"><b>Remediation.</b> Move MFA to Conditional Access and switch per-user MFA off (CIS 5.1.2.1). IDWolf checks admin accounts only.</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.18, A.8.2, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.2.1</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>bob.admin@moosebank.onmicrosoft.com</b></td><td>Per-user MFA: enforced.</td></tr>
 </table></div></div></details>
@@ -893,6 +995,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Why it matters.</b> A domain makes passwords expire. Forced changes push people to predictable patterns (Spring2026!, Summer2026!), which are exactly what gets sprayed.</div>
 <div class="kv"><b>Remediation.</b> Set passwords to never expire and rely on MFA, banned passwords and leaked-credential detection instead (CIS 1.3.1).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.17, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 1.3.1</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>moosebank-cloud.example</b></td><td>Passwords expire after 90 days.</td></tr>
 </table></div></div></details>
@@ -900,6 +1003,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Why it matters.</b> Browser sessions on Microsoft 365 web apps never time out, so an unattended or shared machine stays signed in.</div>
 <div class="kv"><b>Remediation.</b> Enable idle session timeout (for example 3 hours) for unmanaged devices (CIS 1.3.2).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 1.3.2</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>tenant</b></td><td>No activity-based timeout policy.</td></tr>
 </table></div></div></details>
@@ -907,6 +1011,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Why it matters.</b> Users are offered to stay signed in, which keeps long-lived sessions on shared and personal machines.</div>
 <div class="kv"><b>Remediation.</b> Hide the &quot;Stay signed in?&quot; option in company branding (CIS 5.1.2.5).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.2.5</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>company branding</b></td><td>No company branding: the prompt is shown by default.</td></tr>
 </table></div></div></details>
@@ -914,6 +1019,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Why it matters.</b> Anyone can create Microsoft 365 groups, each with its own mailbox, site and team, and nobody reviews who is in them.</div>
 <div class="kv"><b>Remediation.</b> Restrict Microsoft 365 group creation to a designated group (CIS 5.1.3.4).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.3.4</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>Group.Unified</b></td><td>EnableGroupCreation is on (or not set).</td></tr>
 </table></div></div></details>
@@ -922,6 +1028,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Allow device join only for a selected group (CIS 5.1.4.1).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/005/" target="_blank" rel="noopener">T1098.005</a> Account Manipulation: Device Registration</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.4.1</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>deviceRegistrationPolicy</b></td><td>All users can join devices to Entra ID.</td></tr>
 </table></div></div></details>
@@ -930,6 +1037,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Keep the maximum number of devices per user at 10 or less (CIS 5.1.4.2).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/005/" target="_blank" rel="noopener">T1098.005</a> Account Manipulation: Device Registration</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.4.2</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>deviceRegistrationPolicy</b></td><td>Up to 50 devices per user (baseline 10).</td></tr>
 </table></div></div></details>
@@ -938,6 +1046,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Turn off &quot;Global administrator role is added as local administrator on the device&quot; (CIS 5.1.4.3).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.4.3</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>deviceRegistrationPolicy</b></td><td>Global Administrators are added as local admins on join.</td></tr>
 </table></div></div></details>
@@ -945,6 +1054,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Why it matters.</b> Users can recover the BitLocker keys of their devices themselves. Whoever holds their account holds the disk too.</div>
 <div class="kv"><b>Remediation.</b> Restrict users from recovering BitLocker keys; route recovery through the help desk (CIS 5.1.4.6).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.4.6</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>authorizationPolicy</b></td><td>defaultUserRolePermissions.allowedToReadBitlockerKeysForOwnedDevice = true.</td></tr>
 </table></div></div></details>
@@ -952,6 +1062,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Why it matters.</b> The tenant syncs from on-premises AD without password hash sync, so Entra ID Protection cannot detect leaked credentials and there is no fallback if federation fails.</div>
 <div class="kv"><b>Remediation.</b> Enable password hash synchronization in Entra Connect (CIS 5.1.8.1).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.17, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.8.1</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>Entra Connect</b></td><td>Directory sync is on, password hash sync is off.</td></tr>
 </table></div></div></details>
@@ -960,6 +1071,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Require a managed device (or a trusted location) to register security info (CIS 5.2.2.10).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1098/005/" target="_blank" rel="noopener">T1098.005</a> Account Manipulation: Device Registration</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.2.10</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>security info registration</b></td><td>No enabled CA policy protects the &quot;register security information&quot; action.</td></tr>
 </table></div></div></details>
@@ -967,6 +1079,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Why it matters.</b> Enrolling a device in Intune can reuse an existing session, so a stolen token is enough to enrol an attacker device.</div>
 <div class="kv"><b>Remediation.</b> Set sign-in frequency to &quot;every time&quot; for the Microsoft Intune Enrollment app (CIS 5.2.2.11).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.2.11</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>Microsoft Intune Enrollment</b></td><td>No enabled CA policy sets sign-in frequency &quot;every time&quot; for Intune enrollment.</td></tr>
 </table></div></div></details>
@@ -975,6 +1088,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Block sign-ins from countries outside your footprint with a country named location (CIS 5.2.2.15).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(e), 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.20; DORA 9(4)(b), 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.2.15</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>tenant</b></td><td>No enabled block policy uses a country location (1 country location(s) defined).</td></tr>
 </table></div></div></details>
@@ -983,6 +1097,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Enforce token protection for supported apps, starting with admins (CIS 5.2.2.16).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1550/001/" target="_blank" rel="noopener">T1550.001</a> Use Alternate Authentication Material: Application Access Token<br>Seen in attacks: Session token theft and replay.</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(h), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.24; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(a), 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.2.16</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>tenant</b></td><td>No enabled CA policy enforces token protection.</td></tr>
 </table></div></div></details>
@@ -991,6 +1106,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Block authentication transfer for all users (CIS 5.2.2.17).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1528/" target="_blank" rel="noopener">T1528</a> Steal Application Access Token</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.2.17</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>tenant</b></td><td>No enabled CA policy blocks authentication transfer.</td></tr>
 </table></div></div></details>
@@ -998,6 +1114,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Why it matters.</b> Users are prompted with whatever method they picked, often SMS, instead of the strongest one they have registered.</div>
 <div class="kv"><b>Remediation.</b> Enable system-preferred multifactor authentication (CIS 5.2.3.6).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.3.6</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>authenticationMethodsPolicy</b></td><td>System-preferred MFA: disabled.</td></tr>
 </table></div></div></details>
@@ -1005,6 +1122,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Why it matters.</b> MFA can be approved inside Outlook mobile and other companion apps, with fewer protections than the full Authenticator app.</div>
 <div class="kv"><b>Remediation.</b> Disable Microsoft Authenticator on companion applications (CIS 5.2.3.10).</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i), 21(2)(j); ISO27001 A.5.15, A.5.16, A.5.17, A.5.18, A.8.5; DORA 9(4)(c), 9(4)(d); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.2.3.10</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>Microsoft Authenticator</b></td><td>Companion apps: default.</td></tr>
 </table></div></div></details>
@@ -1013,6 +1131,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Create a recurring access review of privileged role assignments in PIM (CIS 5.3.3).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1078/004/" target="_blank" rel="noopener">T1078.004</a> Valid Accounts: Cloud Accounts</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.2; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.3.3</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>access reviews</b></td><td>1 active review(s), none covering admin roles.</td></tr>
 </table></div></div></details>
@@ -1021,6 +1140,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Enable the default app management policy: block password addition and custom passwords, cap secret and certificate lifetimes at 180 days (CIS 5.1.5.3 to 5.1.5.6).</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1552/001/" target="_blank" rel="noopener">T1552.001</a> Unsecured Credentials: Credentials In Files</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(e), 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18, A.8.9; DORA 9(2), 9(4)(b), 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.5.3, 5.1.5.4, 5.1.5.5, 5.1.5.6</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>defaultAppManagementPolicy</b></td><td>the policy is off.</td></tr>
 </table></div></div></details>
@@ -1053,6 +1173,7 @@ document.addEventListener('DOMContentLoaded', function () {
 <div class="kv"><b>Remediation.</b> Prefer certificates or managed identities; keep client secrets to 180 days or less (CIS 5.1.5.4) and rotate them.</div>
 <div class="kv"><b>Attack it enables.</b> <a href="https://attack.mitre.org/techniques/T1552/001/" target="_blank" rel="noopener">T1552.001</a> Unsecured Credentials: Credentials In Files</div>
 <div class="kv"><b>Regulatory controls.</b> NIS2 21(2)(g), 21(2)(i); ISO27001 A.5.15, A.5.16, A.5.18; DORA 9(4)(c); GDPR 32(1)(b)</div>
+<div class="kv"><b>Benchmarks.</b> CIS M365 5.1.5.4</div>
 <div class="table-wrap"><table><tr><th>Severity</th><th>Object</th><th>Detail</th></tr>
 <tr class="data-row"><td><span class="sev-pill sev-pill-low">Low</span></td><td><b>Legacy Sync App</b></td><td>Client secret valid for 730 days (limit 180).</td></tr>
 </table></div></div></details>

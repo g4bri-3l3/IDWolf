@@ -62,6 +62,18 @@ $script:NormalPrimaryGroupRids = @(513, 514, 515, 516, 521)
 # Dates are ISO 8601 UTC. PS 7 parses them into [datetime], PS 5.1 leaves
 # strings; both work.
 # --------------------------------------------------------------------------
+# .NET resolves a relative path against the process working directory, which is not PowerShell's
+# location: an elevated window starts in the Windows folder, and the Set-Location that moves the
+# session to the IDWolf folder leaves the process directory where it was. Every path handed to
+# [System.IO.File] goes through here first, or the file lands somewhere nobody looks (the findings
+# CSV and the JSON Lines did, from 1.11, while the HTML next to them was written correctly).
+function Resolve-OutputPath {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $Path }
+    if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
+    return (Join-Path (Get-Location).Path $Path)
+}
+
 function ConvertTo-UtcDate {
     param($Value)
     if ($null -eq $Value -or "$Value" -eq '') { return $null }
@@ -306,17 +318,45 @@ function Get-PrivilegedMap {
         foreach ($m in @(Get-EffectiveMembers $Index $protectedUsers)) { $protectedSet[$m.Dn.ToLower()] = $true }
     }
 
+    # Tier 0 could not be resolved at all. Without this flag every Test-IsPrivileged answer is a
+    # silent "not privileged", so a Tier 0 account lands in the ordinary variant of a check at the
+    # lower severity, and the checks that walk the map go quiet. The checks read the flag instead.
+    $tier0Unknown = $false
+    $tier0Reason = ''
+    if ($Index.CollectionErrorSections -and $Index.CollectionErrorSections.ContainsKey('groups')) {
+        $tier0Unknown = $true
+        $tier0Reason = "the groups could not be collected ($($Index.CollectionErrorSections['groups']))"
+    }
+    elseif (@($Index.Groups).Count -eq 0) {
+        $tier0Unknown = $true
+        $tier0Reason = 'the snapshot holds no group objects'
+    }
+    elseif ($groupsResolved.Count -eq 0) {
+        $tier0Unknown = $true
+        $tier0Reason = 'no privileged group could be resolved in the snapshot'
+    }
+
     return [PSCustomObject]@{
         Groups              = $groupsResolved
         Principals          = $principals
         ProtectedUsersGroup = $protectedUsers
         ProtectedUsersSet   = $protectedSet
+        Tier0Unknown        = $tier0Unknown
+        Tier0UnknownReason  = $tier0Reason
     }
 }
 
 function Test-IsPrivileged {
     param($PrivMap, $Principal)
     return $PrivMap.Principals.ContainsKey($Principal.distinguishedName.ToLower())
+}
+
+# One sentence to hang on a finding whose privileged / non-privileged variant could not be
+# decided, so the report says "unknown" instead of implying "not privileged".
+function Get-Tier0UnknownNote {
+    param($PrivMap)
+    if (-not $PrivMap -or -not $PrivMap.Tier0Unknown) { return '' }
+    return " Tier 0 membership unknown: $($PrivMap.Tier0UnknownReason), so this account may be privileged and the severity understated."
 }
 
 function Get-PrivilegedGroupsText {

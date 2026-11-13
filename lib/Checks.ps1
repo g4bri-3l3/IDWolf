@@ -68,7 +68,7 @@ $script:CheckCatalog = [ordered]@{
         Title = 'DES Kerberos encryption enabled'
         Description = 'DES keys are trivially brute-forceable. Enabled via USE_DES_KEY_ONLY or msDS-SupportedEncryptionTypes.'
         Remediation = 'Clear USE_DES_KEY_ONLY and the DES bits, then reset the password.' }
-    auth_policy_silo_unused = @{ Category = 'Privileged Access'; Severity = 'Low'; Mitre = 'T1078.002'; Needs = @('domain.authPolicySilos')
+    auth_policy_silo_unused = @{ Category = 'Privileged Access'; Severity = 'Low'; Mitre = 'T1078.002'; Needs = @('domain.authPolicySilos', 'groups')
         Title = 'No authentication policy silo in use'
         Description = 'The domain defines no authentication policy silos. Silos (2012R2+) confine Tier 0 accounts so their TGTs can only be used from designated hosts and enforce Protected-Users-style restrictions, limiting credential theft and lateral movement. They are a key Tier 0 containment control and are unused here.'
         Remediation = 'Create an authentication policy and silo for Tier 0 accounts and admin workstations, pilot it, then assign the Tier 0 accounts. Combine with Protected Users.' }
@@ -449,7 +449,7 @@ $script:CheckCatalog = [ordered]@{
         Title = 'gMSA password readable by a non-Tier 0 principal'
         Description = 'msDS-GroupMSAMembership (PrincipalsAllowedToRetrieveManagedPassword) lets the listed principals retrieve the managed password of this group managed service account. When that principal is not Tier 0, anyone who controls it can recover the gMSA credential and impersonate the service (BloodHound ReadGMSAPassword edge).'
         Remediation = 'Restrict PrincipalsAllowedToRetrieveManagedPassword to the specific host or Tier-matched group that runs the service. Remove broad or non-Tier 0 principals.' }
-    shadow_credentials_present = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1556.003'; Needs = @('users', 'schema.keyCredentialLink')
+    shadow_credentials_present = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1556.003'; Needs = @('users', 'groups', 'schema.keyCredentialLink')
         Title = 'Key credential set on a privileged account (possible Shadow Credentials)'
         Description = 'The privileged account has one or more msDS-KeyCredentialLink entries. A key credential allows PKINIT/NGC logon with an attacker-held private key, a common persistence and takeover technique (Shadow Credentials / Whisker). Windows Hello for Business and Azure AD join set this legitimately, so each entry on a Tier 0 account must be confirmed.'
         Remediation = 'Verify every key credential on the account against the expected device/registration. Remove unexpected entries and review who holds the write-to-key-credential right on the object.' }
@@ -842,6 +842,7 @@ function Invoke-ADHygieneChecks {
         }
     }
 
+    $t0note = Get-Tier0UnknownNote $PrivMap
     foreach ($u in $humanUsers) {
         if ($u.samAccountName -eq 'krbtgt' -or $u.samAccountName -match '^krbtgt_\d+$') { continue }
         $isPriv = Test-IsPrivileged $PrivMap $u
@@ -859,7 +860,7 @@ function Invoke-ADHygieneChecks {
             else {
                 $sev = if ($null -ne $pwdAge -and $pwdAge -gt $Config.PasswordMaxAgeDays) { 'High' } else { 'Medium' }
                 Add-Finding -Type kerberoastable_user -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName -Severity $sev `
-                    -Detail "SPN: $spnText. Password age: $(Format-Age $pwdAge)$(if ($sev -eq 'High') { " (over $($Config.PasswordMaxAgeDays) days)" })."
+                    -Detail "SPN: $spnText. Password age: $(Format-Age $pwdAge)$(if ($sev -eq 'High') { " (over $($Config.PasswordMaxAgeDays) days)" }).$t0note"
             }
             if ($null -eq $enc -or [int64]$enc -eq 0) {
                 Add-Finding -Type spn_account_rc4 -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName `
@@ -874,7 +875,7 @@ function Invoke-ADHygieneChecks {
         if (Test-Uac $u 'DONT_REQ_PREAUTH') {
             $sev = if ($isPriv) { 'Critical' } else { 'High' }
             Add-Finding -Type asrep_roastable -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName -Severity $sev `
-                -Detail "Pre-authentication disabled$(if ($isPriv) { " on a privileged account ($(Get-PrivilegedGroupsText $PrivMap $u))" }). Password age: $(Format-Age $pwdAge)."
+                -Detail "Pre-authentication disabled$(if ($isPriv) { " on a privileged account ($(Get-PrivilegedGroupsText $PrivMap $u))" }). Password age: $(Format-Age $pwdAge).$(if (-not $isPriv) { $t0note })"
         }
     }
 
@@ -891,7 +892,7 @@ function Invoke-ADHygieneChecks {
         }
         else {
             Add-Finding -Type kerberoastable_user -Object $m.samAccountName -ObjectType 'msa' -ObjectDn $m.distinguishedName `
-                -Detail "Standalone managed service account (sMSA) with SPN and a settable password. SPN: $spnText."
+                -Detail "Standalone managed service account (sMSA) with SPN and a settable password. SPN: $spnText.$t0note"
         }
         $enc = $m.supportedEncryptionTypes
         if ($null -eq $enc -or [int64]$enc -eq 0 -or ([int64]$enc -band $script:ENC_AES) -eq 0) {
@@ -1108,8 +1109,10 @@ function Invoke-ADHygieneChecks {
             -Detail "primaryGroupID = $pg ($gName)$(if ($sev -eq 'Critical') { ': privileged group membership not visible in the member attribute' })."
     }
 
-    # Orphaned adminCount
-    foreach ($u in $Index.Users) {
+    # Orphaned adminCount. "adminCount=1 but not a member of any protected group" cannot be told
+    # apart from "the membership is unreadable", so with Tier 0 unknown the check stays silent and
+    # is listed as not evaluated instead of reporting every protected account.
+    foreach ($u in $(if ($PrivMap.Tier0Unknown) { @() } else { $Index.Users })) {
         if ([int]$u.adminCount -ne 1) { continue }
         if ($u.samAccountName -eq 'krbtgt' -or $u.samAccountName -match '^krbtgt_\d+$') { continue }
         if (Test-IsPrivileged $PrivMap $u) { continue }
@@ -1159,7 +1162,7 @@ function Invoke-ADHygieneChecks {
             if ($weak.Count) {
                 $sev = if ($scbLoose) { if (Test-IsPrivileged $PrivMap $u) { 'Critical' } else { 'High' } } elseif (Test-IsPrivileged $PrivMap $u) { 'High' } else { 'Medium' }
                 Add-Finding -Type altsecid_weak_mapping -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName -Severity $sev `
-                    -Detail "Weak altSecurityIdentities mapping(s): $($weak -join ', ') (values not collected).$(if (Test-IsPrivileged $PrivMap $u) { ' Tier 0 account.' })$(if ($scbLoose) { " StrongCertificateBindingEnforcement = $scbLoose by GPO, so the mapping is honoured." })"
+                    -Detail "Weak altSecurityIdentities mapping(s): $($weak -join ', ') (values not collected).$(if (Test-IsPrivileged $PrivMap $u) { ' Tier 0 account.' } else { Get-Tier0UnknownNote $PrivMap })$(if ($scbLoose) { " StrongCertificateBindingEnforcement = $scbLoose by GPO, so the mapping is honoured." })"
             }
         }
         if ($u.hasUnixPassword) {
@@ -1174,13 +1177,14 @@ function Invoke-ADHygieneChecks {
         }
     }
 
+    $t0note = Get-Tier0UnknownNote $PrivMap
     foreach ($u in $humanUsers) {
         if ($u.samAccountName -eq 'krbtgt' -or $u.samAccountName -match '^krbtgt_\d+$') { continue }
         $isPriv = Test-IsPrivileged $PrivMap $u
         if (Test-Uac $u 'PASSWD_NOTREQD') {
             $sev = if ($isPriv) { 'High' } else { 'Medium' }
             Add-Finding -Type password_not_required -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName -Severity $sev `
-                -Detail "PASSWD_NOTREQD set$(if ($isPriv) { ' on a privileged account' })."
+                -Detail "PASSWD_NOTREQD set$(if ($isPriv) { ' on a privileged account' }).$(if (-not $isPriv) { $t0note })"
         }
         if (Test-Uac $u 'ENCRYPTED_TEXT_PWD_ALLOWED') {
             Add-Finding -Type reversible_encryption_account -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName `
@@ -1192,16 +1196,16 @@ function Invoke-ADHygieneChecks {
         if ($null -eq $ll) {
             if ($null -ne $created -and $created -gt $Config.NeverLoggedOnGraceDays) {
                 Add-Finding -Type never_logged_on_user -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName `
-                    -Detail "Created $created days ago, no logon recorded."
+                    -Detail "Created $created days ago, no logon recorded.$t0note"
             }
         }
         elseif ($ll -gt $Config.InactiveDays) {
             Add-Finding -Type inactive_user -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName `
-                -Detail "Last logon $ll days ago (threshold $($Config.InactiveDays))."
+                -Detail "Last logon $ll days ago (threshold $($Config.InactiveDays)).$t0note"
         }
         if (Test-Uac $u 'DONT_EXPIRE_PASSWORD') {
             Add-Finding -Type password_never_expires -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName `
-                -Detail "Password age: $(Format-Age (Get-AgeDays $u.pwdLastSet))."
+                -Detail "Password age: $(Format-Age (Get-AgeDays $u.pwdLastSet)).$t0note"
         }
     }
 
@@ -1515,6 +1519,9 @@ function Invoke-ADHygieneChecks {
     # of them and is also an ACL target, so that ACE is expected there, not a delegation.
     $gpco = $Index.BySid["$dom-520"]
     $gpcoDefaultDn = if ($gpco -and $gpco.distinguishedName -and [int]$gpco.adminCount -ne 1) { "$($gpco.distinguishedName)".ToLower() } else { '' }
+    # Without the groups the grantee cannot be placed in Tier 0 and the default ACEs of the group
+    # class (Account Operators on Group Policy Creator Owners) cannot be recognised as expected.
+    $aclT0Note = if ($PrivMap.Tier0Unknown) { " Tier 0 membership unknown: $($PrivMap.Tier0UnknownReason), so the grantee may be a Tier 0 principal and the ACE a directory default." } else { '' }
     foreach ($acl in @($Snapshot.acls | Where-Object { $_ })) {
         if ($acl.ownerSid -and $defaultOwners -notcontains $acl.ownerSid) {
             Add-Finding -Type nonstandard_owner_tier0 -Object $acl.ownerName -ObjectType 'acl' -ObjectDn $acl.distinguishedName `
@@ -1559,12 +1566,12 @@ function Invoke-ADHygieneChecks {
                 $selfApplies = @($other | Where-Object { Test-AceAppliesToSelf $_.Ace }).Count -gt 0
                 $sev = if ($selfApplies) { 'Critical' } else { 'High' }
                 Add-Finding -Type dangerous_ace_tier0 -Object $name -ObjectType 'acl' -ObjectDn $acl.distinguishedName -Severity $sev `
-                    -Detail "Target: DomainRoot. $($parts -join '; ').$exNote"
+                    -Detail "Target: DomainRoot. $($parts -join '; ').$exNote$aclT0Note"
             }
             else {
                 $parts = @($entry.Items | ForEach-Object { $_.Danger } | Select-Object -Unique)
                 Add-Finding -Type dangerous_ace_tier0 -Object $name -ObjectType 'acl' -ObjectDn $acl.distinguishedName `
-                    -Detail "Target: $($acl.target). $($parts -join '; ')."
+                    -Detail "Target: $($acl.target). $($parts -join '; ').$aclT0Note"
             }
         }
     }
@@ -1635,7 +1642,7 @@ function Invoke-ADHygieneChecks {
             $isPriv = Test-IsPrivileged $PrivMap $m
             $sev = if ($isPriv) { 'Critical' } else { 'High' }
             Add-Finding -Type gmsa_password_readable -Object $m.samAccountName -ObjectType 'msa' -ObjectDn $m.distinguishedName -Severity $sev `
-                -Detail "Password retrievable by non-Tier 0 principal(s): $($bad -join ', ')$(if ($isPriv) { ' (the gMSA itself holds privileged rights)' })."
+                -Detail "Password retrievable by non-Tier 0 principal(s): $($bad -join ', ')$(if ($isPriv) { ' (the gMSA itself holds privileged rights)' }).$(if ($PrivMap.Tier0Unknown) { " Tier 0 membership unknown: $($PrivMap.Tier0UnknownReason), so principals listed here may in fact be Tier 0." })"
         }
     }
     foreach ($rec in $PrivMap.Principals.Values) {

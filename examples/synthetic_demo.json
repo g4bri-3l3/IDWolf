@@ -5581,6 +5581,9 @@
           "MACHINE\\System\\CurrentControlSet\\Services\\Kdc\\StrongCertificateBindingEnforcement": "4,1",
           "MACHINE\\System\\CurrentControlSet\\Services\\LanmanServer\\Parameters\\SMB1": "4,1",
           "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "4,0",
+          "MACHINE\\Software\\Policies\\Microsoft\\Windows\\WinRM\\Service\\AllowBasic": "4,1",
+          "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\DisablePasswordChange": "4,1",
+          "MACHINE\\System\\CurrentControlSet\\Services\\LDAP\\LDAPClientIntegrity": "4,0",
           "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\EveryoneIncludesAnonymous": "4,1",
           "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\NullSessionShares": "7,COMCFG,DFS$",
           "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\NullSessionPipes": "7,netlogon,samr,lsarpc,BROWSER"

@@ -1421,6 +1421,17 @@ Assert-True ((GapCount $gapSa 'gmsa_password_readable') -eq 0 -and (GapListed $g
 # An ACE looks dangerous only because the site server computer object is missing.
 $gapComp = Invoke-Analysis (New-GapSnapshot 'computers')
 Assert-True ((GapCount $gapComp 'sccm_system_management_writable') -eq 1 -and (GapListed $gapComp 'sccm_system_management_writable')) 'computers unreadable: System Management rights of unresolved SIDs are not reported'
+# Groups unreadable: Tier 0 cannot be resolved, so nobody may be called "not privileged" in silence.
+$gapGroups = Invoke-Analysis (New-GapSnapshot 'groups')
+Assert-True ($gapGroups.PrivMap.Tier0Unknown -and $gapGroups.PrivMap.Principals.Count -eq 0) 'groups unreadable: the privileged map is flagged Tier 0 unknown'
+Assert-True (-not $r.PrivMap.Tier0Unknown) 'a complete snapshot is not flagged Tier 0 unknown'
+Assert-True ((GapCount $gapGroups 'orphaned_admincount') -eq 0 -and (GapListed $gapGroups 'orphaned_admincount')) 'groups unreadable: adminCount=1 is not called orphaned (was 14 invented findings)'
+Assert-True ((GapListed $gapGroups 'auth_policy_silo_unused') -and (GapListed $gapGroups 'shadow_credentials_present')) 'groups unreadable: the two checks that walk the Tier 0 map are listed, not silently clean'
+foreach ($t in @('kerberoastable_user', 'password_never_expires', 'inactive_user', 'dangerous_ace_tier0', 'password_not_required', 'asrep_roastable')) {
+    $noted = @($gapGroups.Findings | Where-Object { $_.Type -eq $t -and $_.Detail -match 'Tier 0 membership unknown' }).Count
+    Assert-True ($noted -eq (GapCount $gapGroups $t)) "groups unreadable: every $t finding says Tier 0 membership is unknown ($noted of $(GapCount $gapGroups $t))"
+}
+Assert-True (@($r.Findings | Where-Object { $_.Detail -match 'Tier 0 membership unknown' }).Count -eq 0) 'the note never appears on a complete snapshot'
 # Entra: without the roles nobody is an admin, and every owner would look like a plain user.
 $egap = Import-ADSnapshot (Join-Path $tmp 'entra.json')
 $egap.PSObject.Properties.Remove('directoryRoles')
@@ -1601,6 +1612,20 @@ Assert-True ((([System.IO.File]::ReadAllBytes((Join-Path $tmp 'jl.csv'))[0..2]) 
 Assert-True ([System.IO.File]::ReadAllText($jl) -notmatch '\\u00(3c|3e|26|27)') 'JSON Lines hold the characters, not the 5.1 escapes'
 Assert-True ((ConvertTo-StableJsonLine '{"a":"x\u003ey","b":"\\u003e"}') -eq '{"a":"x>y","b":"\\u003e"}') 'stable JSON line: an escape becomes its character, an escaped backslash is left alone'
 Assert-True ((ConvertTo-StableJsonLine '{"d":"a \u0026 b \u003cc"}') -eq '{"d":"a & b <c"}') 'stable JSON line: ampersand and less-than too'
+# An elevated window starts in the Windows folder and the launcher moves the session with
+# Set-Location, which leaves the process directory where it was. .NET resolves a relative path
+# against the process directory, so from 1.11 the CSV and the JSON Lines landed there instead of
+# next to the report, which was written to the session's own folder.
+$relHere = Join-Path $tmp 'relout'; New-Item -ItemType Directory -Path $relHere -Force | Out-Null
+$relAway = Join-Path $tmp 'relaway'; New-Item -ItemType Directory -Path $relAway -Force | Out-Null
+$relKeep = [Environment]::CurrentDirectory
+Push-Location $relHere
+[Environment]::CurrentDirectory = $relAway
+try { & (Join-Path $root 'IDWolf.ps1') -Snapshot (Join-Path $tmp 'demo.json') -OutHtml 'rel.html' -OutCsv 'rel.csv' -OutJson 'rel.jsonl' -SkipLLM 6>&1 2>&1 | Out-Null }
+finally { Pop-Location; [Environment]::CurrentDirectory = $relKeep }
+Assert-True (@('rel.html', 'rel.csv', 'rel.jsonl' | Where-Object { -not (Test-Path -LiteralPath (Join-Path $relHere $_)) }).Count -eq 0) 'relative output paths land next to the session, not in the process directory'
+Assert-True (@(Get-ChildItem -LiteralPath $relAway -Recurse -File -ErrorAction SilentlyContinue).Count -eq 0) 'nothing is written to the process working directory'
+
 # Same snapshot, two separate processes: the same bytes. PS 7 randomizes hashtable order per process.
 $detExe = (Get-Process -Id $PID).Path
 $detOut = foreach ($i in 1, 2) {

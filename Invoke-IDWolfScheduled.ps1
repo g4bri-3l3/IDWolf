@@ -129,6 +129,7 @@ if (-not (Test-Path -LiteralPath $jsonl)) { Write-Log 'ERROR: the analyzer wrote
 
 # ---------------------------------------------------------------- SIEM feed
 if (-not $SiemFile) { $SiemFile = Join-Path $OutputDir 'idwolf.jsonl' }
+elseif (-not [System.IO.Path]::IsPathRooted($SiemFile)) { $SiemFile = Join-Path (Get-Location).Path $SiemFile }   # .NET appends relative to the process directory, not to this one
 [System.IO.File]::AppendAllText($SiemFile, [System.IO.File]::ReadAllText($jsonl), $utf8)
 Write-Log "JSON Lines appended to $SiemFile"
 

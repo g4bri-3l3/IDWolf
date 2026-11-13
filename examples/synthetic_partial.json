@@ -15,7 +15,7 @@
       "skipGpo": false,
       "skipDns": false,
       "skipHealth": false,
-      "deep": false
+      "deep": true
     },
     "collectionErrors": [
       {
@@ -3891,8 +3891,563 @@
       }
     ]
   },
-  "deepAcls": [],
-  "kdsRootKeyAcls": [],
+  "deepAcls": [
+    {
+      "target": "obj:CN=adm.bianchi,OU=Admins,OU=Tier0,DC=moosebank,DC=local",
+      "distinguishedName": "CN=adm.bianchi,OU=Admins,OU=Tier0,DC=moosebank,DC=local",
+      "objectClass": "user",
+      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+      "ownerName": "MOOSEBANK\\Domain Admins",
+      "aces": [
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+          "name": "MOOSEBANK\\Domain Admins",
+          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, GenericRead, WriteDacl, WriteOwner",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-519",
+          "name": "MOOSEBANK\\Enterprise Admins",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-32-544",
+          "name": "BUILTIN\\Administrators",
+          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, Delete, GenericRead, WriteDacl, WriteOwner",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-18",
+          "name": "NT AUTHORITY\\SYSTEM",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-11",
+          "name": "NT AUTHORITY\\Authenticated Users",
+          "rights": "GenericRead",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-10",
+          "name": "NT AUTHORITY\\SELF",
+          "rights": "WriteProperty",
+          "accessType": "Allow",
+          "objectType": "5b47d60f-6090-40b2-9f37-2a4de88f3063",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-1-0",
+          "name": "Everyone",
+          "rights": "ExtendedRight",
+          "accessType": "Allow",
+          "objectType": "ab721a53-1e2f-11d0-9819-00aa0040529b",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1103",
+          "name": "MOOSEBANK\\Helpdesk",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "None",
+          "isInherited": false
+        }
+      ]
+    },
+    {
+      "target": "obj:OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
+      "distinguishedName": "OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
+      "objectClass": "organizationalUnit",
+      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+      "ownerName": "MOOSEBANK\\Domain Admins",
+      "aces": [
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+          "name": "MOOSEBANK\\Domain Admins",
+          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, GenericRead, WriteDacl, WriteOwner",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-519",
+          "name": "MOOSEBANK\\Enterprise Admins",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-32-544",
+          "name": "BUILTIN\\Administrators",
+          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, Delete, GenericRead, WriteDacl, WriteOwner",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-18",
+          "name": "NT AUTHORITY\\SYSTEM",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-11",
+          "name": "NT AUTHORITY\\Authenticated Users",
+          "rights": "GenericRead",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-10",
+          "name": "NT AUTHORITY\\SELF",
+          "rights": "WriteProperty",
+          "accessType": "Allow",
+          "objectType": "5b47d60f-6090-40b2-9f37-2a4de88f3063",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-1-0",
+          "name": "Everyone",
+          "rights": "ExtendedRight",
+          "accessType": "Allow",
+          "objectType": "ab721a53-1e2f-11d0-9819-00aa0040529b",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-11",
+          "name": "NT AUTHORITY\\Authenticated Users",
+          "rights": "WriteDacl",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "None",
+          "isInherited": false
+        }
+      ]
+    },
+    {
+      "target": "obj:CN=user001,OU=Users,OU=MooseBank,DC=moosebank,DC=local",
+      "distinguishedName": "CN=user001,OU=Users,OU=MooseBank,DC=moosebank,DC=local",
+      "objectClass": "user",
+      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+      "ownerName": "MOOSEBANK\\Domain Admins",
+      "aces": [
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+          "name": "MOOSEBANK\\Domain Admins",
+          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, GenericRead, WriteDacl, WriteOwner",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-519",
+          "name": "MOOSEBANK\\Enterprise Admins",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-32-544",
+          "name": "BUILTIN\\Administrators",
+          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, Delete, GenericRead, WriteDacl, WriteOwner",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-18",
+          "name": "NT AUTHORITY\\SYSTEM",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-11",
+          "name": "NT AUTHORITY\\Authenticated Users",
+          "rights": "GenericRead",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-10",
+          "name": "NT AUTHORITY\\SELF",
+          "rights": "WriteProperty",
+          "accessType": "Allow",
+          "objectType": "5b47d60f-6090-40b2-9f37-2a4de88f3063",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-1-0",
+          "name": "Everyone",
+          "rights": "ExtendedRight",
+          "accessType": "Allow",
+          "objectType": "ab721a53-1e2f-11d0-9819-00aa0040529b",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        }
+      ]
+    },
+    {
+      "target": "obj:CN=SRV-WEB01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
+      "distinguishedName": "CN=SRV-WEB01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
+      "objectClass": "computer",
+      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+      "ownerName": "MOOSEBANK\\Domain Admins",
+      "aces": [
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+          "name": "MOOSEBANK\\Domain Admins",
+          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, GenericRead, WriteDacl, WriteOwner",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-519",
+          "name": "MOOSEBANK\\Enterprise Admins",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-32-544",
+          "name": "BUILTIN\\Administrators",
+          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, Delete, GenericRead, WriteDacl, WriteOwner",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-18",
+          "name": "NT AUTHORITY\\SYSTEM",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-11",
+          "name": "NT AUTHORITY\\Authenticated Users",
+          "rights": "GenericRead",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-10",
+          "name": "NT AUTHORITY\\SELF",
+          "rights": "WriteProperty",
+          "accessType": "Allow",
+          "objectType": "5b47d60f-6090-40b2-9f37-2a4de88f3063",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-1-0",
+          "name": "Everyone",
+          "rights": "ExtendedRight",
+          "accessType": "Allow",
+          "objectType": "ab721a53-1e2f-11d0-9819-00aa0040529b",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1103",
+          "name": "MOOSEBANK\\Helpdesk",
+          "rights": "ReadProperty",
+          "accessType": "Allow",
+          "objectType": "ea2b1b3a-0000-4b1a-9c0d-000000000001",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "None",
+          "isInherited": false
+        }
+      ]
+    },
+    {
+      "target": "obj:CN=SRV-APP01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
+      "distinguishedName": "CN=SRV-APP01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
+      "objectClass": "computer",
+      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+      "ownerName": "MOOSEBANK\\Domain Admins",
+      "aces": [
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+          "name": "MOOSEBANK\\Domain Admins",
+          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, GenericRead, WriteDacl, WriteOwner",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-519",
+          "name": "MOOSEBANK\\Enterprise Admins",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-32-544",
+          "name": "BUILTIN\\Administrators",
+          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, Delete, GenericRead, WriteDacl, WriteOwner",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-18",
+          "name": "NT AUTHORITY\\SYSTEM",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-11",
+          "name": "NT AUTHORITY\\Authenticated Users",
+          "rights": "GenericRead",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-10",
+          "name": "NT AUTHORITY\\SELF",
+          "rights": "WriteProperty",
+          "accessType": "Allow",
+          "objectType": "5b47d60f-6090-40b2-9f37-2a4de88f3063",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-1-0",
+          "name": "Everyone",
+          "rights": "ExtendedRight",
+          "accessType": "Allow",
+          "objectType": "ab721a53-1e2f-11d0-9819-00aa0040529b",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+          "name": "MOOSEBANK\\Domain Admins",
+          "rights": "ReadProperty",
+          "accessType": "Allow",
+          "objectType": "ea2b1b3a-0000-4b1a-9c0d-000000000001",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "None",
+          "isInherited": false
+        }
+      ]
+    },
+    {
+      "target": "obj:CN=SRV-SQL01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
+      "distinguishedName": "CN=SRV-SQL01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
+      "objectClass": "computer",
+      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+      "ownerName": "MOOSEBANK\\Domain Admins",
+      "aces": [
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+          "name": "MOOSEBANK\\Domain Admins",
+          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, GenericRead, WriteDacl, WriteOwner",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-519",
+          "name": "MOOSEBANK\\Enterprise Admins",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-32-544",
+          "name": "BUILTIN\\Administrators",
+          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, Delete, GenericRead, WriteDacl, WriteOwner",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-18",
+          "name": "NT AUTHORITY\\SYSTEM",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-11",
+          "name": "NT AUTHORITY\\Authenticated Users",
+          "rights": "GenericRead",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-10",
+          "name": "NT AUTHORITY\\SELF",
+          "rights": "WriteProperty",
+          "accessType": "Allow",
+          "objectType": "5b47d60f-6090-40b2-9f37-2a4de88f3063",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-1-0",
+          "name": "Everyone",
+          "rights": "ExtendedRight",
+          "accessType": "Allow",
+          "objectType": "ab721a53-1e2f-11d0-9819-00aa0040529b",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1106",
+          "name": "MOOSEBANK\\IT-Ops",
+          "rights": "WriteProperty",
+          "accessType": "Allow",
+          "objectType": "4c164200-20c0-11d0-a768-00aa003049e2",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "None",
+          "isInherited": false
+        }
+      ]
+    }
+  ],
+  "kdsRootKeyAcls": [
+    {
+      "target": "kds:3f1c8e2a-5d4b-4c1e-9a7f-2b6d0e8c4a11",
+      "distinguishedName": "CN=3f1c8e2a-5d4b-4c1e-9a7f-2b6d0e8c4a11,CN=Master Root Keys,CN=Group Key Distribution Service,CN=Services,CN=Configuration,DC=moosebank,DC=local",
+      "objectClass": "msKds-ProvRootKey",
+      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+      "ownerName": "MOOSEBANK\\Domain Admins",
+      "aces": [
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+          "name": "MOOSEBANK\\Domain Admins",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "None",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1103",
+          "name": "MOOSEBANK\\Helpdesk",
+          "rights": "GenericRead",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "None",
+          "isInherited": false
+        }
+      ]
+    }
+  ],
   "preWin2000": {
     "name": "Pre-Windows 2000 Compatible Access",
     "distinguishedName": "CN=Pre-Windows 2000 Compatible Access,CN=Builtin,DC=moosebank,DC=local",
@@ -4681,6 +5236,9 @@
           "MACHINE\\System\\CurrentControlSet\\Services\\Kdc\\StrongCertificateBindingEnforcement": "4,1",
           "MACHINE\\System\\CurrentControlSet\\Services\\LanmanServer\\Parameters\\SMB1": "4,1",
           "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "4,0",
+          "MACHINE\\Software\\Policies\\Microsoft\\Windows\\WinRM\\Service\\AllowBasic": "4,1",
+          "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\DisablePasswordChange": "4,1",
+          "MACHINE\\System\\CurrentControlSet\\Services\\LDAP\\LDAPClientIntegrity": "4,0",
           "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\EveryoneIncludesAnonymous": "4,1",
           "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\NullSessionShares": "7,COMCFG,DFS$",
           "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\NullSessionPipes": "7,netlogon,samr,lsarpc,BROWSER"

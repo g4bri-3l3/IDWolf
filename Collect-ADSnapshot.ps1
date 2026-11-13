@@ -827,7 +827,7 @@ function Resolve-SidName {
 
 # One object's security descriptor as a plain record; $null (error recorded) if unreadable.
 function Read-ObjectSecurity {
-    param([string]$Dn, [string]$Target, [string]$ObjectClass = '', [string]$ErrorSection = '')
+    param([string]$Dn, [string]$Target, [string]$ObjectClass = '', [string]$ErrorSection = '', [switch]$OptionalIfMissing)
     try {
         $sd = (Get-ADObject -Identity $Dn -Properties nTSecurityDescriptor @common).nTSecurityDescriptor
         $owner = $sd.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
@@ -847,6 +847,11 @@ function Read-ObjectSecurity {
         return [ordered]@{ target = $Target; distinguishedName = $Dn; objectClass = $ObjectClass; ownerSid = $owner; ownerName = Resolve-SidName $owner; aces = $aces }
     }
     catch {
+        # The object is simply not there (NTAuthCertificates on a forest that never had a CA).
+        # That is not a collection gap: flagging it would mark the AD CS checks "not evaluated" on
+        # every domain without AD CS. Told apart by type and category, never by the message, which
+        # is localized.
+        if ($OptionalIfMissing -and ($_.Exception.GetType().FullName -eq 'Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException' -or "$($_.CategoryInfo.Category)" -eq 'ObjectNotFound')) { return $null }
         if ($ErrorSection) { Add-CollectionError $ErrorSection "${Target}: $($_.Exception.Message)" } else { Add-CollectionError "acl.$Target" $_.Exception.Message }
         return $null
     }
@@ -1227,7 +1232,8 @@ if (-not $SkipAdcs) {
             }
             $pkiAcls = @()
             foreach ($k in $pkiTargets.Keys) {
-                $rec = Read-ObjectSecurity -Dn $pkiTargets[$k] -Target $k -ErrorSection 'adcs.pkiAcls'
+                # NTAuthCertificates only exists once a CA has published into the forest.
+                $rec = Read-ObjectSecurity -Dn $pkiTargets[$k] -Target $k -ErrorSection 'adcs.pkiAcls' -OptionalIfMissing:($k -eq 'NTAuthCertificates')
                 if ($rec) { $pkiAcls += $rec }
             }
             $adcs.pkiAcls = $pkiAcls

@@ -471,7 +471,7 @@ function Get-AiPasteText {
 }
 function Write-AiPromptFile {
     param([string]$Path, [string]$UserPrompt, [string]$SystemPrompt = $script:AiSystemPrompt)
-    [System.IO.File]::WriteAllText($Path, (Get-AiPasteText -UserPrompt $UserPrompt -SystemPrompt $SystemPrompt), (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText((Resolve-OutputPath $Path), (Get-AiPasteText -UserPrompt $UserPrompt -SystemPrompt $SystemPrompt), (New-Object System.Text.UTF8Encoding($false)))
 }
 
 # report_x.html -> report_x_ai_prompt.txt, in the same folder.
@@ -484,7 +484,7 @@ function Get-AiSidecarPath {
 # What came back, before the tokens are swapped back to real names.
 function Write-AiResponseFile {
     param([string]$Path, $Raw)
-    [System.IO.File]::WriteAllText($Path, ($Raw | ConvertTo-Json -Depth 10), (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText((Resolve-OutputPath $Path), ($Raw | ConvertTo-Json -Depth 10), (New-Object System.Text.UTF8Encoding($false)))
 }
 
 # --------------------------------------------------------------------------

@@ -27,7 +27,7 @@ function Export-FindingsCsv {
     # Keep the header so -CompareTo works against a clean run.
     $lines = if ($rows.Count -eq 0) { @('"Severity","Type","Title","Category","Object","ObjectType","ObjectDn","Detail","Mitre","Controls","Benchmarks"') }
     else { @($rows | ConvertTo-Csv -NoTypeInformation) }
-    [System.IO.File]::WriteAllText($Path, (($lines -join "`r`n") + "`r`n"), $script:Utf8NoBom)
+    [System.IO.File]::WriteAllText((Resolve-OutputPath $Path), (($lines -join "`r`n") + "`r`n"), $script:Utf8NoBom)
 }
 
 # One JSON object per line, flat fields, for any SIEM (Splunk _json, Sentinel,
@@ -131,7 +131,7 @@ function Export-FindingsJsonl {
         $o['not_evaluated_checks'] = [string[]]@($NotEvaluated | ForEach-Object { $_.Type })
         [void]$sb.AppendLine((ConvertTo-StableJsonLine ($o | ConvertTo-Json -Compress -Depth 3)))
     }
-    [System.IO.File]::WriteAllText($Path, $sb.ToString(), (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText((Resolve-OutputPath $Path), $sb.ToString(), (New-Object System.Text.UTF8Encoding($false)))
 }
 
 function Get-FindingsComparison {
@@ -946,6 +946,10 @@ function ConvertTo-ReportHtml {
     $extra = if ($Comparison) { "Since the previous run: <b>$(@($Comparison.New).Count) new</b>, $(@($Comparison.Resolved).Count) resolved, $(@($Comparison.Persisting).Count) still present." } else { '' }
     & $w (ConvertTo-ScoreHeroHtml -Score $Score -Findings $findings -CheckTotal $script:CheckCatalog.Count -NotEvaluatedCount @($NotEvaluated).Count -Kicker $kicker -Extra $extra)
 
+    if ($PrivMap.Tier0Unknown) {
+        & $w ("<blockquote class=""warn""><b>Tier 0 unknown.</b> Group membership could not be resolved ($(& $H $PrivMap.Tier0UnknownReason)), so no account can be placed in Tier 0. " +
+            'The privileged variants of the checks below are listed as not evaluated, and the ordinary variants that did fire may understate a privileged account. Re-collect before reading the privileged-access findings.</blockquote>')
+    }
     $errs = @($Snapshot.meta.collectionErrors | Where-Object { $_ })
     if ($errs.Count -gt 0 -or @($NotEvaluated).Count -gt 0) {
         & $w '<blockquote class="warn"><b>Incomplete coverage.</b> Some sections could not be collected; the checks below were <b>not evaluated</b> (zero findings there does not mean compliant).<ul>'

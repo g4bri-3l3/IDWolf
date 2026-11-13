@@ -103,7 +103,7 @@ Param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:IDWolfVersion = "1.11"
+$script:IDWolfVersion = "1.12"
 
 $libDir = Join-Path $PSScriptRoot 'lib'
 foreach ($f in @('Common.ps1', 'Checks.ps1', 'ChecksHost.ps1', 'Reporting.ps1', 'Graph.ps1', 'AI.ps1', 'ChecksEntra.ps1', 'Compliance.ps1', 'Bundle.ps1', 'Wizard.ps1')) {
@@ -499,7 +499,7 @@ if ("$($snap.meta.kind)" -eq 'entra') {
     }
     if (-not $OutCsv) { $OutCsv = [System.IO.Path]::ChangeExtension($OutHtml, '.csv') }
     $elapsedText = "{0:N1}s" -f ((Get-Date) - $start).TotalSeconds
-    $htmlFull = if ([System.IO.Path]::IsPathRooted($OutHtml)) { $OutHtml } else { Join-Path (Get-Location).Path $OutHtml }
+    $htmlFull = Resolve-OutputPath $OutHtml
 
     $eAi = $null
     if (-not $SkipLLM -and $eActive.Count -gt 0) {
@@ -620,7 +620,7 @@ $elapsedText = "{0:N1}s" -f $elapsed.TotalSeconds
 
 $html = ConvertTo-ReportHtml -Snapshot $snap -Index $index -PrivMap $privMap -Split $split -Score $score `
     -NotEvaluated $notEvaluated -Comparison $comparison -Config $config -ToolVersion $script:IDWolfVersion -ElapsedText $elapsedText
-$htmlFull = if ([System.IO.Path]::IsPathRooted($OutHtml)) { $OutHtml } else { Join-Path (Get-Location).Path $OutHtml }
+$htmlFull = Resolve-OutputPath $OutHtml
 [System.IO.File]::WriteAllText($htmlFull, $html, (New-Object System.Text.UTF8Encoding($false)))
 Export-FindingsCsv -Findings $active -Path $OutCsv
 if ($OutJson) {
@@ -635,6 +635,7 @@ $sevs = @('Critical', 'High', 'Medium', 'Low') | ForEach-Object { $s = $_; "{0}:
 Write-Host ("Findings: {0} ({1})  accepted: {2}" -f $active.Count, ($sevs -join ', '), @($split.Accepted).Count)
 if ($score.Reliable) { Write-Host ("Hygiene score: {0}/100 (grade {1})  Tier 0 principals: {2}" -f $score.Score, $score.Grade, $privMap.Principals.Count) }
 else { Write-Host ("Hygiene score: n/a, only {0}% of the checks could be evaluated  Tier 0 principals: {1}" -f $score.Coverage, $privMap.Principals.Count) -ForegroundColor Yellow }
+if ($privMap.Tier0Unknown) { Write-Host "Tier 0 unknown: $($privMap.Tier0UnknownReason). Privilege-dependent checks are incomplete." -ForegroundColor Yellow }
 if ($notEvaluated.Count -gt 0) { Write-Host "$($notEvaluated.Count) check(s) not evaluated because of collection gaps: see report." -ForegroundColor Yellow }
 Write-Host "Processing time: $elapsedText"
 

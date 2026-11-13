@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.12 - 2026-11-13
+
+- **The findings CSV and the JSON Lines went missing on an elevated run** (regression from 1.11,
+  found on a lab domain controller). 1.11 moved both writers to `[System.IO.File]::WriteAllText`
+  for a BOM-free file on 5.1; .NET resolves a relative path against the *process* directory, which
+  "Run as administrator" leaves in the Windows folder, while the HTML next to them was written to
+  the session's own folder. The run announced `output\report_x.csv` and nothing was there. Every
+  path handed to .NET now goes through `Resolve-OutputPath` (report, CSV, JSON Lines, AI prompt
+  and reply, and a relative `-SiemFile` in `Invoke-IDWolfScheduled.ps1`), and the regression runs
+  IDWolf with the session and the process directory deliberately apart.
+- **No AD CS is not a collection gap**: on a forest that never had a CA, `CN=NTAuthCertificates`
+  does not exist, and reading its ACL recorded an `adcs.pkiAcls` error that pushed `adcs_esc5` into
+  "not evaluated" and told the user a section could not be collected. A missing object is now told
+  apart from a failed read (exception type and category, never the localized message) and is
+  silent. The other seven PKI containers exist with or without a CA and are unchanged.
+
+- **Tier 0 unknown instead of a silent "not privileged"**: when the group read fails (or the
+  snapshot holds no groups), `Get-PrivilegedMap` resolves nothing and `Test-IsPrivileged` used to
+  answer "not privileged" for everyone, so a Tier 0 account was reported under the ordinary
+  variant of a check at the lower severity. The map now carries `Tier0Unknown` and the reason,
+  the report and the console say so, and the checks read it: `kerberoastable_user`,
+  `password_never_expires`, `inactive_user`, `never_logged_on_user`, `password_not_required`,
+  `asrep_roastable`, `altsecid_weak_mapping`, `gmsa_password_readable` and `dangerous_ace_tier0`
+  carry the caveat in the finding, `orphaned_admincount` stays quiet instead of calling every
+  protected account orphaned (14 invented findings on a demo snapshot without `groups`), and
+  `auth_policy_silo_unused` and `shadow_credentials_present`, which walk the map, name `groups`
+  in `Needs` so they are listed as not evaluated instead of passing for clean.
+
 ## 1.11 - 2026-11-12
 
 CIS and DISA STIG items are now part of the report, and four GPO checks taken from them.
