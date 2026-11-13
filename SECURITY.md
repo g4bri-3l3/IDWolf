@@ -40,7 +40,30 @@ real directory data in the report.
   keys, never a password, key or directory data; not used by `-Snapshot` or scheduled runs), and temporary folders for the
   BloodHound zip and for reading that zip (deleted right after). The scheduled-run script also
   deletes its own old run folders (only names like `ad_20261006_020000`
-  inside the output folder you give it).
+  inside the output folder you give it, and never a junction or symlink that
+  carries such a name: those are skipped and written to the run log, so a
+  planted link can't point the delete somewhere else).
+- **Never changes permissions, and tells you who can read the output.** There is
+  no `Set-Acl`, `SetAccessControl` or `icacls` anywhere in the code: the snapshot
+  and the report inherit the permissions of the folder you write them to. Because
+  a snapshot is a full offline copy of the directory and a report is a ranked list
+  of where that directory is weak, the collector and the analyzer read that
+  folder's ACL (`Get-Acl`, read-only) and name the broad principals that already
+  have access — Everyone, Anonymous, Authenticated Users, `BUILTIN\Users`, Guests,
+  Domain Users / Computers / Guests. It's a notice, not a change: moving the
+  output somewhere restricted stays your decision.
+- **Hostile input is assumed.** Much of what IDWolf reads is written by the very
+  principals it reports on, so: values from the directory that start with `=`,
+  `+`, `-` or `@` are neutralised in the findings CSV (one leading apostrophe, so
+  a spreadsheet treats them as text, not as a formula; the columns and the
+  `-CompareTo` matching are unchanged); SYSVOL GPO XML is parsed with DTDs and
+  external resolution refused, so a crafted `ScheduledTasks.xml` can neither pull
+  an external entity nor expand one — a file carrying a DTD becomes a collection
+  gap instead; and the collector only opens a CIM session to an AD CS host name
+  taken from the directory when a collected computer object or one of the forest's
+  DNS suffixes justifies it, since an enrollment-service object is writable by
+  exactly the principals the ESC5 check is about. A host it refuses is reported as
+  a collection gap, never as a CA that was read and found clean.
 - **Doesn't schedule itself.** `Invoke-IDWolfScheduled.ps1` is meant for a
   scheduled task, but creating the task is left to you; the safety review
   fails on any code that registers one.
@@ -65,7 +88,15 @@ real directory data in the report.
   (`<report>_ai_prompt.txt`) before you're asked, and the reply after
   (`<report>_ai_response.json`), so you can see what left and what came back.
   The Gemini key comes from `-ApiKey`, `GEMINI_API_KEY` or a hidden prompt; it
-  is only kept in memory for that run and never written to disk.
+  is only kept in memory for that run and never written to disk. The endpoint can
+  be moved to an internal gateway with `IDWOLF_GEMINI_BASEURL`, and because that
+  variable decides where the key goes it is checked before the call: an absolute
+  `https://` URL (plain `http://` only to a loopback address), no credentials, no
+  query string. Anything else is refused and nothing is sent; when it is set to
+  anything other than Google's endpoint, the destination host and port are printed
+  before the request. The safety review reasons about the code as written and
+  cannot see the value of an environment variable, which is why the check is in
+  the code itself.
 - **`tests\lab` is the one exception, and it isn't part of the tool.** It holds
   two helpers for a throw-away lab domain that DO write to AD
   (`New-LabAttackPaths.ps1` plants test accounts and rights,
@@ -177,6 +208,12 @@ IDWolf calls three modules it doesn't ship:
 ## What the safety review can't do
 
 It proves which commands the code can call. It can't prove that every line
-is correct, and it can't vouch for the modules above. That's what reading the
-code, the lab run and the logs are for. Together they leave very little to
-take on trust.
+is correct, and it can't vouch for the modules above. It reads the code as
+written, so it also can't see what a run-time value does to it: a parameter, a
+remembered wizard answer or an environment variable such as
+`IDWOLF_GEMINI_BASEURL` is invisible to it, and anything that depends on one is
+checked in the code instead (that is why the AI endpoint is validated there).
+And it runs from inside the copy it reviews: on a modified copy, both could be
+modified. That's what reading the code, taking it from a commit you looked at,
+the lab run and the logs are for. Together they leave very little to take on
+trust.

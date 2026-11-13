@@ -80,7 +80,20 @@ Param(
 # account with broad read rights. Without it those checks show up as
 # "not evaluated".
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.11"
+# One version for the whole tool. It lives in IDWolf.ps1 ($script:IDWolfVersion) and is read from
+# there - the same way Start-IDWolf.ps1 does it - so a release is one edit and a snapshot can never
+# claim a version nothing else has (meta.collectorVersion sat at 1.11 through two releases because
+# it was a second copy of the number). A collector copied on its own, without IDWolf.ps1 next to
+# it, says 'unknown' rather than a number that may be wrong.
+$script:CollectorVersion = 'unknown'
+try {
+    $verFile = Join-Path $PSScriptRoot 'IDWolf.ps1'
+    if (Test-Path -LiteralPath $verFile) {
+        $verMatch = Select-String -LiteralPath $verFile -Pattern '^\s*\$script:IDWolfVersion\s*=\s*"([^"]+)"' | Select-Object -First 1
+        if ($verMatch) { $script:CollectorVersion = $verMatch.Matches[0].Groups[1].Value }
+    }
+}
+catch { }
 $script:Errors = New-Object System.Collections.Generic.List[object]
 
 # Connection diagnostics and the DC list (lib\Connection.ps1). Optional: a collector copied
@@ -1058,9 +1071,11 @@ function Get-RpcFilterInterfaces {
 # On-CA registry settings of one CA. error is set (and the rest left $null) when the CA host
 # can't be read; webEnrollment is $null when the installed roles can't be told apart.
 function Read-CaRegistry {
-    param([string]$HostName, [string]$CaName)
+    param([string]$HostName, [string]$CaName, [string]$RefuseReason = '')
     $r = [ordered]@{ editFlags = $null; interfaceFlags = $null; disableExtensionList = @(); securityAces = @(); webEnrollment = $null; enrollmentWebService = $null; error = '' }
     if (-not $HostName) { $r.error = 'no DNS host name on the enrollment service'; return $r }
+    # The caller decided this host name does not deserve an authenticated connection.
+    if ($RefuseReason) { $r.error = $RefuseReason; return $r }
     $hklm = [uint32]2147483650
     $cs = $null
     try {
@@ -1240,8 +1255,26 @@ if (-not $SkipAdcs) {
 
             # On-CA settings (ESC6/7/8/11/16) live in the CA's registry, not in LDAP. Read them over
             # CIM on the CA host, read-only (StdRegProv Get* methods). Needs admin rights on the CA.
+            # dNSHostName is an attribute of an object in the directory under review, and an
+            # enrollment service object is writable by exactly the principals ESC5 is about. The
+            # collector carries the operator's (often Tier 0) identity into this CIM session, so a
+            # name is only contacted when something other than that attribute justifies it: a
+            # collected computer object with the same DNS name, or a name inside one of this
+            # forest's DNS suffixes. Anything else is skipped and recorded as a collection gap,
+            # never as a clean CA.
+            $forestSuffixes = @(@($forest.Domains) + @("$($domain.DNSRoot)") | ForEach-Object { "$_".ToLower().Trim() } | Where-Object { $_ } | Select-Object -Unique)
             foreach ($e in $enroll) {
-                $e['caRegistry'] = Read-CaRegistry -HostName "$($e.dnsHostName)" -CaName "$($e.name)"
+                $caHost = "$($e.dnsHostName)".Trim()
+                $refuse = ''
+                if ($caHost) {
+                    $hostLower = $caHost.ToLower()
+                    $known = @($computers | Where-Object { $_.dnsHostName -and "$($_.dnsHostName)".ToLower() -eq $hostLower }).Count -gt 0
+                    $inForest = @($forestSuffixes | Where-Object { $hostLower -eq $_ -or $hostLower.EndsWith(".$_") }).Count -gt 0
+                    if (-not $known -and -not $inForest) {
+                        $refuse = "host name is not a collected computer object and not inside a forest DNS suffix ($($forestSuffixes -join ', ')): not contacted"
+                    }
+                }
+                $e['caRegistry'] = Read-CaRegistry -HostName $caHost -CaName "$($e.name)" -RefuseReason $refuse
                 if ($e['caRegistry'].error) { Add-CollectionError 'adcs.caRegistry' "$($e.name) on $($e.dnsHostName): $($e['caRegistry'].error)" }
             }
 
@@ -1340,6 +1373,25 @@ function Parse-GpLink {
 # One GPO folder: what it runs (scripts.ini / psscripts.ini, GPP scheduled
 # tasks) and which local groups it fills (GPP Groups.xml, Restricted Groups in
 # GptTmpl.inf). Adds to the two lists passed in.
+#
+# SYSVOL XML is written by whoever can edit the GPO, so it is read with the parser's permissive
+# defaults turned off: no DTD (a nested-entity file would otherwise expand in the collector's
+# memory) and no resolver (no external entity could be fetched over the network or off disk).
+# A file carrying a DTD throws, and the caller records it as a gpo.execution collection error
+# instead of pretending the GPO has no scheduled task.
+function Read-XmlFileSafe {
+    param([string]$Path)
+    $set = New-Object System.Xml.XmlReaderSettings
+    $set.DtdProcessing = [System.Xml.DtdProcessing]::Prohibit
+    $set.XmlResolver = $null
+    $set.MaxCharactersFromEntities = 1024
+    $doc = New-Object System.Xml.XmlDocument
+    $doc.XmlResolver = $null
+    $rd = [System.Xml.XmlReader]::Create($Path, $set)
+    try { $doc.Load($rd) } finally { $rd.Close() }
+    return $doc
+}
+
 function Read-GpoExtras {
     param([string]$Dir, [string]$Guid, [string]$Name, $Exec, $Groups)
     foreach ($scope in 'Machine', 'User') {
@@ -1355,8 +1407,7 @@ function Read-GpoExtras {
         }
         $st = Join-Path $Dir "$scope\Preferences\ScheduledTasks\ScheduledTasks.xml"
         if (Test-Path -LiteralPath $st) {
-            $x = New-Object System.Xml.XmlDocument
-            $x.LoadXml((Get-Content -LiteralPath $st -Raw -ErrorAction Stop))
+            $x = Read-XmlFileSafe -Path $st
             # Old task format: appName; Task(V2) format: Exec/Command.
             foreach ($n in @($x.SelectNodes('//Properties[@appName]'))) {
                 $Exec.Add([ordered]@{ guid = $Guid; gpo = $Name; scope = $scope; kind = "scheduled task '$($n.ParentNode.GetAttribute('name'))'"; command = $n.GetAttribute('appName') })
@@ -1368,8 +1419,7 @@ function Read-GpoExtras {
         }
         $gx = Join-Path $Dir "$scope\Preferences\Groups\Groups.xml"
         if (Test-Path -LiteralPath $gx) {
-            $x = New-Object System.Xml.XmlDocument
-            $x.LoadXml((Get-Content -LiteralPath $gx -Raw -ErrorAction Stop))
+            $x = Read-XmlFileSafe -Path $gx
             foreach ($pn in @($x.SelectNodes('//Group/Properties'))) {
                 $grp = if ($pn.GetAttribute('groupSid')) { $pn.GetAttribute('groupSid') } else { $pn.GetAttribute('groupName') }
                 foreach ($m in @($pn.SelectNodes('Members/Member[@action="ADD"]'))) {
@@ -1896,6 +1946,41 @@ $snapshot = [ordered]@{
     health            = $healthData
 }
 
+# Who else can read the folder the snapshot lands in. The file is a full offline copy of the
+# directory, and it inherits the permissions of wherever it is written. Nothing is changed here:
+# the ACL is read (Get-Acl) and the broad principals that already have access are named - Everyone,
+# Anonymous, Authenticated Users, BUILTIN\Users, Guests and any Domain Users / Domain Computers /
+# Domain Guests group, matched by RID so a localized directory works too. Same check as
+# Get-OutputExposure in lib\Common.ps1, copied because the collector must also run on its own,
+# without the lib folder next to it. Silent on a host without Get-Acl or an unreadable folder.
+function Write-SnapshotExposureWarning {
+    param([string]$Path)
+    if (-not (Get-Command Get-Acl -ErrorAction SilentlyContinue)) { return }
+    $broad = @('S-1-1-0', 'S-1-5-7', 'S-1-5-11', 'S-1-5-32-545', 'S-1-5-32-546')
+    $who = New-Object System.Collections.Generic.List[string]
+    try {
+        $dir = Split-Path -Parent $Path
+        if (-not $dir) { return }
+        foreach ($ace in @((Get-Acl -LiteralPath $dir -ErrorAction Stop).Access)) {
+            if ("$($ace.AccessControlType)" -ne 'Allow') { continue }
+            $sid = ''
+            try {
+                $sid = if ($ace.IdentityReference -is [System.Security.Principal.SecurityIdentifier]) { "$($ace.IdentityReference)" }
+                else { "$($ace.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]))" }
+            }
+            catch { $sid = '' }
+            if (-not $sid) { continue }
+            if (-not (($broad -contains $sid) -or ($sid -match '^S-1-5-21-[\d\-]+-(513|514|515)$'))) { continue }
+            $label = "$($ace.IdentityReference) ($($ace.FileSystemRights))"
+            if (-not $who.Contains($label)) { $who.Add($label) }
+        }
+    }
+    catch { return }
+    if (-not $who.Count) { return }
+    Write-Host "That folder is open to: $($who -join '; ')." -ForegroundColor Yellow
+    Write-Host "Keep the snapshot where only the admins who read it can open it; the collector never changes permissions itself." -ForegroundColor Yellow
+}
+
 if (-not $OutFile) {
     # Unnamed outputs go to .\output, not next to everything else.
     $od = Join-Path (Get-Location).Path 'output'; if (-not (Test-Path -LiteralPath $od)) { New-Item -ItemType Directory -Path $od | Out-Null }
@@ -1914,5 +1999,6 @@ if ($script:Errors.Count -gt 0) {
     Write-Host "$($script:Errors.Count) section(s) could not be collected; see meta.collectionErrors. Affected checks will be marked as not evaluated." -ForegroundColor Yellow
 }
 Write-Host "The snapshot contains directory data (names, group membership, ACLs). Handle it as confidential." -ForegroundColor Yellow
+Write-SnapshotExposureWarning $fullOut
 # w32tm against an unreachable DC leaves a non-zero exit code behind; the collection itself worked.
 exit 0

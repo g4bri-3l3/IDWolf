@@ -1113,7 +1113,11 @@ This is how your data is protected:
 - **The key and the connection.** The key travels in a header, not in the URL.
   If there's no key when you say yes, IDWolf asks for it with hidden typing and
   keeps it in memory for that run only. `IDWOLF_GEMINI_BASEURL` points the call
-  at an internal gateway. Timeouts and busy-server errors are retried
+  at an internal gateway: since it decides where the key goes, it has to be an
+  absolute `https://` URL with no credentials and no query string (plain
+  `http://` only to a loopback address), anything else is refused and nothing is
+  sent, and a gateway that isn't Google's endpoint is named — host and port —
+  before the request. Timeouts and busy-server errors are retried
   (`-AiMaxAttempts`, where 0 means keep trying, with a growing pause of up to a
   minute). If the connection fails, the message shows the real cause.
 - **HTTP 503 (model overloaded).** When Gemini keeps answering 503, a smaller
@@ -1366,5 +1370,11 @@ collections run there, and some bugs only show up there.
 ## Disclaimer
 
 Snapshots and reports contain directory data, so treat them as confidential and
-don't commit real ones (see `.gitignore`). Only use IDWolf on domains you're
+don't commit real ones (see `.gitignore`). A snapshot is a full offline copy of
+the directory and a report is a ranked list of where it is weak: both inherit
+the permissions of the folder you write them to, and IDWolf never changes
+permissions itself. It does read that folder's ACL after writing and names the
+broad principals that already have access (Everyone, Authenticated Users,
+`BUILTIN\Users`, Domain Users...), so a shared drive doesn't quietly hand the
+attack plan to everyone who can open it. Only use IDWolf on domains you're
 allowed to assess.

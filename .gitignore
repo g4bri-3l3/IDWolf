@@ -24,3 +24,6 @@ output/
 # Local working notes: not published.
 CLAUDE.md
 ROADMAP.md
+
+# Threat model working notes: private review material, not published.
+threat-model/

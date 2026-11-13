@@ -19,6 +19,11 @@ $snap = Get-Content -Raw -LiteralPath $snapPath | ConvertFrom-Json
 
 $fail = 0
 function Check { param([bool]$c, [string]$m) if (-not $c) { $script:fail++; Write-Host "  FAIL: $m" -ForegroundColor Red } }
+# The version is written down once, in IDWolf.ps1: a real collection must record that number, not
+# a second copy of it that can go stale (meta.collectorVersion said 1.11 under 1.11 and 1.12).
+$verLine = Select-String -LiteralPath (Join-Path $root 'IDWolf.ps1') -Pattern '^\s*\$script:IDWolfVersion\s*=\s*"([^"]+)"' | Select-Object -First 1
+$toolVer = if ($verLine) { $verLine.Matches[0].Groups[1].Value } else { '' }
+Check ($toolVer -match '^\d+\.\d+$' -and "$($snap.meta.collectorVersion)" -eq $toolVer) "snapshot records the tool version $toolVer (got '$($snap.meta.collectorVersion)')"
 $errSections = @($snap.meta.collectionErrors | ForEach-Object { $_.section })
 Check ($errSections -contains 'rbcd.users') 'RBCD property fallback recorded'
 Check ($errSections -contains 'domain.fineGrainedPolicies') 'FGPP access error recorded'
@@ -104,6 +109,24 @@ Check ($summaries.Count -eq 2 -and $summaries[1].new -eq 0 -and $summaries[1].re
 $second = @($siemLines | Where-Object { $_.event_type -eq 'finding' -and $_.run_id -eq $summaries[1].run_id })
 Check ($second.Count -gt 0 -and @($second | Where-Object { $_.status -ne 'persisting' }).Count -eq 0) 'second-run findings marked persisting'
 Check (@($siemLines | Where-Object { $_.event_type -eq 'finding' -and -not $_.finding_id }).Count -eq 0) 'every finding has a finding_id'
+
+# Retention deletes the run folders this script made, not names that look like them: a junction
+# planted in the output folder with a run-folder name is skipped, and what it points at survives.
+# Junctions need no admin rights on NTFS; where they cannot be created the check is skipped.
+$bait = Join-Path $tmp 'bait'
+New-Item -ItemType Directory -Force $bait | Out-Null
+Set-Content -LiteralPath (Join-Path $bait 'keep.txt') -Value 'keep' -Encoding ASCII
+$junction = Join-Path $sched 'ad_20200101_000000'
+$madeJunction = $false
+try { New-Item -ItemType Junction -Path $junction -Target $bait -ErrorAction Stop | Out-Null; $madeJunction = Test-Path -LiteralPath $junction } catch { $madeJunction = $false }
+if ($madeJunction) {
+    Start-Sleep -Seconds 1
+    & $schedScript -Server mock.local -OutputDir $sched -KeepRuns 1 -WarningAction SilentlyContinue *>&1 | Out-Null
+    Check ((Test-Path -LiteralPath (Join-Path $bait 'keep.txt')) -and (Test-Path -LiteralPath $junction)) 'retention skips a junction named like a run folder and leaves its target alone'
+    # Delete the link itself, never through it (that is the bug being tested for).
+    try { [System.IO.Directory]::Delete($junction) } catch { }
+}
+else { Write-Host '  (junction retention check skipped: this host does not allow creating one)' -ForegroundColor DarkGray }
 
 Remove-Item -Recurse -Force $tmp
 if ($fail -gt 0) { Write-Host "$fail collector mock check(s) FAILED" -ForegroundColor Red; exit 1 }

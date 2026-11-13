@@ -521,6 +521,38 @@ function Request-GeminiApiKey {
     return (New-Object System.Net.NetworkCredential('', $secure)).Password.Trim()
 }
 
+# Where the request - and the API key in its header - actually goes. IDWOLF_GEMINI_BASEURL points
+# the call at an internal gateway or a local test endpoint, so it decides the destination of a
+# secret: an environment variable set by a profile, a wrapper or a scheduled task must not be able
+# to send the key to an arbitrary host unnoticed. It has to be an absolute http(s) URL with no
+# credentials, query or fragment in it, plain http only to a loopback address, and the destination
+# is printed before the call whenever it is not the Google endpoint. Anything else is refused and
+# nothing is sent; the deterministic report is already on disk.
+$script:GeminiDefaultBaseUrl = 'https://generativelanguage.googleapis.com'
+
+function Get-GeminiBaseUrl {
+    $raw = "$($env:IDWOLF_GEMINI_BASEURL)".Trim()
+    if (-not $raw) { return $script:GeminiDefaultBaseUrl }
+    $u = $null
+    try { $u = [uri]$raw } catch { $u = $null }
+    $why = ''
+    if (-not $u -or -not $u.IsAbsoluteUri) { $why = 'not an absolute URL' }
+    elseif (@('http', 'https') -notcontains $u.Scheme) { $why = "scheme '$($u.Scheme)' is not http or https" }
+    elseif ($u.UserInfo) { $why = 'it carries credentials in the URL' }
+    elseif ($u.Query -or $u.Fragment) { $why = 'it carries a query or fragment' }
+    elseif ($u.Scheme -eq 'http' -and -not $u.IsLoopback) { $why = 'plain http is only allowed to localhost' }
+    if ($why) {
+        Write-Host "AI step aborted: IDWOLF_GEMINI_BASEURL ('$raw') is refused because $why. Nothing was sent; the deterministic report is complete." -ForegroundColor Red
+        Write-Host "Unset the variable to use $script:GeminiDefaultBaseUrl." -ForegroundColor Yellow
+        return $null
+    }
+    $base = $raw.TrimEnd('/')
+    if ($base -ne $script:GeminiDefaultBaseUrl) {
+        Write-Host "AI endpoint overridden by IDWOLF_GEMINI_BASEURL: the prompt and the API key go to $($u.Host) (port $($u.Port)), not to generativelanguage.googleapis.com." -ForegroundColor Yellow
+    }
+    return $base
+}
+
 # MaxAttempts 0 keeps trying until it works (Ctrl+C to stop). Only timeouts,
 # 429 and 5xx are retried; a 400/401/403 won't fix itself.
 function Invoke-GeminiAnalysis {
@@ -539,8 +571,8 @@ function Invoke-GeminiAnalysis {
         generationConfig   = @{ responseMimeType = 'application/json' }
     } | ConvertTo-Json -Depth 10
     # Key in a header, not the URL, so it stays out of proxy logs.
-    # IDWOLF_GEMINI_BASEURL points at an internal gateway (or the test endpoint).
-    $base = if ($env:IDWOLF_GEMINI_BASEURL) { $env:IDWOLF_GEMINI_BASEURL.TrimEnd('/') } else { 'https://generativelanguage.googleapis.com' }
+    $base = Get-GeminiBaseUrl
+    if (-not $base) { return $null }
     $uri = "$base/v1beta/models/${Model}:generateContent"
     $transient = @(429, 500, 502, 503, 504)
     $result = $null

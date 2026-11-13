@@ -21,9 +21,33 @@ function Get-FindingBenchmarks {
 # Windows PowerShell 5.1 and none on 7, so the same findings gave two different files.
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
+# A cell that starts with = + - @, a tab or a carriage return is read as a formula by Excel,
+# LibreOffice and Google Sheets. Object, ObjectDn and Detail carry strings straight out of the
+# directory (a name, a DN, a masked description), so one writable attribute on one reported object
+# would otherwise be a formula in the analyst's spreadsheet. A leading apostrophe makes the cell
+# text; Get-FindingsComparison takes it off again when it reads a previous CSV back, so -CompareTo
+# keeps matching. The columns and their order do not change: that part is the contract.
+function ConvertTo-CsvSafeCell {
+    param($Value)
+    $s = "$Value"
+    if ($s -match "^[=+\-@`t`r]") { return "'" + $s }
+    return $s
+}
+
+function ConvertFrom-CsvSafeCell {
+    param($Value)
+    $s = "$Value"
+    if ($s.Length -gt 1 -and $s[0] -eq "'" -and $s.Substring(1) -match "^[=+\-@`t`r]") { return $s.Substring(1) }
+    return $s
+}
+
 function Export-FindingsCsv {
     param($Findings, [string]$Path)
-    $rows = @($Findings | Select-Object Severity, Type, Title, Category, Object, ObjectType, ObjectDn, Detail, Mitre, @{ Name = 'Controls'; Expression = { (Get-FindingControls $_.Type) -join '; ' } }, @{ Name = 'Benchmarks'; Expression = { (Get-FindingBenchmarks $_.Type) -join '; ' } })
+    $rows = @($Findings | Select-Object Severity, Type, Title, Category, `
+        @{ Name = 'Object'; Expression = { ConvertTo-CsvSafeCell $_.Object } }, ObjectType, `
+        @{ Name = 'ObjectDn'; Expression = { ConvertTo-CsvSafeCell $_.ObjectDn } }, `
+        @{ Name = 'Detail'; Expression = { ConvertTo-CsvSafeCell $_.Detail } }, `
+            Mitre, @{ Name = 'Controls'; Expression = { (Get-FindingControls $_.Type) -join '; ' } }, @{ Name = 'Benchmarks'; Expression = { (Get-FindingBenchmarks $_.Type) -join '; ' } })
     # Keep the header so -CompareTo works against a clean run.
     $lines = if ($rows.Count -eq 0) { @('"Severity","Type","Title","Category","Object","ObjectType","ObjectDn","Detail","Mitre","Controls","Benchmarks"') }
     else { @($rows | ConvertTo-Csv -NoTypeInformation) }
@@ -136,7 +160,15 @@ function Export-FindingsJsonl {
 
 function Get-FindingsComparison {
     param($Findings, [string]$PreviousCsv)
-    $prev = @(Import-Csv -LiteralPath $PreviousCsv)
+    # The previous run's cells were written through ConvertTo-CsvSafeCell: undo that here, or a
+    # finding whose object starts with = + - @ would look new in every run and show the apostrophe
+    # in the resolved list.
+    $prev = @(Import-Csv -LiteralPath $PreviousCsv | ForEach-Object {
+            foreach ($c in 'Object', 'ObjectDn', 'Detail') {
+                if ($_.PSObject.Properties[$c]) { $_.$c = ConvertFrom-CsvSafeCell $_.$c }
+            }
+            $_
+        })
     $key = { param($f) "$($f.Type)|$($f.Object)".ToLower() }
     $prevMap = @{}; foreach ($p in $prev) { $prevMap[(& $key $p)] = $p }
     $curMap = @{}; foreach ($c in $Findings) { $curMap[(& $key $c)] = $c }
@@ -934,7 +966,7 @@ function ConvertTo-ReportHtml {
     & $w (Get-IDWolfReportScript)
     & $w '</head><body>'
     & $w "<h1 class=`"title`">$(Get-WolfLogoHtml)<span>IDWolf: Active Directory Hygiene Report</span></h1>"
-    & $w "<div class=`"meta`">Domain <b>$(& $H $Snapshot.domain.dnsRoot)</b> ($(& $H $Snapshot.domain.netbios)) &middot; forest $(& $H $Snapshot.domain.forestName) &middot; snapshot $(& $H $collected.ToString('yyyy-MM-dd HH:mm')) UTC by $(& $H $Snapshot.meta.collectedBy) from $(& $H $Snapshot.meta.collectedFrom)$(if ($Snapshot.meta.connection -and $Snapshot.meta.connection.servedBy) { " via $(& $H $Snapshot.meta.connection.servedBy)" }) &middot; IDWolf v$ToolVersion &middot; analysis $ElapsedText$(if ($AiResult -and $AiResult.Model) { " &middot; AI $(& $H $AiResult.Model)$(if ($AiResult.AiElapsedText) { " in $(& $H $AiResult.AiElapsedText)" })" })</div>"
+    & $w "<div class=`"meta`">Domain <b>$(& $H $Snapshot.domain.dnsRoot)</b> ($(& $H $Snapshot.domain.netbios)) &middot; forest $(& $H $Snapshot.domain.forestName) &middot; snapshot $(& $H $collected.ToString('yyyy-MM-dd HH:mm')) UTC by $(& $H $Snapshot.meta.collectedBy) from $(& $H $Snapshot.meta.collectedFrom)$(if ($Snapshot.meta.connection -and $Snapshot.meta.connection.servedBy) { " via $(& $H $Snapshot.meta.connection.servedBy)" }) &middot; IDWolf v$ToolVersion$(if ("$($Snapshot.meta.tool)" -ne 'IDWolf') { " &middot; snapshot written by $(& $H $Snapshot.meta.tool)" }) &middot; analysis $ElapsedText$(if ($AiResult -and $AiResult.Model) { " &middot; AI $(& $H $AiResult.Model)$(if ($AiResult.AiElapsedText) { " in $(& $H $AiResult.AiElapsedText)" })" })</div>"
     if ($Snapshot.meta.synthetic) {
         & $w '<blockquote>Synthetic snapshot generated for testing and demonstration. No real directory data.</blockquote>'
     }

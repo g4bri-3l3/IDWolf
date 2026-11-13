@@ -74,6 +74,54 @@ function Resolve-OutputPath {
     return (Join-Path (Get-Location).Path $Path)
 }
 
+# Who else can read what was just written. A snapshot is a complete offline copy of the directory
+# and a report is a ranked list of where that directory is weak, and both inherit the permissions
+# of the folder they land in. IDWolf never changes permissions - the safety review forbids any
+# write cmdlet, and a tool that rewrites filesystem security is a different promise - so this reads
+# the folder's ACL (Get-Acl, read-only) and names the broad principals that already have access:
+# Everyone, Anonymous, Authenticated Users, BUILTIN\Users, Guests, and any Domain Users / Domain
+# Computers / Domain Guests group (matched by RID, so a localized directory works too). Silent when
+# Get-Acl is not there (Linux pwsh) or the folder cannot be read.
+$script:BroadReaderSids = @('S-1-1-0', 'S-1-5-7', 'S-1-5-11', 'S-1-5-32-545', 'S-1-5-32-546')
+
+function Get-OutputExposure {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return @() }
+    if (-not (Get-Command Get-Acl -ErrorAction SilentlyContinue)) { return @() }
+    $dir = $Path
+    try {
+        $full = Resolve-OutputPath $Path
+        $dir = if (Test-Path -LiteralPath $full -PathType Container) { $full } else { Split-Path -Parent $full }
+        if (-not $dir) { return @() }
+        $acl = Get-Acl -LiteralPath $dir -ErrorAction Stop
+    }
+    catch { return @() }
+    $found = New-Object System.Collections.Generic.List[string]
+    foreach ($ace in @($acl.Access)) {
+        if ("$($ace.AccessControlType)" -ne 'Allow') { continue }
+        $sid = $null
+        try {
+            $sid = if ($ace.IdentityReference -is [System.Security.Principal.SecurityIdentifier]) { "$($ace.IdentityReference)" }
+            else { "$($ace.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]))" }
+        }
+        catch { $sid = $null }
+        if (-not $sid) { continue }
+        $broad = ($script:BroadReaderSids -contains $sid) -or ($sid -match '^S-1-5-21-[\d\-]+-(513|514|515)$')
+        if (-not $broad) { continue }
+        $label = "$($ace.IdentityReference) ($($ace.FileSystemRights))"
+        if (-not $found.Contains($label)) { $found.Add($label) }
+    }
+    return $found.ToArray()
+}
+
+function Write-OutputExposureWarning {
+    param([string]$Path)
+    $who = @(Get-OutputExposure $Path)
+    if (-not $who.Count) { return }
+    Write-Host "Output folder is open to: $($who -join '; ')." -ForegroundColor Yellow
+    Write-Host "The report and the snapshot name every weak spot of this domain. Move them to a folder only the admins who read them can open (IDWolf never changes permissions itself)." -ForegroundColor Yellow
+}
+
 function ConvertTo-UtcDate {
     param($Value)
     if ($null -eq $Value -or "$Value" -eq '') { return $null }
@@ -126,7 +174,15 @@ function Get-DnString {
 function Import-ADSnapshot {
     param([string]$Path)
     if (-not (Test-Path -LiteralPath $Path)) { throw "Snapshot not found: $Path" }
-    $raw = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $Path).Path)
+    $full = (Resolve-Path -LiteralPath $Path).Path
+    # The file is read whole, then parsed whole: a snapshot made somewhere else can be any size, so
+    # say so before a huge read instead of appearing to hang. A real forest snapshot is megabytes.
+    try {
+        $sizeMb = [math]::Round((New-Object System.IO.FileInfo $full).Length / 1MB, 0)
+        if ($sizeMb -gt 512) { Write-Host "Snapshot is $sizeMb MB: reading and parsing it needs several times that in memory. Check where this file comes from." -ForegroundColor Yellow }
+    }
+    catch { }
+    $raw = [System.IO.File]::ReadAllText($full)
     $trim = $raw.TrimStart([char]0xFEFF, ' ', "`t", "`r", "`n")
     if (-not $trim.StartsWith('{')) {
         $hint = if ($Path -match '(?i)\.(csv|html?)$' -or $trim -match '^("Severity"|<!DOCTYPE|<html)') { ' This is an IDWolf report, not a snapshot: pass the snapshot JSON written by Collect-ADSnapshot.ps1 / Collect-EntraSnapshot.ps1 (adsnapshot_*.json).' } else { '' }

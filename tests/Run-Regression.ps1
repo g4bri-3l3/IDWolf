@@ -537,6 +537,20 @@ $cmp = Get-FindingsComparison -Findings $rm.Findings -PreviousCsv $csv
 Assert-True (@($cmp.New | Where-Object Type -eq 'guest_enabled').Count -eq 1) 'comparison: new finding detected'
 Assert-True (@($cmp.Resolved | Where-Object Type -eq 'dc_obsolete_os').Count -eq 1) 'comparison: resolved finding detected'
 
+# A value taken from the directory must not reach a spreadsheet as a formula, and neutralising it
+# must not make the same finding look new on the next run.
+$fx = @([PSCustomObject]@{ Severity = 'High'; Type = 'kerberoastable_user'; Title = 'T'; Category = 'Kerberos'; Object = '=cmd|calc'; ObjectType = 'user'; ObjectDn = '-CN=x,DC=y'; Detail = '@SUM(1)'; Mitre = 'T1558.003' })
+$fxCsv = Join-Path $tmp 'formula.csv'
+Export-FindingsCsv -Findings $fx -Path $fxCsv
+$fxText = Get-Content -LiteralPath $fxCsv -Raw
+Assert-True ($fxText -match '"''=cmd\|calc"' -and $fxText -match '"''-CN=x,DC=y"' -and $fxText -match '"''@SUM\(1\)"') "CSV: a cell starting with = - @ is neutralised with an apostrophe (got $(($fxText -split "`r`n")[1]))"
+$fxRead = @(Import-Csv -LiteralPath $fxCsv)
+Assert-True ((($fxRead[0].PSObject.Properties.Name) -join ',') -eq 'Severity,Type,Title,Category,Object,ObjectType,ObjectDn,Detail,Mitre,Controls,Benchmarks') 'CSV: the columns and their order are unchanged'
+$fxCmp = Get-FindingsComparison -Findings $fx -PreviousCsv $fxCsv
+Assert-True (@($fxCmp.New).Count -eq 0 -and @($fxCmp.Resolved).Count -eq 0 -and @($fxCmp.Persisting).Count -eq 1) 'CSV: a neutralised cell still matches the same finding on the next run'
+$fxGone = Get-FindingsComparison -Findings @() -PreviousCsv $fxCsv
+Assert-True (@($fxGone.Resolved).Count -eq 1 -and "$($fxGone.Resolved[0].Object)" -eq '=cmd|calc' -and "$($fxGone.Resolved[0].Detail)" -eq '@SUM(1)') 'CSV: the resolved list shows the original value, without the apostrophe'
+
 # HTML renders
 $score = Get-HygieneScore -Findings $split.Active
 $html = ConvertTo-ReportHtml -Snapshot $demo -Index $r.Index -PrivMap $r.PrivMap -Split $split -Score $score -NotEvaluated @() -Comparison $cmp -Config $config -ToolVersion 'test' -ElapsedText '0s'
@@ -650,6 +664,23 @@ Assert-True (-not (Test-FsRightsWrite 'WriteAttributes, Synchronize') -and -not 
 Assert-True ((Get-SevPill '<b>x</b>') -notmatch '<b>' -and (Get-SevPill 'High') -match 'sev-pill-high') 'severity pill encodes a value read back from an earlier CSV'
 
 # ------------------------------------------------------------------ AI
+# IDWOLF_GEMINI_BASEURL decides where the prompt and the API key go, so it is validated before the
+# call: absolute http(s), no credentials, no query, and plain http only to a loopback address.
+# (The refusals below print their reason: that output is the expected behaviour, not a failure.)
+Write-Host "[ai endpoint]"
+$oldBase = $env:IDWOLF_GEMINI_BASEURL
+$env:IDWOLF_GEMINI_BASEURL = ''
+Assert-True ((Get-GeminiBaseUrl) -eq 'https://generativelanguage.googleapis.com') 'AI endpoint: unset variable keeps the Google endpoint'
+foreach ($bad in 'notaurl', 'ftp://host/x', 'http://gw.corp.local', 'https://user:pw@gw.corp.local', 'https://gw.corp.local/v1?key=1') {
+    $env:IDWOLF_GEMINI_BASEURL = $bad
+    Assert-True ($null -eq (Get-GeminiBaseUrl)) "AI endpoint: '$bad' is refused, nothing is sent"
+}
+$env:IDWOLF_GEMINI_BASEURL = 'https://gateway.corp.local:8443/'
+Assert-True ((Get-GeminiBaseUrl) -eq 'https://gateway.corp.local:8443') 'AI endpoint: an https gateway is allowed, trailing slash dropped'
+$env:IDWOLF_GEMINI_BASEURL = 'http://127.0.0.1:8080'
+Assert-True ((Get-GeminiBaseUrl) -eq 'http://127.0.0.1:8080') 'AI endpoint: plain http is allowed to a loopback test endpoint'
+$env:IDWOLF_GEMINI_BASEURL = $oldBase
+
 Write-Host "[ai pseudonymization]"
 $script:RefDate = ConvertTo-UtcDate $demo.meta.collectedAtUtc
 $pz = New-Pseudonymizer -Snapshot $demo -Index $r.Index
@@ -1465,7 +1496,7 @@ Assert-True ($entraPrompt -match 'GROUP-\d' -and $entraPrompt -notmatch 'Project
 # The parser runs on real-format files in a temp folder (no SYSVOL needed).
 Write-Host "[gpo extras parser]"
 $cAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'Collect-ADSnapshot.ps1'), [ref]$null, [ref]$null)
-foreach ($fn in 'ConvertFrom-IniText', 'Read-GpoExtras') {
+foreach ($fn in 'ConvertFrom-IniText', 'Read-XmlFileSafe', 'Read-GpoExtras') {
     . ([scriptblock]::Create($cAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $fn }, $true).Extent.Text))
 }
 $gd = Join-Path $tmp 'gpofolder'
@@ -1493,7 +1524,37 @@ Assert-True ($cmds -contains '\\fs01\it$\boot.cmd' -and $cmds -contains '\\fs01\
 Assert-True (@($px | Where-Object { $_.kind -eq "scheduled task 'Inventory'" }).Count -eq 1) 'GPO parser: V2 task keeps its name'
 $pairs = @($pg | ForEach-Object { "$($_.group)<-$($_.member)" })
 Assert-True ($pairs -contains 'S-1-5-32-544<-S-1-5-21-1-2-3-513' -and $pairs -contains 'S-1-5-32-555<-S-1-5-11' -and $pairs -contains 'S-1-5-32-544<-S-1-5-21-1-2-3-1106' -and $pairs.Count -eq 3) "GPO parser: Groups.xml ADD only, Restricted Groups Members and Memberof (got $($pairs -join ' | '))"
-Remove-Item Function:\Read-GpoExtras, Function:\ConvertFrom-IniText
+# SYSVOL XML is written by whoever can edit the GPO: no DTD, no external resolver. A file with a
+# DOCTYPE throws, and the collector records it as a gpo.execution error instead of a GPO that runs
+# nothing. The external entity must not be fetched either way.
+$xxeDir = Join-Path $tmp 'gpoxxe'
+New-Item -ItemType Directory -Force (Join-Path $xxeDir 'Machine\Preferences\ScheduledTasks') | Out-Null
+$xxeSecret = Join-Path $tmp 'xxe_secret.txt'
+Set-Content -LiteralPath $xxeSecret -Value 'XXE-CANARY' -Encoding ASCII
+$xxeFile = Join-Path $xxeDir 'Machine\Preferences\ScheduledTasks\ScheduledTasks.xml'
+[System.IO.File]::WriteAllText($xxeFile, @"
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE ScheduledTasks [<!ENTITY leak SYSTEM "file:///$($xxeSecret -replace '\\', '/')">]>
+<ScheduledTasks><Task name="X"><Properties action="C" name="X" appName="&leak;"/></Task></ScheduledTasks>
+"@)
+$xxeThrew = $false
+try { [void](Read-XmlFileSafe -Path $xxeFile) } catch { $xxeThrew = $true }
+Assert-True $xxeThrew 'GPO XML: a file with a DTD is refused (no entity expansion, no external resolver)'
+$xx = New-Object System.Collections.Generic.List[object]; $xg = New-Object System.Collections.Generic.List[object]
+$xxeRaised = $false
+try { Read-GpoExtras -Dir $xxeDir -Guid '{X}' -Name 'XXE GPO' -Exec $xx -Groups $xg } catch { $xxeRaised = $true }
+$xxeCmds = @($xx | ForEach-Object { "$($_.command)" }) -join '|'
+Assert-True ($xxeRaised -and $xx.Count -eq 0 -and $xxeCmds -notmatch 'XXE-CANARY') 'GPO XML: the DTD file reaches the caller as an error, and no entity value is collected'
+Remove-Item Function:\Read-GpoExtras, Function:\Read-XmlFileSafe, Function:\ConvertFrom-IniText
+# An enrollment-service host name the collector refuses to contact (not a collected computer
+# object, not inside a forest DNS suffix) must come back as a collection error, never as a CA that
+# was read and found clean - and no session is opened for it.
+. ([scriptblock]::Create($cAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Read-CaRegistry' }, $true).Extent.Text))
+$caRefused = Read-CaRegistry -HostName 'ca.attacker.example' -CaName 'Evil CA' -RefuseReason 'host name is not a collected computer object: not contacted'
+Assert-True ($caRefused.error -eq 'host name is not a collected computer object: not contacted' -and $null -eq $caRefused.editFlags -and $null -eq $caRefused.webEnrollment) 'AD CS: a refused CA host name becomes a collection error, with nothing read'
+$caNoName = Read-CaRegistry -HostName '' -CaName 'X'
+Assert-True ($caNoName.error -eq 'no DNS host name on the enrollment service') 'AD CS: an enrollment service without a DNS host name is still reported'
+Remove-Item Function:\Read-CaRegistry
 # registry.pol: a DWORD and a string, read with the USER hive prefix (User\registry.pol).
 . ([scriptblock]::Create($cAst.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'ConvertFrom-RegistryPol' }, $true).Extent.Text))
 $polU = [System.Text.Encoding]::Unicode
@@ -1943,6 +2004,46 @@ try {
     finally { Pop-Location }
 }
 finally { $env:IDWOLF_STATE_DIR = $oldStateDir; $env:GEMINI_API_KEY = $oldGeminiKey; $env:IDWOLF_NO_UPDATE_CHECK = $oldNoUpd }
+
+# ------------------------------------------------------------ one version, written down once
+Write-Host "[version]"
+$verLine = Select-String -LiteralPath (Join-Path $root 'IDWolf.ps1') -Pattern '^\s*\$script:IDWolfVersion\s*=\s*"([^"]+)"' | Select-Object -First 1
+$toolVer = if ($verLine) { $verLine.Matches[0].Groups[1].Value } else { '' }
+Assert-True ($toolVer -match '^\d+\.\d+$') "version: IDWolf.ps1 holds the one version constant (got '$toolVer')"
+foreach ($vf in 'Collect-ADSnapshot.ps1', 'Collect-EntraSnapshot.ps1', 'Start-IDWolf.ps1', 'Export-PasswordQuality.ps1', 'Export-BloodHound.ps1', 'Invoke-IDWolfScheduled.ps1') {
+    $vt = Get-Content -LiteralPath (Join-Path $root $vf) -Raw
+    Assert-True ($vt -notmatch '(?m)^\s*\$script:\w*Version\s*=\s*[''"]\d') "version: $vf does not keep a second copy of the number"
+}
+# Each collector reads that one constant out of IDWolf.ps1 and falls back to 'unknown' when it was
+# copied on its own. What a real collection writes into meta.collectorVersion is checked
+# end to end by tests\Test-CollectorMock.ps1.
+foreach ($vf in 'Collect-ADSnapshot.ps1', 'Collect-EntraSnapshot.ps1') {
+    $vt = Get-Content -LiteralPath (Join-Path $root $vf) -Raw
+    Assert-True ($vt -match "\`$script:CollectorVersion = 'unknown'" -and $vt -match '\$script:IDWolfVersion\\s\*=\\s\*"\(\[\^"\]\+\)"') "version: $vf reads the number from IDWolf.ps1, with 'unknown' as the fallback"
+}
+
+# ------------------------------------------------------------ output exposure (read-only ACL look)
+Write-Host "[output exposure]"
+$expDir = Join-Path $tmp 'exposed'
+New-Item -ItemType Directory -Force $expDir | Out-Null
+Assert-True (@(Get-OutputExposure (Join-Path $expDir 'report.html')) -is [array]) 'output exposure: a folder nobody broad can read gives an empty list, no exception'
+Assert-True (@(Get-OutputExposure '').Count -eq 0 -and @(Get-OutputExposure (Join-Path $tmp 'no\such\folder\x.html')).Count -eq 0) 'output exposure: no path and an unreadable folder stay silent'
+if ((Get-Command Set-Acl -ErrorAction SilentlyContinue) -and (Get-Command Get-Acl -ErrorAction SilentlyContinue)) {
+    $aclSet = $false
+    try {
+        $expAcl = Get-Acl -LiteralPath $expDir
+        $expAcl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+                    (New-Object System.Security.Principal.SecurityIdentifier('S-1-1-0')), 'Read', 'Allow')))
+        Set-Acl -LiteralPath $expDir -AclObject $expAcl -ErrorAction Stop
+        $aclSet = $true
+    }
+    catch { $aclSet = $false }
+    if ($aclSet) {
+        $expWho = @(Get-OutputExposure (Join-Path $expDir 'report.html'))
+        Assert-True ($expWho.Count -ge 1) "output exposure: an Everyone ACE on the output folder is reported (got $($expWho -join '; '))"
+    }
+    else { Write-Host '  (Everyone ACE check skipped: this host would not let the test set it)' -ForegroundColor DarkGray }
+}
 
 # ------------------------------------------------------------ safety review
 Write-Host "[safety]"

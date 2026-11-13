@@ -85,8 +85,9 @@ function Write-Log {
 }
 
 # Previous run of the same target, for new / resolved.
+# A reparse point is skipped here too: -CompareTo would read findings.csv from wherever it points.
 $previous = @(Get-ChildItem -LiteralPath $OutputDir -Directory |
-    Where-Object { $_.Name -match $runPattern -and $_.FullName -ne $runDir -and (Test-Path -LiteralPath (Join-Path $_.FullName 'findings.csv')) } |
+    Where-Object { $_.Name -match $runPattern -and $_.FullName -ne $runDir -and -not ($_.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -and (Test-Path -LiteralPath (Join-Path $_.FullName 'findings.csv')) } |
     Sort-Object Name -Descending | Select-Object -First 1)
 
 Write-Log "IDWolf scheduled run, target $Target, folder $runDir"
@@ -137,7 +138,17 @@ Write-Log "JSON Lines appended to $SiemFile"
 if ($KeepRuns -gt 0) {
     $old = @(Get-ChildItem -LiteralPath $OutputDir -Directory | Where-Object { $_.Name -match $runPattern } |
         Sort-Object Name -Descending | Select-Object -Skip $KeepRuns)
-    foreach ($d in $old) { Remove-Item -LiteralPath $d.FullName -Recurse -Force; Write-Log "Removed old run $($d.Name)" }
+    foreach ($d in $old) {
+        # Delete the folders this script created, not names that look like them. Anyone who can
+        # create entries in the output folder can leave a junction or a symlink called
+        # ad_20260101_000000; on a PowerShell build that follows reparse points, a recursive forced
+        # delete run by the scheduled identity would land on whatever it points at.
+        if ($d.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+            Write-Log "Skipped old run $($d.Name): it is a reparse point (junction or symlink), not a run folder."
+            continue
+        }
+        Remove-Item -LiteralPath $d.FullName -Recurse -Force; Write-Log "Removed old run $($d.Name)"
+    }
 }
 
 Write-Log 'Done.'

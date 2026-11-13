@@ -103,7 +103,7 @@ Param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:IDWolfVersion = "1.12"
+$script:IDWolfVersion = "1.13"
 
 $libDir = Join-Path $PSScriptRoot 'lib'
 foreach ($f in @('Common.ps1', 'Checks.ps1', 'ChecksHost.ps1', 'Reporting.ps1', 'Graph.ps1', 'AI.ps1', 'ChecksEntra.ps1', 'Compliance.ps1', 'Bundle.ps1', 'Wizard.ps1')) {
@@ -550,6 +550,7 @@ if ("$($snap.meta.kind)" -eq 'entra') {
     }
 
     Write-Host "Entra report written to $OutHtml" -ForegroundColor Green
+    Write-OutputExposureWarning $htmlFull
     $sevs = @('Critical', 'High', 'Medium', 'Low') | ForEach-Object { $s = $_; "{0}: {1}" -f $s, @($eActive | Where-Object { $_.Severity -eq $s }).Count }
     if ($eScore.Reliable) { Write-Host ("Findings: {0} ({1})  score: {2}/100 (grade {3})" -f $eActive.Count, ($sevs -join ', '), $eScore.Score, $eScore.Grade) }
     else { Write-Host ("Findings: {0} ({1})  score: n/a, only {2}% of the checks could be evaluated" -f $eActive.Count, ($sevs -join ', '), $eScore.Coverage) -ForegroundColor Yellow }
@@ -631,6 +632,7 @@ if ($OutJson) {
 Write-Host "Report written to $OutHtml" -ForegroundColor Green
 Write-Host "Findings CSV: $OutCsv"
 if ($OutJson) { Write-Host "JSON Lines: $OutJson" }
+Write-OutputExposureWarning $htmlFull
 $sevs = @('Critical', 'High', 'Medium', 'Low') | ForEach-Object { $s = $_; "{0}: {1}" -f $s, @($active | Where-Object { $_.Severity -eq $s }).Count }
 Write-Host ("Findings: {0} ({1})  accepted: {2}" -f $active.Count, ($sevs -join ', '), @($split.Accepted).Count)
 if ($score.Reliable) { Write-Host ("Hygiene score: {0}/100 (grade {1})  Tier 0 principals: {2}" -f $score.Score, $score.Grade, $privMap.Principals.Count) }

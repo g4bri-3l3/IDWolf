@@ -1,5 +1,61 @@
 # Changelog
 
+## 1.13 - 2026-11-13
+
+Hardening pass from a threat model of the repository. No check was added, removed or retuned: the
+findings of a given snapshot are the same as in 1.12.
+
+- **Values from the directory can no longer be formulas in the findings CSV.** `Object`, `ObjectDn`
+  and `Detail` carry strings written by the principals IDWolf reports on (a name, a DN, a masked
+  description), and a cell that starts with `=`, `+`, `-` or `@` is a formula to Excel, LibreOffice
+  and Google Sheets. Those cells now get one leading apostrophe, so a spreadsheet shows them as
+  text. The columns and their order are unchanged, the JSON Lines are untouched, and `-CompareTo`
+  takes the apostrophe off again when it reads the previous CSV, so a finding doesn't look new on
+  every run and the resolved list shows the original value.
+- **`IDWOLF_GEMINI_BASEURL` is validated before the call.** It decides where the prompt *and the
+  API key in the request header* go, and the safety review reads the code as written, so it cannot
+  see what the variable holds. It now has to be an absolute `https://` URL with no credentials and
+  no query string (plain `http://` only to a loopback address); anything else is refused, nothing
+  is sent and the deterministic report stays as it is. A gateway that isn't Google's endpoint is
+  named - host and port - before the request.
+- **The scheduled runner deletes run folders, not names that look like them.** Anyone able to
+  create entries in the output folder could leave a junction called `ad_20260101_000000`; past the
+  `-KeepRuns` window, a recursive forced delete running as the scheduled identity would have
+  followed it. Reparse points are now skipped and written to the run log, in retention and when
+  picking the previous run for `-CompareTo`.
+- **SYSVOL GPO XML is parsed with the permissive defaults off.** `ScheduledTasks.xml` and
+  `Groups.xml` are written by whoever can edit the GPO: they are now loaded with DTDs prohibited
+  and no external resolver, so a crafted file can neither pull an external entity nor expand one
+  in the collector's memory. A file carrying a DTD is recorded as a `gpo.execution` collection gap
+  instead of a GPO that appears to run nothing.
+- **The collector no longer authenticates to any host name the directory hands it.** `dNSHostName`
+  on an AD CS enrollment service is an attribute of an object writable by exactly the principals
+  the ESC5 check is about, and the collector carries the operator's (often Tier 0) identity into
+  that CIM session. A name is now contacted only when a collected computer object or one of the
+  forest's DNS suffixes justifies it; otherwise it is skipped and reported as an `adcs.caRegistry`
+  gap, never as a CA that was read and found clean.
+- **Who can read the output is now part of the run.** IDWolf sets no permissions on anything it
+  writes (no `Set-Acl`, `SetAccessControl` or `icacls` anywhere: a tool that rewrites filesystem
+  security would be a different promise), so the collectors and the analyzer read the output
+  folder's ACL and name the broad principals that already have access - Everyone, Anonymous,
+  Authenticated Users, `BUILTIN\Users`, Guests, and any Domain Users / Computers / Guests group,
+  matched by RID so a localized directory works too. Silent when nothing broad is granted or the
+  folder cannot be read.
+- **A snapshot from somewhere else says what it is**: the report header names the tool that wrote
+  the snapshot when it isn't IDWolf (the old ADSheep / MooseAD names are still accepted), and a
+  file over 512 MB is called out before it is read and parsed whole.
+- **One version for the whole tool.** Both collectors kept their own copy of the number, and it
+  had been stale since the first commit: snapshots made by 1.11 and 1.12 both recorded
+  `meta.collectorVersion: 1.11`, as a run on a lab domain showed. The version now lives only in
+  `IDWolf.ps1` (`$script:IDWolfVersion`) and the collectors read it from there, the way the
+  launcher already did. A collector copied on its own, without `IDWolf.ps1` beside it, records
+  `unknown` instead of a number that may be wrong.
+- Regression: 773 assertions (+28) on PowerShell 7 and 5.1 - CSV neutralisation round-trip and
+  column order, the endpoint rules, the DTD refusal with an entity canary, a refused CA host, the
+  ACL notice, and the version written down once; the collector mock plants a junction in a
+  scheduled output folder and checks that retention leaves it and its target alone, and asserts
+  that a real collection records the analyzer's version.
+
 ## 1.12 - 2026-11-13
 
 - **The findings CSV and the JSON Lines went missing on an elevated run** (regression from 1.11,

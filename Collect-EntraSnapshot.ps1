@@ -55,7 +55,18 @@ Param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:CollectorVersion = "1.11"
+# One version for the whole tool: read from IDWolf.ps1 ($script:IDWolfVersion), like the AD
+# collector and the launcher do, so the number is written down once. 'unknown' when this collector
+# was copied on its own.
+$script:CollectorVersion = 'unknown'
+try {
+    $verFile = Join-Path $PSScriptRoot 'IDWolf.ps1'
+    if (Test-Path -LiteralPath $verFile) {
+        $verMatch = Select-String -LiteralPath $verFile -Pattern '^\s*\$script:IDWolfVersion\s*=\s*"([^"]+)"' | Select-Object -First 1
+        if ($verMatch) { $script:CollectorVersion = $verMatch.Matches[0].Groups[1].Value }
+    }
+}
+catch { }
 $script:Errors = New-Object System.Collections.Generic.List[object]
 function Add-CollectionError {
     param([string]$Section, [string]$Message)
@@ -786,6 +797,38 @@ $snapshot = [ordered]@{
     servicePrincipals = $servicePrincipals
 }
 
+# Who else can read the folder the snapshot lands in (same read-only check as
+# Write-SnapshotExposureWarning in Collect-ADSnapshot.ps1 and Get-OutputExposure in
+# lib\Common.ps1; copied because this collector also runs on its own). Nothing is changed: the
+# folder ACL is read and the broad principals that already have access are named.
+function Write-SnapshotExposureWarning {
+    param([string]$Path)
+    if (-not (Get-Command Get-Acl -ErrorAction SilentlyContinue)) { return }
+    $broad = @('S-1-1-0', 'S-1-5-7', 'S-1-5-11', 'S-1-5-32-545', 'S-1-5-32-546')
+    $who = New-Object System.Collections.Generic.List[string]
+    try {
+        $dir = Split-Path -Parent $Path
+        if (-not $dir) { return }
+        foreach ($ace in @((Get-Acl -LiteralPath $dir -ErrorAction Stop).Access)) {
+            if ("$($ace.AccessControlType)" -ne 'Allow') { continue }
+            $sid = ''
+            try {
+                $sid = if ($ace.IdentityReference -is [System.Security.Principal.SecurityIdentifier]) { "$($ace.IdentityReference)" }
+                else { "$($ace.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]))" }
+            }
+            catch { $sid = '' }
+            if (-not $sid) { continue }
+            if (-not (($broad -contains $sid) -or ($sid -match '^S-1-5-21-[\d\-]+-(513|514|515)$'))) { continue }
+            $label = "$($ace.IdentityReference) ($($ace.FileSystemRights))"
+            if (-not $who.Contains($label)) { $who.Add($label) }
+        }
+    }
+    catch { return }
+    if (-not $who.Count) { return }
+    Write-Host "That folder is open to: $($who -join '; ')." -ForegroundColor Yellow
+    Write-Host "Keep the snapshot where only the admins who read it can open it; the collector never changes permissions itself." -ForegroundColor Yellow
+}
+
 if (-not $OutFile) {
     $tn = if ($org -and $org.displayName) { ($org.displayName -replace '[^\w\-]', '_') } elseif ($ctx.TenantId) { "$($ctx.TenantId)" } else { 'tenant' }
     # Unnamed outputs go to .\output, not next to everything else.
@@ -800,3 +843,4 @@ if ([System.IO.Path]::IsPathRooted($OutFile)) { $full = $OutFile } else { $full 
 Write-Host "Entra snapshot written to $full" -ForegroundColor Green
 if ($script:Errors.Count -gt 0) { Write-Host "$($script:Errors.Count) section(s) could not be collected; affected checks will be marked not evaluated." -ForegroundColor Yellow }
 Write-Host "The snapshot contains tenant directory data. Handle it as confidential." -ForegroundColor Yellow
+Write-SnapshotExposureWarning $full
