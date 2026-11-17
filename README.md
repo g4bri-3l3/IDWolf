@@ -15,6 +15,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![OpenSSF Baseline](https://www.bestpractices.dev/projects/15416/baseline)](https://www.bestpractices.dev/projects/15416)
 
+**[Watch the walkthrough](https://youtu.be/632k6B9ni7I)** &middot; **[Open the
+demo report](https://g4bri-3l3.github.io/IDWolf/demo/demo_report.html)** (no
+install: it is one HTML file of a synthetic domain) &middot;
+**[Site](https://g4bri-3l3.github.io/IDWolf)**
+
 ![A tour of an IDWolf report from a lab domain, one captioned slide every three seconds](examples/lab_report.gif)
 
 *A real report from a throw-away lab domain: the score, the charts, the AI summary
@@ -61,8 +66,10 @@ a browser:
   domain (populated with Vulnerable-AD and the `tests/lab/` scripts) and
   includes the optional Gemini summary.
 - `examples/demo_report.html` is built on a fictional domain, with
-  a deep collection and password quality. Its findings CSV and JSON Lines sit
-  next to it.
+  a deep collection, password quality and the optional Gemini summary. Its
+  findings CSV and JSON Lines sit next to it, together with the exact prompt
+  that was sent (`_ai_prompt.txt`) and the reply (`_ai_response.json`), both
+  pseudonymized.
 - `examples/entra_report.html` is the fictional Entra tenant.
 
 ## The pieces

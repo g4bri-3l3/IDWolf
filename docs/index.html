@@ -1,0 +1,303 @@
+<!doctype html>
+<!-- Generated from the IDWolf repository by a local tool (New-DocsPage.ps1, not shipped).
+     Every number below is read from the check catalogs: edit the tool, not this file. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IDWolf - Active Directory and Entra ID hygiene auditor</title>
+<meta name="description" content="IDWolf takes one read-only snapshot of Active Directory or Microsoft Entra ID and judges it offline: 186 AD checks, 92 Entra checks, an attack-path map to Tier 0, and a report that says what could not be judged at all.">
+<style>
+  :root {
+    --paper: #F3EFE6; --surface: #FFFDF8; --tint: #E8E2D4; --ink: #161513; --muted: #5F5A51;
+    --red: #E2372A; --red-soft: #FBD9D2; --coral: #EF8A6F; --amber: #F2B632; --green: #6E8B5F;
+    --line: 3px solid var(--ink);
+    --shadow: 7px 7px 0 var(--ink); --shadow-sm: 4px 4px 0 var(--ink); --shadow-xs: 3px 3px 0 var(--ink);
+    --display: "Bahnschrift", "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    --body: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Helvetica, Arial, sans-serif;
+    --mono: "Cascadia Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--ink); font-family: var(--body); line-height: 1.55;
+    background: var(--paper) radial-gradient(circle, rgba(22, 21, 19, .10) 1.1px, transparent 1.5px) 0 0 / 18px 18px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+  a { color: var(--ink); }
+  h1, h2, h3 { font-family: var(--display); letter-spacing: -0.03em; margin: 0 0 10px; }
+  h1 { font-size: clamp(2.4rem, 7vw, 4rem); font-weight: 800; line-height: 1; }
+  h2 { font-size: clamp(1.4rem, 3.4vw, 2rem); font-weight: 750; }
+  h3 { font-size: 1.05rem; font-weight: 700; }
+  p { margin: 0 0 14px; }
+  .meta { font-family: var(--mono); font-size: 12.5px; color: var(--muted); }
+  code { background: var(--tint); border: 1.5px solid var(--ink); border-radius: 6px; padding: 0 5px; font-family: var(--mono); font-size: .92em; }
+  section { padding: 54px 0; border-top: var(--line); }
+  section:first-of-type { border-top: none; }
+
+  .hero { display: grid; grid-template-columns: auto 1fr; gap: 28px; align-items: center; padding: 56px 0 44px; }
+  .logo { font-family: var(--mono); font-size: 12px; line-height: 1.1; font-weight: 700; white-space: pre; margin: 0;
+    color: var(--surface); background: var(--ink); border-radius: 16px; padding: 16px 20px; box-shadow: 6px 6px 0 var(--red); }
+  .pill { display: inline-block; font-family: var(--mono); font-size: 12px; font-weight: 700; border: 2px solid var(--ink); border-radius: 8px; padding: 2px 9px; background: var(--amber); box-shadow: 2px 2px 0 var(--ink); }
+  .lede { font-size: 1.2rem; max-width: 62ch; }
+  .btns { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+  .btn { display: inline-block; font-family: var(--display); font-weight: 700; font-size: 1rem; text-decoration: none; border: var(--line); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-sm); padding: 10px 18px; }
+  .btn:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
+  .btn.primary { background: var(--red); color: var(--surface); }
+
+  .nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+  .num { border: var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-xs); padding: 14px 16px; }
+  .num b { display: block; font-family: var(--display); font-size: 2.1rem; font-weight: 800; line-height: 1; }
+  .num span { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; margin-top: 22px; }
+  .card { border: var(--line); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-sm); padding: 18px 20px; }
+  .card .step { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .card p:last-child { margin-bottom: 0; }
+
+  .shot { border: var(--line); border-radius: 18px; box-shadow: var(--shadow); background: var(--surface); padding: 10px; }
+  .shot img { display: block; width: 100%; height: auto; border-radius: 10px; }
+
+  .chainbox { border: var(--line); border-radius: 18px; background: var(--surface); box-shadow: var(--shadow-sm); padding: 20px; overflow-x: auto; }
+  svg.chain { display: block; max-width: 100%; height: auto; }
+  svg.chain rect { fill: var(--surface); stroke: var(--ink); stroke-width: 2; }
+  svg.chain text { font-family: var(--mono); font-size: 12px; fill: var(--ink); }
+  svg.chain .n-open rect { fill: var(--red-soft); }
+  svg.chain .n-open text { font-weight: 700; }
+  svg.chain .n-t0 rect { fill: var(--coral); }
+  svg.chain .n-t0 text { font-weight: 700; }
+  svg.chain .n-unk rect { fill: var(--tint); stroke-dasharray: 4 3; }
+  svg.chain .n-unk text { fill: var(--muted); }
+  svg.chain .edge line { stroke: var(--ink); stroke-width: 2; }
+  svg.chain .edge polygon { fill: var(--ink); }
+  svg.chain .edge text { font-size: 10.5px; fill: var(--muted); }
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; }
+  .legend span { font-family: var(--mono); font-size: 12px; display: flex; align-items: center; gap: 7px; }
+  .swatch { width: 16px; height: 16px; border: 2px solid var(--ink); border-radius: 5px; display: inline-block; }
+
+  ul.plain { margin: 0 0 14px; padding-left: 20px; }
+  ul.plain li { margin: 7px 0; }
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 26px; }
+  footer { border-top: var(--line); padding: 26px 0 50px; }
+  @media (max-width: 720px) { .hero { grid-template-columns: 1fr; } .logo { font-size: 9px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <pre class="logo" role="img" aria-label="IDWolf wolf">                     .
+                    / V\
+                  / `  /
+                 &lt;&lt;   |
+                 /    |
+               /      |
+             /        |
+           /    \  \ /
+          (      ) | |
+  ________|   _/_  | |
+&lt;__________\______)\__)</pre>
+  <div>
+    <span class="pill">v1.13 &middot; MIT &middot; PowerShell 5.1 and 7</span>
+    <h1>IDWolf</h1>
+    <p class="lede">A hygiene audit for Active Directory and Microsoft Entra ID. One read-only
+    collection with the native modules, the analysis runs anywhere else, offline, and the report
+    says what is wrong, what it could be chained into and what could not be judged at all.</p>
+    <div class="btns">
+      <a class="btn primary" href="demo/demo_report.html">Open the live report</a>
+      <a class="btn" href="https://github.com/g4bri-3l3/IDWolf">Code on GitHub</a>
+      <a class="btn" href="https://github.com/g4bri-3l3/IDWolf/archive/refs/tags/v1.13.zip">Download v1.13</a>
+    </div>
+  </div>
+</header>
+
+<section>
+  <div class="nums">
+    <div class="num"><b>186</b><span>Active Directory checks</span></div>
+    <div class="num"><b>92</b><span>Entra ID checks</span></div>
+    <div class="num"><b>53</b><span>MITRE techniques</span></div>
+    <div class="num"><b>43</b><span>attacks seen in the wild</span></div>
+    <div class="num"><b>4</b><span>compliance frameworks</span></div>
+    <div class="num"><b>0</b><span>network calls in the analysis</span></div>
+  </div>
+  <p class="meta" style="margin-top:14px">Every number on this page is read from the check catalogs in
+  the repository, so it cannot promise a check, a technique or a release the tool does not ship.</p>
+</section>
+
+<section>
+  <h2>See it before you run it</h2>
+  <p>The report below is the real output of IDWolf on a synthetic domain, shipped in the repository as
+  <code>examples\demo_report.html</code>. It is one HTML file with no server and no CDN behind it:
+  open it, read the score, follow an attack path, filter the findings, mail it as it is.</p>
+  <div class="shot"><img src="demo/demo_report.gif" alt="A tour of the IDWolf report, one captioned slide per section" loading="lazy"></div>
+  <div class="btns">
+    <a class="btn primary" href="demo/demo_report.html">Open the AD report</a>
+    <a class="btn" href="demo/entra_report.html">Open the Entra report</a>
+    <a class="btn" href="demo/demo_report.csv">Findings as CSV</a>
+    <a class="btn" href="demo/demo_findings.jsonl">JSON Lines for a SIEM</a>
+    <a class="btn" href="https://youtu.be/632k6B9ni7I">Watch the walkthrough</a>
+  </div>
+  <p class="meta" style="margin-top:14px">Synthetic data, start to finish: the domain is
+  <code>moosebank.local</code> and the tenant is fictional. No real directory appears on this page.</p>
+</section>
+
+<section>
+  <h2>How it works</h2>
+  <div class="cards">
+    <div class="card">
+      <div class="step">1 &middot; Collect</div>
+      <h3>Read-only, native cmdlets</h3>
+      <p><code>Collect-ADSnapshot.ps1</code> uses the RSAT <code>ActiveDirectory</code> module and
+      nothing else; <code>Collect-EntraSnapshot.ps1</code> uses the Microsoft Graph SDK with Global
+      Reader and GET requests only. No offensive tooling, nothing written to the directory, and
+      secrets are masked before the snapshot is saved. A section that fails is recorded as a
+      collection error, never as a clean result.</p>
+    </div>
+    <div class="card">
+      <div class="step">2 &middot; Analyse</div>
+      <h3>Anywhere, offline</h3>
+      <p>The snapshot is judged on your own machine, with no AD or Graph module in sight:
+      186 AD checks across 9 categories - Kerberos, privileged access, account
+      hygiene, domain configuration, permissions, AD CS (ESC1-15), DNS, host hardening read from the
+      GPOs, operational health - plus 92 Entra checks. Password quality comes from a
+      separate hashless export, so no password hash is ever handled.</p>
+    </div>
+    <div class="card">
+      <div class="step">3 &middot; Report</div>
+      <h3>For the people who have to act</h3>
+      <p>One self-contained HTML file: a score and a grade, the attack-path and trust maps drawn as
+      server-side SVG, the Tier 0 members, framework cards, every finding with its fix. Plus a CSV
+      and JSON Lines for a SIEM, an exceptions file for what you accept on purpose, and a
+      <code>-CompareTo</code> diff against the previous run.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Attack paths, not a list of flaws</h2>
+  <p>Tier 0 is resolved once - nested groups, cycles, foreign principals, primary groups - and
+  matched by SID, never by group name, so a localized directory still works. Every finding is then
+  placed against that map, and the report draws how a weakness reaches domain dominance.</p>
+  <div class="chainbox">
+    <svg class="chain" viewBox="0 0 700 60" width="700" height="60" role="img" aria-label="Any domain user reaches a service account by Kerberoasting; that path continues through a group with a dangerous ACL to Tier 0; a further step is drawn but not verified">
+      <g class="n-open"><title>Any domain user: the condition is in the snapshot</title><rect x="0" y="12" width="118" height="38" rx="9" ry="9"/><text x="59" y="35" text-anchor="middle">Any user</text></g>
+      <g class="edge"><line x1="120" y1="31" x2="142" y2="31"/><polygon points="141,28 147,31 141,34"/><text x="133" y="9" text-anchor="middle">Kerberoast</text></g>
+      <g class="n-open"><title>svc_backup: Kerberoastable account in Tier 0</title><rect x="148" y="12" width="118" height="38" rx="9" ry="9"/><text x="207" y="35" text-anchor="middle">svc_backup</text></g>
+      <g class="edge"><line x1="268" y1="31" x2="290" y2="31"/><polygon points="289,28 295,31 289,34"/><text x="281" y="9" text-anchor="middle">GenericAll</text></g>
+      <g class="n-open"><title>Helpdesk: dangerous ACL on a Tier 0 object</title><rect x="296" y="12" width="118" height="38" rx="9" ry="9"/><text x="355" y="35" text-anchor="middle">Helpdesk</text></g>
+      <g class="edge"><line x1="416" y1="31" x2="438" y2="31"/><polygon points="437,28 443,31 437,34"/><text x="429" y="9" text-anchor="middle">DCSync</text></g>
+      <g class="n-t0"><title>Tier 0: domain dominance</title><rect x="444" y="12" width="118" height="38" rx="9" ry="9"/><text x="503" y="35" text-anchor="middle">Tier 0</text></g>
+      <g class="edge"><line x1="564" y1="31" x2="586" y2="31"/><polygon points="585,28 591,31 585,34"/><text x="577" y="9" text-anchor="middle">assumed</text></g>
+      <g class="n-unk"><title>A step the snapshot cannot confirm: shown as unverified, never counted as a path</title><rect x="592" y="12" width="108" height="38" rx="9" ry="9"/><text x="646" y="35" text-anchor="middle">unverified</text></g>
+    </svg>
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--red-soft)"></i> the finding is in the snapshot</span>
+      <span><i class="swatch" style="background:var(--coral)"></i> Tier 0</span>
+      <span><i class="swatch" style="background:var(--tint);border-style:dashed"></i> drawn, but not verified</span>
+    </div>
+  </div>
+  <p class="meta" style="margin-top:14px">A path is drawn from findings that actually fired. A step
+  the snapshot cannot confirm is labelled unverified instead of being quietly promoted, and an object
+  that is not known to lead to Tier 0 says so on the edge.</p>
+  <p>The same discipline applies to the 43 attacks of recent years that the report names
+  next to the checks looking for the condition they need - Kerberoasting and AS-REP roasting, noPac,
+  the AD CS escalations, RBCD, shadow credentials, golden gMSA, SID history - and to the optional AI
+  summary, whose chain claims are re-checked locally against the findings before you read them.</p>
+</section>
+
+<section>
+  <h2>Judged against what</h2>
+  <div class="two">
+    <div>
+      <h3>Frameworks and techniques</h3>
+      <ul class="plain">
+        <li><b>NIS2, ISO 27001, DORA, GDPR</b>: every check maps to controls in all 4
+        frameworks, by theme rather than by hand, so the mapping cannot fall behind the catalog.</li>
+        <li><b>MITRE ATT&amp;CK</b>: 53 techniques, cited by the checks that look for them.</li>
+        <li><b>CIS Microsoft 365</b>: the Entra checks follow the benchmark's own wording.</li>
+        <li><b>Attacks seen in the wild</b>: 43 of them, named on the finding that enables
+        them rather than as a generic threat list.</li>
+      </ul>
+      <p class="meta">Check by check: <a href="https://github.com/g4bri-3l3/IDWolf/blob/main/COVERAGE.md">COVERAGE.md</a>.</p>
+    </div>
+    <div>
+      <h3>And what it refuses to claim</h3>
+      <p>A snapshot is a directory's configuration, not a stream of events. A collection gap must
+      never look like an all-clear, so every check the snapshot could not answer is listed as
+      <b>not evaluated</b>, with the reason: a permission missing, a section that failed, a switch
+      not passed, a deep collection not run.</p>
+      <p>No framework panel is a statement of conformity, the score is a hygiene score and not a
+      risk number, and the findings you accept on purpose go into an exceptions file with an expiry
+      date instead of disappearing.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Design rules</h2>
+  <div class="cards">
+    <div class="card">
+      <h3>Nothing is written to the directory</h3>
+      <p>The collectors use native read-only cmdlets. <code>Test-IDWolfSafety.ps1</code> parses the
+      shipped scripts and fails on any write verb, on any external command that is not on its
+      allow-list, on downloads, <code>iex</code> and Base64, and on any URL outside Graph, Gemini and
+      MITRE. The regression suite runs it on the real code and on a deliberately tampered copy.</p>
+    </div>
+    <div class="card">
+      <h3>The same snapshot gives the same findings</h3>
+      <p>Every age is computed against the collection time stored in the snapshot, never against
+      today, and the findings come out in a stable order. The suite analyses a snapshot in two
+      separate processes and compares the CSV, the JSON Lines and the AI prompt byte for byte, on
+      PowerShell 7 and on Windows PowerShell 5.1.</p>
+    </div>
+    <div class="card">
+      <h3>The AI step is opt-in and tokenized</h3>
+      <p>The deterministic report is on disk before anything is sent. Then every user, host, group
+      and domain name is replaced by a token, and the outbound prompt is re-scanned for the original
+      identifiers: if one survived, the request is aborted. The answer is de-tokenized locally, and
+      anything it cites that did not fire is dropped.</p>
+    </div>
+    <div class="card">
+      <h3>Nothing updates itself</h3>
+      <p>The checks, the attack list and the framework mappings live in the shipped catalogs, and the
+      documents are generated from them. The launcher's only network call is one version check
+      against the GitHub tag list - a notice, never a download - and <code>-NoUpdateCheck</code>
+      turns it off.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Run it in three lines</h2>
+  <div class="chainbox">
+    <p class="meta" style="margin-bottom:0">
+    PS&gt; <code>.\Collect-ADSnapshot.ps1</code> &nbsp; # on a domain-joined machine, read-only<br>
+    PS&gt; <code>.\IDWolf.ps1 -Snapshot .\adsnapshot_contoso.json</code> &nbsp; # anywhere, offline<br>
+    PS&gt; <code>.\Start-IDWolf.ps1</code> &nbsp; # or just the menu, if you prefer prompts
+    </p>
+  </div>
+  <p style="margin-top:14px">No installer, no module manifest, no build step: the scripts dot-source
+  what they need. A scheduled-task wrapper collects, analyses, diffs against the previous run and
+  appends JSON Lines to one file for your SIEM with no prompts - and it never registers the task
+  itself.</p>
+</section>
+
+<section>
+  <h2>Who wrote it</h2>
+  <p>IDWolf is written and maintained by Gabriele Piccini. It is tested on a real throw-away Active
+  Directory lab, not only on synthetic data: a domain populated with Vulnerable-AD and with the
+  project's own scripts, which plant ACL chains, delegation and the rest, so the checks are judged
+  against misconfigurations that behave like the ones in production.</p>
+  <div class="btns">
+    <a class="btn" href="https://github.com/g4bri-3l3/IDWolf">GitHub</a>
+    <a class="btn" href="https://youtu.be/632k6B9ni7I">YouTube</a>
+  </div>
+</section>
+
+</div>
+<footer>
+  <div class="wrap meta">
+    IDWolf v1.13 &middot; MIT licence &middot; built from the repository, with no tracking and
+    no third-party asset on this page. The demo report is synthetic data: no real directory appears
+    in it.
+  </div>
+</footer>
+</body>
+</html>

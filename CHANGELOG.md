@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- **A project page, generated from the repository.** `docs/` is a single static page for GitHub
+  Pages, with the synthetic AD and Entra reports published as they are, next to their findings CSV
+  and JSON Lines, a captioned tour of the report and the walkthrough video. Every number on it -
+  checks, categories, MITRE techniques, attacks seen in the wild, frameworks, version - is read
+  from the shipped catalogs by the tool that writes it, so the page cannot advertise a check or a
+  release the tool does not ship. No script, no external asset, no tracking, and only the
+  synthetic reports are published.
+- **The demo report carries the optional Gemini summary.** `examples/demo_report.html` was
+  regenerated with `-SendToAI` on the synthetic domain, so the AI summary and its verdict on
+  chaining the findings are visible in the sample, and `examples/demo_report_ai_prompt.txt` and
+  `examples/demo_report_ai_response.json` show exactly what left the machine and came back, with
+  every identifier replaced by a token. The findings, the CSV and the JSON Lines are unchanged.
+
 ## 1.13 - 2026-11-13
 
 Hardening pass from a threat model of the repository. No check was added, removed or retuned: the
