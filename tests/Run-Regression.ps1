@@ -618,9 +618,63 @@ $udGraph = Get-AttackGraph -Snapshot $demo -Index $r.Index -PrivMap $r.PrivMap -
 Assert-True ((GEdge $udGraph 'MOOSEBANK\someone' 'SRV-PRINT01$' 'ACL path (GenericWrite)').Count -eq 1) 'attack graph: a right over an unconstrained-delegation host is a hop to it'
 # Password quality: a breached Tier 0 password and a Tier 0 password shared with a normal account.
 $demoPq = Import-ADSnapshot (Join-Path $tmp 'demo.json')
-$demoPq | Add-Member -NotePropertyName passwordQuality -NotePropertyValue ([PSCustomObject]@{ duplicatePasswordGroups = @(, @('adm.verdi', 'user003')); breachedPassword = @('svc_backup', 'user004'); emptyPassword = @(); defaultOrUsernamePassword = @() }) -Force
+$demoPq | Add-Member -NotePropertyName passwordQuality -NotePropertyValue ([PSCustomObject]@{ duplicatePasswordGroups = @(, @('adm.verdi', 'user003')); breachedPassword = @('svc_backup', 'user004', 'svc_iis_deleg'); emptyPassword = @(); defaultOrUsernamePassword = @() }) -Force
 $pqGraph = Get-AttackGraph -Snapshot $demoPq -Index $r.Index -PrivMap $r.PrivMap -Findings $r.Findings
 Assert-True ((GEdge $pqGraph 'Any domain user' 'T0' 'Breached password (svc_backup)').Count -eq 1 -and -not (GEdge $pqGraph 'Any domain user' 'T0' '*user004*').Count -and (GEdge $pqGraph 'user003' 'T0' 'Same password as adm.verdi').Count -eq 1) 'attack graph: breached Tier 0 password and a shared Tier 0 password are paths; a breached normal account is not'
+Assert-True ((GEdge $pqGraph 'Any domain user' 'svc_iis_deleg' 'Breached password').Count -eq 1) 'attack graph: a breached password on an account that already has a path makes the entry box the start of it'
+# Several hits of one ACL check on one principal are one finding, and the map needs them all: the
+# hop that leads somewhere is often not the first one, and keeping only that one turned a real
+# chain into a single dashed "leads nowhere known" arrow.
+$mergedRaw = @(
+    [PSCustomObject]@{ Severity = 'Critical'; Type = 'dcsync_rights'; Title = 't'; Category = 'Permissions'; Object = "MOOSEBANK\$($hopC.samAccountName)"; ObjectType = 'acl'; ObjectDn = ''; Detail = 'DCSync.'; Mitre = '' }
+    [PSCustomObject]@{ Severity = 'High'; Type = 'dangerous_ace_anywhere'; Title = 't'; Category = 'Permissions'; Object = 'MOOSEBANK\Helpdesk'; ObjectType = 'acl'; ObjectDn = $plainUser.distinguishedName; Detail = "GenericAll over user '$($plainUser.samAccountName)'."; Mitre = '' }
+    [PSCustomObject]@{ Severity = 'High'; Type = 'dangerous_ace_anywhere'; Title = 't'; Category = 'Permissions'; Object = 'MOOSEBANK\Helpdesk'; ObjectType = 'acl'; ObjectDn = $hopC.distinguishedName; Detail = "WriteDacl over user '$($hopC.samAccountName)'."; Mitre = '' }
+)
+$mergedFind = @(Sort-FindingsStable -Findings $mergedRaw -Catalog $script:CheckCatalog)
+$mAcl = @($mergedFind | Where-Object { $_.Type -eq 'dangerous_ace_anywhere' })
+Assert-True ($mAcl.Count -eq 1 -and @($mAcl[0].ObjectDns).Count -eq 2 -and "$($mAcl[0].ObjectDn)" -eq "$($plainUser.distinguishedName)") 'a merged finding keeps every object it was raised over; ObjectDn stays the first one'
+$mGraph = Get-AttackGraph -Snapshot $demo -Index $r.Index -PrivMap $r.PrivMap -Findings $mergedFind
+$mLvl = @{}; foreach ($n in $mGraph.Nodes) { $mLvl[($n.Label -split '\\')[-1]] = $n.Level }
+Assert-True ((GEdge $mGraph 'MOOSEBANK\Helpdesk' "MOOSEBANK\$($hopC.samAccountName)" 'ACL path (WriteDacl)').Count -eq 1 -and @($mGraph.Edges | Where-Object { $_.Unverified }).Count -eq 0) 'attack graph: the hop hidden in the second hit of a merged ACL finding is drawn, and not as an assumption'
+Assert-True ($mLvl['Helpdesk'] -eq 1 -and $mLvl['hd.operator1'] -eq 2) "attack graph: the group members inherit the whole merged chain (got $($mLvl['Helpdesk'])/$($mLvl['hd.operator1']))"
+# A principal of another domain that happens to share a name with a local object is not that object.
+$fgnFindings = @(
+    [PSCustomObject]@{ Type = 'privileged_foreign_member'; Object = "PARTNER\$($plainUser.samAccountName)"; ObjectType = 'user'; ObjectDn = ''; Severity = 'High'; Detail = 'foreign Tier 0 member' }
+    [PSCustomObject]@{ Type = 'dangerous_ace_anywhere'; Object = 'MOOSEBANK\someone'; ObjectType = 'acl'; ObjectDn = $plainUser.distinguishedName; Severity = 'High'; Detail = "GenericAll over user '$($plainUser.samAccountName)'." }
+)
+$fgnGraph = Get-AttackGraph -Snapshot $demo -Index $r.Index -PrivMap $r.PrivMap -Findings $fgnFindings
+Assert-True (@($fgnGraph.Edges | Where-Object { $_.To -ge 0 }).Count -eq 0 -and @($fgnGraph.Edges | Where-Object { $_.Unverified }).Count -eq 1) 'attack graph: a principal of another domain with the same short name is not a hop target'
+# One arrow per source, technique and destination; a verified step wins over an assumed one.
+$dupGs = New-GraphState
+$dupNode = Add-GraphNode $dupGs 'dup.user' 'user' 'Medium'
+Add-GraphEdge $dupGs $dupNode $null 'ACL path' 'High' $true
+Add-GraphEdge $dupGs $dupNode $null 'ACL path' 'Medium' $false
+$dupDone = Complete-AttackGraph $dupGs
+Assert-True (@($dupDone.Edges).Count -eq 1 -and -not $dupDone.Edges[0].Unverified) 'attack graph: the same step is one arrow, a verified one beating an assumed one'
+# Nested groups: the people are rarely in the group that holds the right.
+$nestSnap = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$nestInner = @($nestSnap.groups | Where-Object { $_.name -eq 'ServiceAccounts-PSO' })[0]
+$nestOuter = @($nestSnap.groups | Where-Object { $_.name -eq 'Helpdesk' })[0]
+$nestOuter.members = @(@($nestOuter.members) + @($nestInner.distinguishedName))
+$nestInner.members = @(@($nestInner.members) + @($nestOuter.distinguishedName))   # and a loop back
+$rNest = Invoke-Analysis $nestSnap
+$nestGraph = Get-AttackGraph -Snapshot $nestSnap -Index $rNest.Index -PrivMap $rNest.PrivMap -Findings $rNest.Findings
+$nestLvl = @{}; foreach ($n in $nestGraph.Nodes) { $nestLvl[($n.Label -split '\\')[-1]] = $n.Level }
+Assert-True ((GEdge $nestGraph 'ServiceAccounts-PSO' 'MOOSEBANK\Helpdesk' 'Member of Helpdesk').Count -eq 1 -and (GEdge $nestGraph 'svc_web' 'ServiceAccounts-PSO' 'Member of ServiceAccounts-PSO').Count -eq 1 -and $nestLvl['svc_web'] -eq 2) "attack graph: a group nested in a source group carries the path on to its own members (svc_web at $($nestLvl['svc_web']) hops)"
+Assert-True (-not (GEdge $nestGraph 'MOOSEBANK\Helpdesk' 'ServiceAccounts-PSO' 'Member of*').Count) 'attack graph: a circular nesting does not draw an arrow back up its own chain'
+# RBCD: the attacker is the principal allowed to act on the target, which the detail names.
+$evilPc = @($graph.Nodes | Where-Object { $_.Label -eq 'EVILPC$' })
+Assert-True ((GEdge $graph 'EVILPC$' 'DC01$' 'Allowed to act on it (RBCD)').Count -eq 1 -and $evilPc.Count -eq 1 -and $evilPc[0].Level -eq 1) 'attack graph: the computer allowed to act on a DC through RBCD is one hop behind it'
+# Entry points added with the host checks: Zerologon, coercion relayed to LDAP, GPO and SYSVOL
+# secrets, a GPO that hands local Administrators to everyone, DSRM over the network.
+Assert-True ((GEdge $graph 'Any domain user' 'T0' 'Zerologon*').Count -eq 1 -and (GEdge $graph 'Any domain user' 'T0' 'Coerce a DC, relay to LDAP*').Count -eq 1) 'attack graph: a weak Netlogon secure channel and coercion relayed to LDAP are entry points to Tier 0'
+Assert-True (@((GEdge $graph 'Default Domain Policy' 'T0' 'Autologon password*') | Where-Object { $_.Unverified }).Count -eq 1 -and @((GEdge $graph 'mapdrives.bat' 'T0' 'Password in a SYSVOL script') | Where-Object { $_.Unverified }).Count -eq 1 -and (GEdge $graph 'Any domain user' 'mapdrives.bat' 'Read SYSVOL').Count -eq 1) 'attack graph: autologon and SYSVOL script passwords are dashed paths that any user can read'
+Assert-True (@((GEdge $graph 'Workstation Baseline: local Administrators' 'T0' 'Local admin by GPO') | Where-Object { $_.Unverified }).Count -eq 1 -and (GEdge $graph 'Any domain user' 'Workstation Baseline: local Administrators' 'Already in the group').Count -eq 1 -and -not @($graph.Nodes | Where-Object { $_.Label -like '*local Remote Desktop Users' }).Count) 'attack graph: a GPO that makes a broad group local admin is a path (dashed off the DC OU); local RDP users is not'
+Assert-True (@((GEdge $graph 'dc02.moosebank.local' 'T0' 'DSRM*') | Where-Object { $_.Unverified }).Count -eq 1 -and -not (GEdge $graph 'RODC01' 'T0' 'RODC allowed*').Count) 'attack graph: DSRM over the network is a dashed path; "may cache Tier 0" gives way to what the RODC already caches'
+Assert-True ((GEdge $graph 'Any domain user' 'svc_iis_deleg' 'Kerberoast').Count -eq 1 -and -not @($graph.Nodes | Where-Object { $_.Label -eq 'svc_web' }).Count) 'attack graph: a kerberoastable account that already has a path starts at the entry box; one without a path is not drawn'
+# The AI gets the same distinction as the map: an assumed step says so.
+$pathLines = @(Get-AttackPathLines -Findings $r.Findings -Pz $null -Max 200)
+Assert-True (@($pathLines | Where-Object { $_ -match 'Tier 0 \(assumed\)  via Password in a SYSVOL script' }).Count -eq 1 -and @($pathLines | Where-Object { $_ -match '  Tier 0  via Kerberoastable Tier 0' }).Count -ge 1) 'AI input: an assumed step toward Tier 0 says so, a shown one does not'
 $gKeys1 = (@($graph.Edges | ForEach-Object { $_.EdgeKey }) -join '|'); $gKeys2 = (@((Get-AttackGraph -Snapshot $demo -Index $r.Index -PrivMap $r.PrivMap -Findings $r.Findings).Edges | ForEach-Object { $_.EdgeKey }) -join '|')
 Assert-True ($gKeys1 -eq $gKeys2) 'attack graph is deterministic'
 Assert-True ($html -match "font-weight='700'>Any domain user</text>" -and $html -match 'The dark box <b>Any domain user</b>') 'attack map draws the entry box dark and explains it'

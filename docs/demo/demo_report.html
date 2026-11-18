@@ -243,179 +243,213 @@ document.addEventListener('DOMContentLoaded', function () {
           (      ) | |
   ________|   _/_  | |
 &lt;__________\______)\__)</pre><span>IDWolf: Active Directory Hygiene Report</span></h1>
-<div class="meta">Domain <b>moosebank.local</b> (MOOSEBANK) &middot; forest moosebank.local &middot; snapshot 2026-09-28 08:00 UTC by MOOSEBANK\auditor from PAW-01 via dc01.moosebank.local &middot; IDWolf v1.13 &middot; analysis 0,8s &middot; AI gemini-3.5-flash in 103,0s</div>
+<div class="meta">Domain <b>moosebank.local</b> (MOOSEBANK) &middot; forest moosebank.local &middot; snapshot 2026-09-28 08:00 UTC by MOOSEBANK\auditor from PAW-01 via dc01.moosebank.local &middot; IDWolf v1.14 &middot; analysis 1,5s &middot; AI gemini-3.5-flash-lite in 15,7s</div>
 <blockquote>Synthetic snapshot generated for testing and demonstration. No real directory data.</blockquote>
 <nav class="tabs" role="tablist"><button type="button" class="tab-btn" role="tab" data-tab="dashboard" aria-selected="true" onclick="idwTab('dashboard')">Dashboard</button><button type="button" class="tab-btn" role="tab" data-tab="details" aria-selected="false" onclick="idwTab('details')">Details</button></nav>
 <section id="tab-dashboard" class="tab-pane" role="tabpanel">
 <div class="panel hero"><svg viewBox='0 0 130 130' width='130' height='130' role='img' aria-label='1 / 100'><circle cx='65' cy='65' r='55.2' fill='none' stroke='#E8E2D4' stroke-width='15.6' /><circle cx='65' cy='65' r='55.2' fill='none' stroke='#E2372A' stroke-width='15.6' stroke-dasharray='3.47 346.83' transform='rotate(-90 65 65)' /><text x='65' y='72.8' text-anchor='middle' font-size='31.2' font-weight='800' fill='#161513'>1</text><text x='65' y='91' text-anchor='middle' font-size='11.05' fill='#5F5A51'>/ 100</text></svg><div class="hero-body"><div class="hero-kicker">moosebank.local &middot; 71 users and service accounts &middot; 35 computers &middot; 17 Tier 0 principals</div><div class="hero-title">Hygiene score</div><span class="sev-pill grade-f">Grade F &middot; Critical exposure</span><div class="pills"><span class="sev-pill sev-pill-critical">28 Critical</span><span class="sev-pill sev-pill-high">93 High</span><span class="sev-pill sev-pill-medium">86 Medium</span><span class="sev-pill sev-pill-low">34 Low</span></div><div class="meta">241 finding(s) &middot; 172 of 186 evaluated checks triggered &middot; <a href="#tab-details" onclick="return idwTab('details')">open the details</a></div><details class="score-how"><summary>How the score is computed</summary><p class="meta">Score = 100 &times; e<sup>&minus;penalty/100</sup>, where penalty sums a weight per triggered check at its worst severity (Critical 20, High 8, Medium 3, Low 1), capped by the worst severity present: any Critical check limits the score to 35 (grade E), any High to 65 (grade C). It never reaches zero, so a bad environment and a catastrophic one still rank differently. Per-object counts are shown separately so that many low-impact objects do not hide a single critical exposure.</p></details></div></div>
 <details open class='ai-details'><summary><h2><span class='ai-robot' role='img' aria-label='AI' style='margin-right:8px'>&#x1F916;</span>AI summary and remediation plan</h2></summary>
-<div class='ai-section'><div class='ai-badge'>AI-assisted &middot; gemini-3.5-flash &middot; 215 identifiers pseudonymized before sending</div>
-<p> me-domain Active Directory environment moosebank.local has a critical security posture scoring 1/100, leaving Tier 0 assets at immediate risk of compromise. Multiple low-complexity attack vectors exist, including domain controller vulnerabilities such as missing noPac updates and unenforced Netlogon secure channels, combined with active AD CS misconfigurations (ESC1, ESC2, ESC13) allowing unauthenticated or domain-user level elevation to Domain Admin. Critical identity hygiene issues include exposed SYSVOL passwords, cleartext credentials, writable NETLOGON shares, and non-default DCSync/AdminSDHolder control rights held by standard accounts. Immediate remediation must focus on securing Active Directory Certificate Services, patching core domain controllers, revoking unauthorized domain rights, and rotating stale privileged credentials.</p>
+<div class='ai-section'><div class='ai-badge'>AI-assisted &middot; gemini-3.5-flash-lite &middot; 215 identifiers pseudonymized before sending</div>
+<p>The Active Directory domain moosebank.local exhibits an extremely critical security posture with a hygiene score of 1 out of 100, indicating widespread misconfigurations and multiple pathways to complete domain compromise. Intruders can leverage unpatched vulnerabilities like ZeroLogon and noPac alongside severe certificate services misconfigurations (such as ESC1, ESC15, and ESC8 NTLM relay) to rapidly escalate privileges to Tier 0. Furthermore, critical infrastructure weaknesses include writable SYSVOL shares, exposed Group Policy Preferences passwords, and multiple accounts with unrotated credentials or dangerous delegated permissions. Immediate intervention is required to patch domain controllers, harden AD CS templates, secure SYSVOL permissions, and revoke unauthorized administrative and replication rights.</p>
 <h3>Can the findings be chained into full compromise?</h3>
 <p><b>Verdict: likely</b> &middot; least access needed: any domain user</p>
-<p>The environment presents trivial path combinations allowing low-privileged domain users to achieve complete Tier 0 domain takeover. Exposure across AD CS configuration, unpatched domain controllers, and excess replication rights ensures high attack chain reliability.</p>
-<div style='margin:10px 0'><b>Standard Domain User to Domain Admin via AD CS ESC1</b> <span class='check-id'>from: any domain user</span> <span class='check-id'>confidence: high</span><div class='meta' style='margin:4px 0'><code>adcs_esc1</code></div><div>An authenticated low-privileged account requests a certificate using Moose ESC1 Vulnerable specifying a Domain Admin sAMAccountName, immediately receiving full administrative privileges.</div><br><span class='meta'>Objects: Moose ESC1 Vulnerable</span>
+<p>An attacker with standard domain user access can leverage multiple independent paths to achieve full domain compromise, including certificate template abuse (ESC1), Kerberoasting of privileged accounts, and exploiting unpatched domain controller vulnerabilities.</p>
+<div style='margin:10px 0'><b>AD CS ESC1 Certificate Escalation</b> <span class='check-id'>from: any domain user</span> <span class='check-id'>confidence: high</span><div class='meta' style='margin:4px 0'><code>adcs_esc1</code></div><div>A standard domain user requests a certificate via Moose ESC1 Vulnerable specifying a Domain Admin principal in the subject alternative name, authenticates via Schannel, and gains Tier 0 control.</div><br><span class='meta'>Objects: Moose ESC1 Vulnerable</span>
 <ol class='meta' style='margin:6px 0 0 18px'>
-<li><code>adcs_esc1</code> Domain Admin Client Authentication Certificate (Moose ESC1 Vulnerable) &middot; <span class='check-id'>shown by the findings</span></li>
+<li><code>adcs_esc1</code> Ability to request a certificate as a Domain Admin (Moose ESC1 Vulnerable) &middot; <span class='check-id'>shown by the findings</span></li>
 </ol>
-<div class='meta' style='margin-top:4px'>Break it here: <code>adcs_esc1</code> &middot; Disabling ENROLLEE_SUPPLIES_SUBJECT or restricting enrollment rights stops unauthorized identity impersonation.</div>
+<div class='meta' style='margin-top:4px'>Break it here: <code>adcs_esc1</code> &middot; Disabling or reconfiguring Moose ESC1 Vulnerable removes enrollee-supplied subject capability.</div>
 </div>
-<div style='margin:10px 0'><b>Account backdoor.user Direct DCSync Replication</b> <span class='check-id'>from: backdoor.user</span> <span class='check-id'>confidence: high</span><div class='meta' style='margin:4px 0'><code>dcsync_rights</code></div><div>Control over backdoor.user enables immediate execution of DCSync against the domain head to pull all domain account hashes, granting full control.</div><br><span class='meta'>Objects: backdoor.user</span>
+<div style='margin:10px 0'><b>Privileged Kerberoasting</b> <span class='check-id'>from: any domain user</span> <span class='check-id'>confidence: medium</span><div class='meta' style='margin:4px 0'><code>privileged_kerberoastable</code></div><div>An attacker requests a service ticket for svc_sql_admin (Domain Admin), cracks the ticket offline, and uses the recovered password to authenticate as a Domain Admin.</div><br><span class='meta'>Objects: svc_sql_admin</span>
 <ol class='meta' style='margin:6px 0 0 18px'>
-<li><code>dcsync_rights</code> Domain Controller Password Hashes (krbtgt, Administrators) (backdoor.user) &middot; <span class='check-id'>shown by the findings</span></li>
+<li><code>privileged_kerberoastable</code> Kerberos service ticket for a Domain Admin account (svc_sql_admin) &middot; <span class='check-id'>shown by the findings</span></li>
 </ol>
-<div class='meta' style='margin-top:4px'>Break it here: <code>dcsync_rights</code> &middot; Revoking DS-Replication-Get-Changes-All from backdoor.user removes secret replication privileges.</div>
+<div class='meta' style='margin-top:4px'>Break it here: <code>privileged_kerberoastable</code> &middot; Removing SPNs from privileged accounts or enforcing strong, frequently rotated passwords stops offline cracking.</div>
+</div>
+<div style='margin:10px 0'><b>DCSync via Explicit Rights</b> <span class='check-id'>from: MOOSEBANK\backdoor.user</span> <span class='check-id'>confidence: high</span><div class='meta' style='margin:4px 0'><code>dcsync_rights</code></div><div>Compromising backdoor.user allows the principal to invoke directory replication functions against the domain root and extract all domain secrets.</div><br><span class='meta'>Objects: MOOSEBANK\backdoor.user</span>
+<ol class='meta' style='margin:6px 0 0 18px'>
+<li><code>dcsync_rights</code> DS-Replication-Get-Changes-All rights on domain head (MOOSEBANK\backdoor.user) &middot; <span class='check-id'>shown by the findings</span></li>
+</ol>
+<div class='meta' style='margin-top:4px'>Break it here: <code>dcsync_rights</code> &middot; Removing the explicit DCSync ACE from MOOSEBANK\backdoor.user prevents unauthorized replication.</div>
+</div>
+<div style='margin:10px 0'><b>GPO Abuse leading to Domain Controller Code Execution</b> <span class='check-id'>from: MOOSEBANK\Helpdesk</span> <span class='check-id'>confidence: medium</span><div class='meta' style='margin:4px 0'><code>gpo_dangerous_acl</code> &rarr; <code>gpo_runs_code_from_share</code></div><div>Members of Helpdesk modify MooseBank DC Extra to execute scripts or tasks on domain controllers during startup, yielding complete control over all DCs.</div><br><span class='meta'>Objects: MooseBank DC Extra</span>
+<ol class='meta' style='margin:6px 0 0 18px'>
+<li><code>gpo_dangerous_acl</code> GenericWrite over MooseBank DC Extra linked to Domain Controllers OU (MooseBank DC Extra) &middot; <span class='check-id'>shown by the findings</span></li>
+<li><code>gpo_runs_code_from_share</code> Execution of arbitrary code on domain controllers (MooseBank DC Extra: \\fs01.moosebank.local\it$\dc-tools.cmd) &middot; <span class='check-id'>shown by the findings</span></li>
+</ol>
+<div class='meta' style='margin-top:4px'>Break it here: <code>gpo_dangerous_acl</code> &middot; Revoking GenericWrite permissions on MooseBank DC Extra stops unauthorized GPO modification.</div>
 </div>
 <h3>Check by hand (assumptions behind the chains)</h3><ul>
-<li>Are the actual credentials for svc_backup and svc_sql_admin susceptible to immediate offline dictionary cracking? <span class='meta'><code>privileged_kerberoastable</code></span></li>
-<li>Is SMB signing enforced network-wide across workstation subnets to prevent SMB relay targeting? <span class='meta'><code>smb_client_signing_not_required</code></span></li>
+<li>Are vulnerable AD CS certificate templates (such as Moose ESC1 Vulnerable and Moose ESC15 SchemaV1) actively monitored or restricted by application controls? <span class='meta'><code>adcs_esc1</code> <code>adcs_esc15</code></span></li>
+<li>Is network reachability restricted between workstations and domain controllers for WebDAV/RPC coercion vectors? <span class='meta'><code>coercion_unfiltered_dc</code> <code>webclient_on_dc</code></span></li>
+<li>Are the accounts flagged for Kerberoasting (svc_sql_admin, svc_backup) protected by exceptionally long, randomly generated passwords? <span class='meta'><code>privileged_kerberoastable</code> <code>kerberoastable_user</code></span></li>
+<li>Is network traffic between domain controllers and member servers subjected to mandatory SMB and LDAP signing in practice? <span class='meta'><code>ldap_signing_not_required</code> <code>smb_client_signing_not_required</code></span></li>
 </ul>
 <h3>Chains considered and ruled out</h3><ul>
-<li><b>Coercion to WebDAV Relay via Disabled WebClient</b> <span class='meta'><code>webclient_on_dc</code></span><br>WebClient service is running on dc02.moosebank.local; chain was evaluated as viable rather than rejected.</li>
+<li><b>Anonymous LDAP Enumeration to Domain Compromise</b> <span class='meta'><code>anonymous_ldap_enabled</code></span><br>While anonymous LDAP operations are enabled via dSHeuristics, anonymous access alone does not grant write or administrative privileges required for domain control without an additional credential or exploit chain.</li>
 </ul>
 <h3>Quick wins</h3><ul>
-<li>Disable user-supplied subject names (ENROLLEE_SUPPLIES_SUBJECT) on certificate template Moose ESC1 Vulnerable.</li>
-<li>Remove write permissions for &#39;Domain Users&#39; on the NETLOGON share folder \\moosebank.local\SYSVOL\moosebank.local\scripts.</li>
-<li>Enforce mandatory password requirement and reset credentials for account temp.user.</li>
-<li>Set RequireStrongKey = 1 to enforce Netlogon secure channel protection on Domain Controllers.</li>
-<li>Disable AlwaysInstallElevated policy setting in the Default Domain Policy GPO.</li>
+<li>Disable the WebClient service via GPO across all domain controllers to mitigate web-based NTLM coercion vectors.</li>
+<li>Disable WDigest authentication via GPO on domain controllers to prevent cleartext credential caching in LSASS.</li>
+<li>Enforce strong Kerberos encryption types and disable RC4/DES where possible across domain controllers.</li>
+<li>Remove unnecessary accounts from privileged groups such as Domain Admins and Backup Operators.</li>
+<li>Enable Account Lockout threshold settings in the Default Domain Policy to prevent brute-force attacks.</li>
 </ul>
 <h3>Suggested remediation order</h3><ol>
-<li><b>Remediate AD CS Escalation Paths (ESC1, ESC2, ESC13)</b> <span class='check-id'>effort: medium</span><br>Breaks instant privilege escalation paths from any domain user to Tier 0 identity certificate issuance.<br><span class='meta'>Checks: <code>adcs_esc1</code> <code>adcs_esc2</code> <code>adcs_esc13</code></span><br><span class='meta'>Objects: Moose ESC1 Vulnerable, Moose ESC2 AnyPurpose, Moose ESC13 PolicyLink</span><br><span class='meta'>Caveats: Ensure legitimate PKI clients are identified before removing requester-supplied subject flags or broad enrollment rights.</span></li>
-<li><b>Patch Domain Controllers and Enforce RPC Security Controls</b> <span class='check-id'>effort: high</span><br>Mitigates direct DC takeovers (noPac, ZeroLogon) and RPC coercion vectors.<br><span class='meta'>Checks: <code>nopac_unpatched_dc</code> <code>netlogon_vulnerable_channel</code> <code>coercion_unfiltered_dc</code></span><br><span class='meta'>Objects: dc02.moosebank.local, dc01.moosebank.local</span><br><span class='meta'>Caveats: Requires domain controller OS updates and service restarts; test RPC dependencies for legacy services prior to strict enforcement.</span></li>
-<li><b>Revoke Unauthorized Tier 0 ACLs and DCSync Privileges</b> <span class='check-id'>effort: medium</span><br>Eliminates direct persistence and control points over Domain Controllers and AdminSDHolder.<br><span class='meta'>Checks: <code>dcsync_rights</code> <code>dangerous_ace_tier0</code></span><br><span class='meta'>Objects: backdoor.user, Exchange Windows Permissions, Helpdesk, IT-Ops</span><br><span class='meta'>Caveats: Verify Exchange hybrid and synchronization service account requirements before stripping write rights.</span></li>
-<li><b>Clean Up Credentials in SYSVOL, GPOs, and Accounts</b> <span class='check-id'>effort: low</span><br>Removes plain-text credential exposures accessible to all domain users.<br><span class='meta'>Checks: <code>gpp_cpassword</code> <code>gpo_autologon_password</code> <code>sysvol_writable</code> <code>pwq_empty_password</code></span><br><span class='meta'>Objects: NETLOGON, temp.user, Default Domain Policy</span><br><span class='meta'>Caveats: Changing SYSVOL script access may impact non-standard deployment scripts; audit network drive mappings.</span></li>
-<li><b>Rotate Privileged Credentials and Enforce Account Protection</b> <span class='check-id'>effort: medium</span><br>Stops offline credential cracking attacks (Kerberoasting/AS-REP Roasting) and golden ticket persistence.<br><span class='meta'>Checks: <code>krbtgt_password_old</code> <code>privileged_kerberoastable</code> <code>asrep_roastable</code></span><br><span class='meta'>Objects: krbtgt, svc_backup, svc_sql_admin, adm.gialli</span><br><span class='meta'>Caveats: Rotate krbtgt password twice over 24-48 hours; verify service availability for SPN accounts after password changes.</span></li>
+<li><b>Harden Active Directory Certificate Services (AD CS) and Disable Vulnerable Templates</b> <span class='check-id'>effort: high</span><br>Removes multiple critical escalation paths (ESC1, ESC2, ESC3, ESC4, ESC8, ESC13, ESC15) that allow low-privileged users to request high-privilege or client-authentication certificates for immediate domain takeover.<br><span class='meta'>Checks: <code>adcs_esc1</code> <code>adcs_esc2</code> <code>adcs_esc3</code> <code>adcs_esc4</code> <code>adcs_esc5</code> <code>adcs_esc6</code> <code>adcs_esc7</code> <code>adcs_esc8</code> <code>adcs_esc9</code> <code>adcs_esc10</code> <code>adcs_esc11</code> <code>adcs_esc13</code> <code>adcs_esc15</code> <code>adcs_esc17</code> <code>adcs_weak_ca_key</code></span><br><span class='meta'>Objects: Moose ESC1 Vulnerable, Moose ESC2 AnyPurpose, Moose ESC3 EnrollAgent, Moose ESC4 WeakACL, Moose ESC9 NoSecExt, Moose ESC15 SchemaV1, Moose ESC13 PolicyLink, MOOSEBANK-CA</span><br><span class='meta'>Caveats: Disabling or modifying certificate templates and CA settings may impact applications requiring automated enrollment. Test template modifications in a staging environment before production deployment.</span></li>
+<li><b>Patch Domain Controllers and Enforce Secure Channels</b> <span class='check-id'>effort: high</span><br>Closes critical execution and impersonation vectors (ZeroLogon, noPac) and prevents NTLM relay attacks against domain controllers by enforcing signing and channel binding.<br><span class='meta'>Checks: <code>nopac_unpatched_dc</code> <code>netlogon_vulnerable_channel</code> <code>ldap_signing_not_required</code> <code>ldap_channel_binding_off</code> <code>smb1_server_enabled</code></span><br><span class='meta'>Objects: dc02.moosebank.local, Domain Controllers</span><br><span class='meta'>Caveats: Enforcing LDAP signing and channel binding can break legacy applications relying on unsigned or unchannel-bound LDAP queries. Audit legacy traffic prior to enforcement.</span></li>
+<li><b>Secure SYSVOL, GPOs, and Remove Hardcoded Credentials</b> <span class='check-id'>effort: medium</span><br>Stops attackers from modifying Group Policy Objects or planting scripts and credentials in SYSVOL to achieve arbitrary code execution on domain controllers and workstations.<br><span class='meta'>Checks: <code>sysvol_writable</code> <code>gpp_cpassword</code> <code>gpo_dangerous_acl</code> <code>gpo_autologon_password</code> <code>gpo_runs_code_from_share</code> <code>sysvol_script_secrets</code></span><br><span class='meta'>Objects: NETLOGON (scripts), MooseBank DC Extra, Default Domain Policy, GPO {31B2F340-016D-11D2-945F-00C04FB984F9}, GPO {22222222-2222-2222-2222-222222222222}</span><br><span class='meta'>Caveats: Ensure deployment scripts or administrative tools do not rely on writable SYSVOL paths or embedded credentials before revoking permissions.</span></li>
+<li><b>Revoke Unauthorized Tier 0 Permissions and Clean Up Dangerous ACLs</b> <span class='check-id'>effort: medium</span><br>Eliminates excessive administrative privileges and dangerous access controls (such as unauthorized DCSync rights, AdminSDHolder modifications, and readable gMSA/LAPS secrets) granted to non-Tier 0 principals.<br><span class='meta'>Checks: <code>dcsync_rights</code> <code>sync_laps_rights</code> <code>dangerous_ace_anywhere</code> <code>dangerous_ace_tier0</code> <code>kds_root_key_readable</code> <code>laps_readers</code> <code>gmsa_password_readable</code></span><br><span class='meta'>Objects: MOOSEBANK\backdoor.user, MOOSEBANK\MSOL_a1b2c3d4e5f6, MOOSEBANK\svc.dirsync, MOOSEBANK\Helpdesk, MOOSEBANK\IT-Ops, MOOSEBANK\Exchange Windows Permissions, gmsa_sql$</span><br><span class='meta'>Caveats: Removing permissions from built-in or integration accounts (such as Exchange Windows Permissions or sync accounts) requires validating proper split-permissions configurations and administrative boundaries.</span></li>
+<li><b>Rotate and Secure Privileged Credentials and Kerberos Settings</b> <span class='check-id'>effort: medium</span><br>Mitigates Kerberoasting, AS-REP roasting, and ticket forgery attacks by enforcing strong encryption types (AES), disabling pre-authentication requirements, and rotating long-lived credentials.<br><span class='meta'>Checks: <code>krbtgt_password_old</code> <code>rodc_krbtgt_password_old</code> <code>cloud_kerberos_trust_key_old</code> <code>privileged_kerberoastable</code> <code>asrep_roastable</code> <code>privileged_password_old</code> <code>privileged_password_never_expires</code> <code>spn_account_rc4</code> <code>des_enabled</code></span><br><span class='meta'>Objects: krbtgt, krbtgt_12345, krbtgt_AzureAD, svc_sql_admin, svc_backup, adm.gialli, svc_legacy, adm.bianchi</span><br><span class='meta'>Caveats: Rotating the krbtgt password twice in succession invalidates all existing Kerberos tickets. Ensure domain replication is healthy before rotation.</span></li>
+<li><b>Harden Domain Controller Services and Attack Surface Configurations</b> <span class='check-id'>effort: low</span><br>Disables unnecessary services (Print Spooler, WebClient) and insecure authentication features (WDigest, basic WinRM) on domain controllers to prevent coercion and local credential harvesting.<br><span class='meta'>Checks: <code>always_install_elevated</code> <code>point_and_print_unsafe</code> <code>webclient_on_dc</code> <code>coercion_unfiltered_dc</code> <code>winrm_basic_auth</code> <code>wdigest_cleartext</code> <code>spooler_on_dc</code></span><br><span class='meta'>Objects: Default Domain Policy, Domain Controllers, dc02.moosebank.local, MOOSEBANK-CA</span><br><span class='meta'>Caveats: Verify whether printing services or legacy web-based management tools depend on the Print Spooler or WebClient before disabling.</span></li>
 </ol>
 <h3>Monitoring until fixed</h3><div class='table-wrap'><table><tr><th>Checks</th><th>Event IDs</th><th>Guidance</th></tr>
-<tr class='data-row'><td><code>dcsync_rights</code></td><td>4662</td><td>Monitor for Directory Service access requests containing DS-Replication-Get-Changes-All (GUID 1131f6ad-9c4d-11d1-bf6d-00c04fd7d5a0) originating from non-DC accounts like backdoor.user.</td></tr>
-<tr class='data-row'><td><code>adcs_esc1</code> <code>adcs_esc2</code></td><td>4886, 4887</td><td>Alert on certificate enrollment requests against Moose ESC1 Vulnerable or Moose ESC2 AnyPurpose where Subject Alternative Name (SAN) modifications are submitted by non-administrative users.</td></tr>
-<tr class='data-row'><td><code>nopac_unpatched_dc</code></td><td>4741, 4742</td><td>Detect machine account creation or modification events where sAMAccountName is altered to mimic a Domain Controller without trailing dollar signs.</td></tr>
+<tr class='data-row'><td><code>dcsync_rights</code> <code>sync_laps_rights</code></td><td>4662</td><td>Monitor for Directory Service Access events (4662) where the DS-Replication-Get-Changes or DS-Replication-Get-Changes-All extended rights are requested against the domain object by non-standard accounts.</td></tr>
+<tr class='data-row'><td><code>adcs_esc1</code> <code>adcs_esc8</code> <code>adcs_esc15</code></td><td>4886, 4887</td><td>Monitor AD CS Certificate Services audit logs for event IDs 4886 (certificate request received) and 4887 (certificate issued), paying attention to requests containing alternative subject names or unusual user principal names.</td></tr>
+<tr class='data-row'><td><code>netlogon_vulnerable_channel</code> <code>nopac_unpatched_dc</code></td><td>5827, 5828, 5830, 4741</td><td>Monitor System and Security logs for Netlogon secure channel establishment attempts using vulnerable cryptographic algorithms or anomalous computer account creation bursts (Event 4741).</td></tr>
+<tr class='data-row'><td><code>privileged_kerberoastable</code> <code>kerberoastable_user</code></td><td>4769</td><td>Detect potential Kerberoasting activity by monitoring for Kerberos service ticket requests (Event 4769) requesting RC4 encryption (0x17) or high volumes of TGS requests from a single user account in a short timeframe.</td></tr>
+<tr class='data-row'><td><code>coercion_unfiltered_dc</code> <code>webclient_on_dc</code></td><td>4624, 4672</td><td>Monitor for anomalous network logon events (Event 4624 with Logon Type 3) using NTLM authentication against domain controllers, especially originating from unexpected internal hosts or service accounts.</td></tr>
 </table></div>
 <h3>Exploitability triage (fix order for this environment)</h3><div class='table-wrap'><table class='ai-triage'><tr><th>#</th><th>Checks</th><th>Objects</th><th>Why</th></tr>
-<tr class='data-row'><td>1</td><td><code>adcs_esc1</code></td><td>Moose ESC1 Vulnerable</td><td>Allows any standard user immediate elevation to full Domain Admin via certificate SAN injection.</td></tr>
-<tr class='data-row'><td>2</td><td><code>dcsync_rights</code></td><td>backdoor.user</td><td>Grants direct execution of DCSync replication to extract all domain password hashes.</td></tr>
-<tr class='data-row'><td>3</td><td><code>nopac_unpatched_dc</code></td><td>dc02.moosebank.local</td><td>Provides a reliable privilege escalation path to DC host compromise from any authenticated account.</td></tr>
-<tr class='data-row'><td>4</td><td><code>constrained_delegation_protocol_transition</code></td><td>svc_iis_deleg</td><td>Enables arbitrary user impersonation against CIFS services on domain controllers.</td></tr>
-<tr class='data-row'><td>5</td><td><code>sysvol_writable</code></td><td>NETLOGON</td><td>Allows authenticated attackers to modify domain-wide logon scripts for widespread code execution.</td></tr>
+<tr class='data-row'><td>1</td><td><code>dcsync_rights</code></td><td>MOOSEBANK\backdoor.user, MOOSEBANK\MSOL_a1b2c3d4e5f6</td><td>Direct DCSync rights grant immediate ability to extract all domain password hashes and achieve full domain compromise.</td></tr>
+<tr class='data-row'><td>2</td><td><code>adcs_esc1</code> <code>adcs_esc15</code></td><td>Moose ESC1 Vulnerable, Moose ESC15 SchemaV1</td><td>Allows low-privileged users to request certificates for arbitrary accounts including Domain Admins.</td></tr>
+<tr class='data-row'><td>3</td><td><code>nopac_unpatched_dc</code> <code>netlogon_vulnerable_channel</code></td><td>dc02.moosebank.local, Domain Controllers</td><td>Unpatched domain controller vulnerabilities allow unauthenticated attackers to elevate to Domain Admin instantly.</td></tr>
+<tr class='data-row'><td>4</td><td><code>sysvol_writable</code> <code>gpp_cpassword</code></td><td>NETLOGON (scripts), GPO {31B2F340-016D-11D2-945F-00C04FB984F9}</td><td>Writable SYSVOL and exposed GPP passwords enable trivial code execution and credential theft across the domain.</td></tr>
+<tr class='data-row'><td>5</td><td><code>privileged_kerberoastable</code> <code>asrep_roastable</code></td><td>svc_sql_admin, adm.gialli, svc_backup</td><td>Exposes privileged service and user accounts to offline brute-force credential recovery.</td></tr>
 </table></div>
 <h3>Attack vectors seen in recent attacks</h3><div class='table-wrap'><table class='ai-triage'><tr><th>Checks</th><th>Vector</th><th>Publicly known</th><th>Why it matters here</th></tr>
-<tr class='data-row'><td><code>adcs_esc1</code></td><td>AD CS Template Abuse (ESC1)</td><td>Widely reported in ransomware and advanced threat actor intrusions (Certified Pre-Owned research).</td><td>Moose ESC1 Vulnerable allows Domain Users to supply arbitrary subject names with client authentication.</td></tr>
-<tr class='data-row'><td><code>nopac_unpatched_dc</code></td><td>noPac / SamAccountName Spoofing (CVE-2021-42278 / CVE-2021-42287)</td><td>Actively exploited across enterprise environments post-disclosure.</td><td>dc02.moosebank.local is missing build patches while Machine Account Quota is set to 10.</td></tr>
-<tr class='data-row'><td><code>netlogon_vulnerable_channel</code></td><td>ZeroLogon (CVE-2020-1472)</td><td>Widely documented and integrated into automated attack frameworks.</td><td>Domain Controllers lack enforced secure channel protection.</td></tr>
+<tr class='data-row'><td><code>netlogon_vulnerable_channel</code></td><td>ZeroLogon (CVE-2020-1472)</td><td>Widely exploited by ransomware groups and threat actors for initial domain takeover via Netlogon cryptographic weakness.</td><td>Domain controllers have weakened Netlogon secure channel enforcement, permitting immediate exploitation.</td></tr>
+<tr class='data-row'><td><code>nopac_unpatched_dc</code></td><td>noPac (CVE-2021-42278 / CVE-2021-42287)</td><td>Extensively used in intrusion campaigns to spoof domain controller computer accounts and escalate privileges.</td><td>Domain controller dc02.moosebank.local lacks the necessary security updates and permits high machine account quotas.</td></tr>
+<tr class='data-row'><td><code>adcs_esc1</code> <code>adcs_esc8</code></td><td>AD CS Certificate Template Abuse &amp; NTLM Relay (ESC1 / ESC8)</td><td>Core vector in numerous ransomware and APT intrusions involving Active Directory Certificate Services exploitation.</td><td>Templates allow requester-supplied subject names and web enrollment is active without adequate protection.</td></tr>
+<tr class='data-row'><td><code>gpp_cpassword</code></td><td>Group Policy Preferences Password Harvesting</td><td>Standard automated check in nearly all penetration tests and red team engagements targeting Windows domains.</td><td>Exposed cpassword strings found in SYSVOL files.</td></tr>
+<tr class='data-row'><td><code>privileged_kerberoastable</code> <code>kerberoastable_user</code></td><td>Kerberoasting</td><td>Pervasive technique in enterprise intrusions through 2026 for extracting service account credentials.</td><td>Multiple privileged and standard user accounts feature Service Principal Names with old or weak passwords.</td></tr>
 </table></div>
 <h3>Attack paths toward Tier 0</h3>
-<div style='margin:10px 0'><b>Domain Escalation via AD CS ESC1 Template</b> <span class="sev-pill sev-pill-critical">Critical</span>
-<div class='meta' style='margin:4px 0'>MOOSEBANK\Domain Users -&gt; Request certificate from Moose ESC1 Vulnerable supplying Domain Admin SAN &rarr; Moose ESC1 Vulnerable -&gt; Authenticate as Domain Admin to Tier 0</div>
-<div>Any domain user can request a client authentication certificate matching high-privileged identities, yielding full domain takeover. Modify Moose ESC1 Vulnerable to disallow enrollee-supplied subjects.</div>
+<div style='margin:10px 0'><b>Kerberoasting Privileged Accounts</b> <span class="sev-pill sev-pill-critical">Critical</span>
+<div class='meta' style='margin:4px 0'>svc_backup -&gt; Request service ticket for SPN backup/bkp01.moosebank.local &rarr; svc_backup -&gt; Offline password cracking &rarr; svc_backup -&gt; Tier 0 (assumed)</div>
+<div>An attacker with standard domain user access requests a Kerberos service ticket for a privileged service account with a weak password, cracks it offline, and gains administrative control.</div>
 </div>
-<div style='margin:10px 0'><b>Direct Domain Takeover via Non-Default DCSync Rights</b> <span class="sev-pill sev-pill-critical">Critical</span>
-<div class='meta' style='margin:4px 0'>backdoor.user -&gt; Replicate AD secrets via DCSync &rarr; Tier 0 -&gt; Full domain compromise via hash extraction</div>
-<div>backdoor.user possesses ExtendedRight DS-Replication-Get-Changes-All on the domain root, enabling full extraction of domain credentials. Revoke DCSync rights from backdoor.user.</div>
+<div style='margin:10px 0'><b>AD CS ESC1 Certificate Enrollment</b> <span class="sev-pill sev-pill-critical">Critical</span>
+<div class='meta' style='margin:4px 0'>MOOSEBANK\Domain Users -&gt; Enroll in Moose ESC1 Vulnerable with alternate subject name &rarr; Moose ESC1 Vulnerable -&gt; Authenticate as Domain Admin using issued certificate &rarr; Tier 0 (assumed)</div>
+<div>Low-privileged domain users can request certificates from a vulnerable template supplying an arbitrary subject name mapped to a privileged account, achieving full domain compromise.</div>
 </div>
-<div style='margin:10px 0'><b>Privilege Escalation via Constrained Delegation with Protocol Transition</b> <span class="sev-pill sev-pill-critical">Critical</span>
-<div class='meta' style='margin:4px 0'>svc_iis_deleg -&gt; Perform protocol transition (S4U2Self/S4U2Proxy) to cifs/dc01.moosebank.local &rarr; cifs/dc01.moosebank.local -&gt; Impersonate arbitrary privileged user on DC</div>
-<div>svc_iis_deleg is configured with protocol transition targeting domain controller services, allowing arbitrary account impersonation against dc01.moosebank.local. Remove protocol transition rights from svc_iis_deleg.</div>
+<div style='margin:10px 0'><b>RBCD Delegation Abuse against Domain Controllers</b> <span class="sev-pill sev-pill-critical">Critical</span>
+<div class='meta' style='margin:4px 0'>EVILPC$ -&gt; Configure Resource-Based Constrained Delegation on DC01$ &rarr; DC01$ -&gt; Impersonate privileged user via S4U2Self/S4U2Proxy &rarr; Tier 0 (assumed)</div>
+<div>Control over an object with RBCD configured targeting a domain controller allows an intruder to forge authentication tickets for privileged users, leading to Tier 0 control.</div>
 </div>
-<div style='margin:10px 0'><b>Domain Controller Takeover via noPac Vulnerability</b> <span class="sev-pill sev-pill-critical">Critical</span>
-<div class='meta' style='margin:4px 0'>Any Domain User -&gt; Create computer account using MachineAccountQuota &rarr; Computer Account -&gt; Rename sAMAccountName to match dc02.moosebank.local without &#39;$&#39; &rarr; dc02.moosebank.local -&gt; Request TGT and exploit missing noPac patch to obtain Domain Admin TGT</div>
-<div>Unpatched DC dc02.moosebank.local coupled with non-zero MachineAccountQuota permits unprivileged users to request DC-privileged tickets. Apply the noPac patch to dc02.moosebank.local.</div>
+<div style='margin:10px 0'><b>DCSync via Direct Domain Rights</b> <span class="sev-pill sev-pill-critical">Critical</span>
+<div class='meta' style='margin:4px 0'>MOOSEBANK\backdoor.user -&gt; Invoke DS-Replication-Get-Changes-All on domain head &rarr; MOOSEBANK\backdoor.user -&gt; Extract domain credential database &rarr; Tier 0</div>
+<div>An account holding explicit DCSync replication rights can replicate all domain password hashes directly from the domain controllers, achieving full domain compromise.</div>
 </div>
-<div style='margin:10px 0'><b>Domain Takeover via Unconstrained Delegation Computer Account</b> <span class="sev-pill sev-pill-high">High</span>
-<div class='meta' style='margin:4px 0'>SRV-PRINT01$ -&gt; Coerce authentication from a Domain Controller to SRV-PRINT01$ &rarr; SRV-PRINT01$ -&gt; Extract cached DC TGT from LSASS memory to compromise Tier 0</div>
-<div>SRV-PRINT01$ is configured with unconstrained delegation, permitting extraction of administrative TGTs upon authentication. Remove TRUSTED_FOR_DELEGATION from SRV-PRINT01$.</div>
+<div style='margin:10px 0'><b>GPO Abuse Leading to DC Control</b> <span class="sev-pill sev-pill-critical">Critical</span>
+<div class='meta' style='margin:4px 0'>MooseBank DC Extra -&gt; Modify machine startup script or tasks linked to Domain Controllers OU &rarr; MooseBank DC Extra -&gt; Execute arbitrary code on domain controllers &rarr; Tier 0</div>
+<div>Control over a GPO linked to the Domain Controllers OU allows an intruder to deploy malicious startup scripts or tasks executed with SYSTEM privileges on all domain controllers.</div>
+</div>
+<div style='margin:10px 0'><b>Unconstrained Delegation Exploitation</b> <span class="sev-pill sev-pill-high">High</span>
+<div class='meta' style='margin:4px 0'>SRV-PRINT01$ -&gt; Wait for privileged user authentication or coerce connection &rarr; SRV-PRINT01$ -&gt; Capture TGT from memory cache &rarr; Tier 0 (assumed)</div>
+<div>Compromise of a non-DC computer configured with unconstrained delegation allows capture of forwarded Kerberos TGTs from administrative users connecting to the host.</div>
 </div>
 <h3>Remediation scripts (review before running)</h3>
 <p class='meta'>Generated PowerShell using native cmdlets, with object names as placeholders. Treat as a starting point: read it, substitute the real objects, and test in a lab first.</p>
-<div style='margin:10px 0'><span class='check-id'>Fix for <code>adcs_esc1</code></span>
-<div class='ai-script'>Set-ADCSTemplate -Name &#39;Moose ESC1 Vulnerable&#39; -AutoEnrollment False -msPKI-Certificate-Name-Flag 0</div>
-<div class='meta'>Caveats: Ensure target template object name matches and test application authentication flow post-update.</div>
+<div style='margin:10px 0'><span class='check-id'>Fix for <code>adcs_esc6</code></span>
+<div class='ai-script'>certutil -setreg CA\EditFlags -EDITF_ATTRIBUTESUBJECTALTNAME2</div>
+<div class='meta'>Caveats: Clearing EDITF_ATTRIBUTESUBJECTALTNAME2 removes requester-supplied SAN support on the CA. Verify that no legitimate applications rely on this flag before executing.</div>
 </div>
-<div style='margin:10px 0'><span class='check-id'>Fix for <code>machine_account_quota</code></span>
-<div class='ai-script'>Set-ADDomain -Identity &#39;moosebank.local&#39; -Replace @{&#39;ms-DS-MachineAccountQuota&#39;=0}</div>
-<div class='meta'>Caveats: May break automated domain-join processes relying on non-administrative user credentials.</div>
+<div style='margin:10px 0'><span class='check-id'>Fix for <code>wdigest_cleartext</code></span>
+<div class='ai-script'>Set-ItemProperty -Path &#39;HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\WDigest&#39; -Name &#39;UseLogonCredential&#39; -Value 0</div>
+<div class='meta'>Caveats: Disables WDigest cleartext credential caching in LSASS. Requires a reboot or service restart to take full effect.</div>
 </div>
-<div style='margin:10px 0'><span class='check-id'>Fix for <code>pwq_empty_password</code></span>
-<div class='ai-script'>Set-ADAccountPassword -Identity &#39;temp.user&#39; -Reset -NewPassword (ConvertTo-SecureString &#39;ChangeMe123!Secure&#39; -AsPlainText -Force)
-Set-ADUser -Identity &#39;temp.user&#39; -PasswordNotRequired $False</div>
-<div class='meta'>Caveats: Coordinate credential updates with account owners.</div>
+<div style='margin:10px 0'><span class='check-id'>Fix for <code>webclient_on_dc</code></span>
+<div class='ai-script'>Stop-Service WebClient -Force
+Set-Service WebClient -StartupType Disabled</div>
+<div class='meta'>Caveats: Stops and disables the WebClient service to prevent WebDAV-based NTLM coercion.</div>
 </div>
 <p class='meta'>Generated by a language model from findings computed locally. Verify every recommendation before acting; the deterministic sections of this report are authoritative.</p></div></details>
 
 <details open class="map-details"><summary><h2>Attack-path map (toward Tier 0)</h2></summary>
-<div class='map-wrap'><svg viewBox='0 0 706 980' width='100%' preserveAspectRatio='xMinYMin meet' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' class='attack-map'>
+<div class='map-wrap'><svg viewBox='0 0 706 1076' width='100%' preserveAspectRatio='xMinYMin meet' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif' class='attack-map'>
 <defs><marker id='amArrow' markerWidth='9' markerHeight='9' refX='8' refY='3' orient='auto'><path d='M0,0 L8,3 L0,6 Z' fill='#5F5A51'/></marker></defs>
-<path class='am-edge am-from-0' d='M466,482 C501,482 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>svc_backup -> Tier 0 via Kerberoastable Tier 0 [Critical]</title></path>
-<path class='am-edge am-from-1' d='M466,546 C501,546 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>svc_sql_admin -> Tier 0 via Kerberoastable Tier 0 [Critical]</title></path>
-<path class='am-edge am-from-2' d='M466,66 C501,66 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>adm.gialli -> Tier 0 via AS-REP roastable Tier 0 [Critical]</title></path>
-<path class='am-edge am-from-5' d='M466,514 C501,514 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>svc_iis_deleg -> Tier 0 via Protocol transition [Critical]</title></path>
-<path class='am-edge am-from-6' d='M466,930 C501,930 501,490 536,490' fill='none' stroke='#F2B632' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>SRV-SQL01$ -> Tier 0 via Constrained delegation [Medium]</title></path>
-<path class='am-edge am-from-7' d='M466,98 C501,98 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>DC01$ -> Tier 0 via RBCD [Critical]</title></path>
-<path class='am-edge am-from-9' d='M466,674 C501,674 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>helpdesk.lead -> Tier 0 via Operator group (logon on DCs) [High]</title></path>
-<path class='am-edge am-from-0' d='M466,482 C501,482 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>svc_backup -> Tier 0 via Operator group (logon on DCs) [High]</title></path>
-<path class='am-edge am-from-10' d='M466,450 C501,450 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>RODC01 -> Tier 0 via Tier 0 password cached on RODC [Critical]</title></path>
-<path class='am-edge am-from-14' d='M466,130 C501,130 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>evil.user -> Tier 0 via Privileged SID history [Critical]</title></path>
-<path class='am-edge am-from-15' d='M466,706 C501,706 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>legacy-forest.local -> Tier 0 via Trust without SID filtering [High]</title></path>
-<path class='am-edge am-from-17' d='M466,354 C501,354 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\backdoor.user -> Tier 0 via DCSync [Critical]</title></path>
-<path class='am-edge am-from-17' d='M466,354 C501,354 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\backdoor.user -> Tier 0 via Dangerous ACL on Tier 0 [Critical]</title></path>
-<path class='am-edge am-from-20' d='M466,386 C501,386 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\Exchange Windows Permissions -> Tier 0 via Dangerous ACL on Tier 0 [Critical]</title></path>
-<path class='am-edge am-from-21' d='M466,866 C501,866 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\Helpdesk -> Tier 0 via Dangerous ACL on Tier 0 [High]</title></path>
-<path class='am-edge am-from-22' d='M206,98 C371,98 371,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\IT-Ops -> Tier 0 via Dangerous ACL on Tier 0 [Critical]</title></path>
-<path class='am-edge am-from-24' d='M466,162 C501,162 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>GPO {31B2F340-016D-11D2-945F-00C04FB984F9} -> Tier 0 via GPP password in SYSVOL [Critical] (unverified: the object is not known to lead to Tier 0)</title></path>
-<path class='am-edge am-from-25' d='M466,418 C501,418 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>NETLOGON (scripts) -> Tier 0 via Writable SYSVOL / NETLOGON [Critical] (unverified: the object is not known to lead to Tier 0)</title></path>
-<path class='am-edge am-from-21' d='M466,866 C501,866 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\Helpdesk -> Tier 0 via ACL path [High]</title></path>
-<path class='am-edge am-from-22' data-to='6' d='M206,98 C241,98 241,930 276,930' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\IT-Ops -> SRV-SQL01$ via ACL path (WriteProperty(User-Account-Restrictions)) [High]</title></path>
-<path class='am-edge am-from-26' d='M206,66 C371,66 371,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>Any domain user -> Tier 0 via ACL path [Critical] (unverified: the object is not known to lead to Tier 0)</title></path>
-<path class='am-edge am-from-21' d='M466,866 C501,866 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>MOOSEBANK\Helpdesk -> Tier 0 via Golden gMSA (KDS root key) [High] (unverified: the object is not known to lead to Tier 0)</title></path>
-<path class='am-edge am-from-21' d='M466,866 C501,866 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>MOOSEBANK\Helpdesk -> Tier 0 via SCCM System Management [High] (unverified: the object is not known to lead to Tier 0)</title></path>
-<path class='am-edge am-from-21' d='M466,866 C501,866 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>MOOSEBANK\Helpdesk -> Tier 0 via Reads LAPS passwords [High] (unverified: the object is not known to lead to Tier 0)</title></path>
-<path class='am-edge am-from-27' d='M466,642 C501,642 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>gmsa_sql$ -> Tier 0 via gMSA password read [High]</title></path>
-<path class='am-edge am-from-1' d='M466,546 C501,546 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>svc_sql_admin -> Tier 0 via Shadow credentials [High]</title></path>
-<path class='am-edge am-from-28' d='M466,194 C501,194 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC1 Vulnerable -> Tier 0 via AD CS ESC1 [Critical]</title></path>
-<path class='am-edge am-from-29' d='M466,258 C501,258 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC2 AnyPurpose -> Tier 0 via AD CS ESC2 [Critical]</title></path>
-<path class='am-edge am-from-30' d='M466,770 C501,770 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC3 EnrollAgent -> Tier 0 via AD CS ESC3 [High]</title></path>
-<path class='am-edge am-from-31' d='M466,802 C501,802 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC4 WeakACL -> Tier 0 via AD CS ESC4 [High]</title></path>
-<path class='am-edge am-from-32' d='M466,834 C501,834 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC9 NoSecExt -> Tier 0 via AD CS ESC9 [High]</title></path>
-<path class='am-edge am-from-33' d='M466,738 C501,738 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC15 SchemaV1 -> Tier 0 via AD CS ESC17 (spoofed update server) [High]</title></path>
-<path class='am-edge am-from-33' d='M466,738 C501,738 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC15 SchemaV1 -> Tier 0 via AD CS ESC15 [High]</title></path>
-<path class='am-edge am-from-34' d='M466,226 C501,226 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC13 PolicyLink -> Tier 0 via AD CS ESC13 [Critical]</title></path>
-<path class='am-edge am-from-22' d='M206,98 C371,98 371,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\IT-Ops -> Tier 0 via AD CS ESC5 [High]</title></path>
-<path class='am-edge am-from-35' d='M466,898 C501,898 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK-CA -> Tier 0 via AD CS ESC6 (SAN in any request) [High]</title></path>
-<path class='am-edge am-from-35' d='M466,898 C501,898 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK-CA -> Tier 0 via AD CS ESC7 (CA officer) [High]</title></path>
-<path class='am-edge am-from-35' d='M466,898 C501,898 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK-CA -> Tier 0 via AD CS ESC8 (relay to web enrollment) [High]</title></path>
-<path class='am-edge am-from-35' d='M466,898 C501,898 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK-CA -> Tier 0 via AD CS ESC11 (relay to RPC) [High]</title></path>
-<path class='am-edge am-from-36' d='M466,578 C501,578 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Debug programs -> Tier 0 via Sensitive right on DCs [High]</title></path>
-<path class='am-edge am-from-37' d='M466,610 C501,610 501,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Domain Controllers -> Tier 0 via AD CS ESC10 [High]</title></path>
-<path class='am-edge am-from-38' d='M466,290 C501,290 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MooseBank DC Extra -> Tier 0 via GPO control -&gt; DCs [Critical]</title></path>
-<path class='am-edge am-from-39' d='M466,322 C501,322 501,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MooseBank DC Extra: \\fs01.moosebank.local\it$\dc-tools.cmd -> Tier 0 via GPO runs code from a share [Critical]</title></path>
-<path class='am-edge am-from-26' data-to='0' d='M206,66 C241,66 241,482 276,482' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> svc_backup via Kerberoast [Critical]</title></path>
-<path class='am-edge am-from-26' data-to='1' d='M206,66 C241,66 241,546 276,546' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> svc_sql_admin via Kerberoast [Critical]</title></path>
-<path class='am-edge am-from-26' data-to='2' d='M206,66 C241,66 241,66 276,66' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> adm.gialli via AS-REP roast [Critical]</title></path>
-<path class='am-edge am-from-26' data-to='24' d='M206,66 C241,66 241,162 276,162' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>Any domain user -> GPO {31B2F340-016D-11D2-945F-00C04FB984F9} via Read SYSVOL [Critical] (unverified: the object is not known to lead to Tier 0)</title></path>
-<path class='am-edge am-from-26' data-to='25' d='M206,66 C241,66 241,418 276,418' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>Any domain user -> NETLOGON (scripts) via Write logon scripts [Critical] (unverified: the object is not known to lead to Tier 0)</title></path>
-<path class='am-edge am-from-26' data-to='28' d='M206,66 C241,66 241,194 276,194' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Moose ESC1 Vulnerable via Enroll [Critical]</title></path>
-<path class='am-edge am-from-26' data-to='29' d='M206,66 C241,66 241,258 276,258' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Moose ESC2 AnyPurpose via Enroll [Critical]</title></path>
-<path class='am-edge am-from-26' data-to='30' d='M206,66 C241,66 241,770 276,770' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Moose ESC3 EnrollAgent via Enroll [High]</title></path>
-<path class='am-edge am-from-26' data-to='31' d='M206,66 C241,66 241,802 276,802' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Moose ESC4 WeakACL via Edit the template [High]</title></path>
-<path class='am-edge am-from-26' data-to='32' d='M206,66 C241,66 241,834 276,834' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Moose ESC9 NoSecExt via Enroll [High]</title></path>
-<path class='am-edge am-from-26' data-to='33' d='M206,66 C241,66 241,738 276,738' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Moose ESC15 SchemaV1 via Enroll [High]</title></path>
-<path class='am-edge am-from-26' data-to='34' d='M206,66 C241,66 241,226 276,226' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Moose ESC13 PolicyLink via Enroll [Critical]</title></path>
-<path class='am-edge am-from-26' data-to='35' d='M206,66 C241,66 241,898 276,898' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> MOOSEBANK-CA via Enroll [High]</title></path>
-<path class='am-edge am-from-26' data-to='35' d='M206,66 C241,66 241,898 276,898' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> MOOSEBANK-CA via Coerce a DC, relay [High]</title></path>
-<path class='am-edge am-from-26' d='M206,66 C371,66 371,490 536,490' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Tier 0 via noPac (dc02.moosebank.local) [Critical]</title></path>
-<path class='am-edge am-from-26' d='M206,66 C371,66 371,490 536,490' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Tier 0 via Breached password (svc_backup) [High]</title></path>
-<path class='am-edge am-from-41' data-to='21' d='M206,130 C241,130 241,866 276,866' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>hd.operator1 -> MOOSEBANK\Helpdesk via Member of Helpdesk [High]</title></path>
-<path class='am-edge am-from-42' data-to='21' d='M206,162 C241,162 241,866 276,866' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>hd.operator2 -> MOOSEBANK\Helpdesk via Member of Helpdesk [High]</title></path>
-<rect x='536' y='468' width='150' height='44' rx='8' fill='#161513' stroke='#161513' stroke-width='2'/>
-<text x='611' y='488' text-anchor='middle' fill='#F3EFE6' font-size='13' font-weight='700'>Tier 0</text>
-<text x='611' y='503' text-anchor='middle' fill='#B9B1A1' font-size='10'>domain compromise</text>
+<path class='am-edge am-from-0' d='M466,546 C501,546 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>svc_backup -> Tier 0 via Kerberoastable Tier 0 [Critical]</title></path>
+<path class='am-edge am-from-1' d='M466,610 C501,610 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>svc_sql_admin -> Tier 0 via Kerberoastable Tier 0 [Critical]</title></path>
+<path class='am-edge am-from-2' d='M466,66 C501,66 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>adm.gialli -> Tier 0 via AS-REP roastable Tier 0 [Critical]</title></path>
+<path class='am-edge am-from-5' d='M466,578 C501,578 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>svc_iis_deleg -> Tier 0 via Protocol transition [Critical]</title></path>
+<path class='am-edge am-from-6' d='M466,1026 C501,1026 501,538 536,538' fill='none' stroke='#F2B632' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>SRV-SQL01$ -> Tier 0 via Constrained delegation [Medium]</title></path>
+<path class='am-edge am-from-7' d='M466,98 C501,98 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>DC01$ -> Tier 0 via RBCD [Critical]</title></path>
+<path class='am-edge am-from-46' data-to='7' d='M206,98 C241,98 241,98 276,98' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>EVILPC$ -> DC01$ via Allowed to act on it (RBCD) [Critical]</title></path>
+<path class='am-edge am-from-0' d='M466,546 C501,546 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>svc_backup -> Tier 0 via Operator group (logon on DCs) [High]</title></path>
+<path class='am-edge am-from-10' d='M466,514 C501,514 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>RODC01 -> Tier 0 via Tier 0 password cached on RODC [Critical]</title></path>
+<path class='am-edge am-from-14' d='M466,162 C501,162 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>evil.user -> Tier 0 via Privileged SID history [Critical]</title></path>
+<path class='am-edge am-from-17' d='M466,642 C501,642 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>dc02.moosebank.local -> Tier 0 via DSRM account logs on over the network [High] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-18' d='M466,418 C501,418 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\backdoor.user -> Tier 0 via DCSync [Critical]</title></path>
+<path class='am-edge am-from-18' d='M466,418 C501,418 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\backdoor.user -> Tier 0 via Dangerous ACL on Tier 0 [Critical]</title></path>
+<path class='am-edge am-from-21' d='M466,450 C501,450 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\Exchange Windows Permissions -> Tier 0 via Dangerous ACL on Tier 0 [Critical]</title></path>
+<path class='am-edge am-from-22' d='M466,962 C501,962 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\Helpdesk -> Tier 0 via Dangerous ACL on Tier 0 [High]</title></path>
+<path class='am-edge am-from-23' d='M206,130 C371,130 371,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\IT-Ops -> Tier 0 via Dangerous ACL on Tier 0 [Critical]</title></path>
+<path class='am-edge am-from-25' d='M466,226 C501,226 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>GPO {31B2F340-016D-11D2-945F-00C04FB984F9} -> Tier 0 via GPP password in SYSVOL [Critical] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-26' d='M466,482 C501,482 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>NETLOGON (scripts) -> Tier 0 via Writable SYSVOL / NETLOGON [Critical] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-27' d='M466,770 C501,770 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>mapdrives.bat -> Tier 0 via Password in a SYSVOL script [High] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-22' d='M466,962 C501,962 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\Helpdesk -> Tier 0 via ACL path [High]</title></path>
+<path class='am-edge am-from-23' data-to='6' d='M206,130 C241,130 241,1026 276,1026' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\IT-Ops -> SRV-SQL01$ via ACL path (WriteProperty(User-Account-Restrictions)) [High]</title></path>
+<path class='am-edge am-from-28' d='M206,66 C371,66 371,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>Any domain user -> Tier 0 via ACL path [Critical] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-22' d='M466,962 C501,962 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>MOOSEBANK\Helpdesk -> Tier 0 via Golden gMSA (KDS root key) [High] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-22' d='M466,962 C501,962 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>MOOSEBANK\Helpdesk -> Tier 0 via SCCM System Management [High] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-22' d='M466,962 C501,962 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>MOOSEBANK\Helpdesk -> Tier 0 via Reads LAPS passwords [High] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-29' d='M466,738 C501,738 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>gmsa_sql$ -> Tier 0 via gMSA password read [High]</title></path>
+<path class='am-edge am-from-1' d='M466,610 C501,610 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>svc_sql_admin -> Tier 0 via Shadow credentials [High]</title></path>
+<path class='am-edge am-from-30' d='M466,258 C501,258 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC1 Vulnerable -> Tier 0 via AD CS ESC1 [Critical]</title></path>
+<path class='am-edge am-from-31' d='M466,322 C501,322 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC2 AnyPurpose -> Tier 0 via AD CS ESC2 [Critical]</title></path>
+<path class='am-edge am-from-32' d='M466,834 C501,834 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC3 EnrollAgent -> Tier 0 via AD CS ESC3 [High]</title></path>
+<path class='am-edge am-from-33' d='M466,866 C501,866 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC4 WeakACL -> Tier 0 via AD CS ESC4 [High]</title></path>
+<path class='am-edge am-from-34' d='M466,898 C501,898 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC9 NoSecExt -> Tier 0 via AD CS ESC9 [High]</title></path>
+<path class='am-edge am-from-35' d='M466,802 C501,802 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC15 SchemaV1 -> Tier 0 via AD CS ESC17 (spoofed update server) [High]</title></path>
+<path class='am-edge am-from-35' d='M466,802 C501,802 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC15 SchemaV1 -> Tier 0 via AD CS ESC15 [High]</title></path>
+<path class='am-edge am-from-36' d='M466,290 C501,290 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Moose ESC13 PolicyLink -> Tier 0 via AD CS ESC13 [Critical]</title></path>
+<path class='am-edge am-from-23' d='M206,130 C371,130 371,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK\IT-Ops -> Tier 0 via AD CS ESC5 [High]</title></path>
+<path class='am-edge am-from-37' d='M466,930 C501,930 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK-CA -> Tier 0 via AD CS ESC6 (SAN in any request) [High]</title></path>
+<path class='am-edge am-from-37' d='M466,930 C501,930 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK-CA -> Tier 0 via AD CS ESC7 (CA officer) [High]</title></path>
+<path class='am-edge am-from-37' d='M466,930 C501,930 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK-CA -> Tier 0 via AD CS ESC8 (relay to web enrollment) [High]</title></path>
+<path class='am-edge am-from-37' d='M466,930 C501,930 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MOOSEBANK-CA -> Tier 0 via AD CS ESC11 (relay to RPC) [High]</title></path>
+<path class='am-edge am-from-38' d='M466,674 C501,674 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Debug programs -> Tier 0 via Sensitive right on DCs [High]</title></path>
+<path class='am-edge am-from-39' d='M466,130 C501,130 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>Default Domain Policy -> Tier 0 via Autologon password in a GPO [Critical] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-40' d='M466,194 C501,194 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>GPO {22222222-2222-2222-2222-222222222222} -> Tier 0 via Autologon password in a GPO [Critical] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-41' d='M466,706 C501,706 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Domain Controllers -> Tier 0 via AD CS ESC10 [High]</title></path>
+<path class='am-edge am-from-42' d='M466,354 C501,354 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MooseBank DC Extra -> Tier 0 via GPO control -&gt; DCs [Critical]</title></path>
+<path class='am-edge am-from-43' d='M466,386 C501,386 501,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>MooseBank DC Extra: \\fs01.moosebank.local\it$\dc-tools.cmd -> Tier 0 via GPO runs code from a share [Critical]</title></path>
+<path class='am-edge am-from-45' d='M466,994 C501,994 501,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>Workstation Baseline: local Administrators -> Tier 0 via Local admin by GPO [High] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-28' data-to='0' d='M206,66 C241,66 241,546 276,546' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> svc_backup via Kerberoast [Critical]</title></path>
+<path class='am-edge am-from-28' data-to='1' d='M206,66 C241,66 241,610 276,610' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> svc_sql_admin via Kerberoast [Critical]</title></path>
+<path class='am-edge am-from-28' data-to='2' d='M206,66 C241,66 241,66 276,66' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> adm.gialli via AS-REP roast [Critical]</title></path>
+<path class='am-edge am-from-28' data-to='25' d='M206,66 C241,66 241,226 276,226' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>Any domain user -> GPO {31B2F340-016D-11D2-945F-00C04FB984F9} via Read SYSVOL [Critical] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-28' data-to='26' d='M206,66 C241,66 241,482 276,482' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>Any domain user -> NETLOGON (scripts) via Write logon scripts [Critical] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-28' data-to='27' d='M206,66 C241,66 241,770 276,770' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>Any domain user -> mapdrives.bat via Read SYSVOL [High] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-28' data-to='30' d='M206,66 C241,66 241,258 276,258' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Moose ESC1 Vulnerable via Enroll [Critical]</title></path>
+<path class='am-edge am-from-28' data-to='31' d='M206,66 C241,66 241,322 276,322' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Moose ESC2 AnyPurpose via Enroll [Critical]</title></path>
+<path class='am-edge am-from-28' data-to='32' d='M206,66 C241,66 241,834 276,834' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Moose ESC3 EnrollAgent via Enroll [High]</title></path>
+<path class='am-edge am-from-28' data-to='33' d='M206,66 C241,66 241,866 276,866' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Moose ESC4 WeakACL via Edit the template [High]</title></path>
+<path class='am-edge am-from-28' data-to='34' d='M206,66 C241,66 241,898 276,898' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Moose ESC9 NoSecExt via Enroll [High]</title></path>
+<path class='am-edge am-from-28' data-to='35' d='M206,66 C241,66 241,802 276,802' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Moose ESC15 SchemaV1 via Enroll [High]</title></path>
+<path class='am-edge am-from-28' data-to='36' d='M206,66 C241,66 241,290 276,290' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Moose ESC13 PolicyLink via Enroll [Critical]</title></path>
+<path class='am-edge am-from-28' data-to='37' d='M206,66 C241,66 241,930 276,930' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> MOOSEBANK-CA via Enroll [High]</title></path>
+<path class='am-edge am-from-28' data-to='37' d='M206,66 C241,66 241,930 276,930' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> MOOSEBANK-CA via Coerce a DC, relay [High]</title></path>
+<path class='am-edge am-from-28' d='M206,66 C371,66 371,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Tier 0 via Zerologon (weak Netlogon secure channel) [Critical]</title></path>
+<path class='am-edge am-from-28' d='M206,66 C371,66 371,538 536,538' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Tier 0 via noPac (dc02.moosebank.local) [Critical]</title></path>
+<path class='am-edge am-from-28' data-to='39' d='M206,66 C241,66 241,130 276,130' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>Any domain user -> Default Domain Policy via Read SYSVOL [Critical] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-28' data-to='40' d='M206,66 C241,66 241,194 276,194' fill='none' stroke='#E2372A' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>Any domain user -> GPO {22222222-2222-2222-2222-222222222222} via Read SYSVOL [Critical] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-28' data-to='45' d='M206,66 C241,66 241,994 276,994' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' stroke-dasharray='5,4' marker-end='url(#amArrow)'><title>Any domain user -> Workstation Baseline: local Administrators via Already in the group [High] (unverified: the object is not known to lead to Tier 0)</title></path>
+<path class='am-edge am-from-28' d='M206,66 C371,66 371,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Tier 0 via Coerce a DC, relay to LDAP (RBCD) [High]</title></path>
+<path class='am-edge am-from-28' data-to='5' d='M206,66 C241,66 241,578 276,578' fill='none' stroke='#F2B632' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> svc_iis_deleg via Kerberoast [Medium]</title></path>
+<path class='am-edge am-from-28' d='M206,66 C371,66 371,538 536,538' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>Any domain user -> Tier 0 via Breached password (svc_backup) [High]</title></path>
+<path class='am-edge am-from-48' data-to='22' d='M206,162 C241,162 241,962 276,962' fill='none' stroke='#EF8A6F' stroke-width='1.6' opacity='0.45' marker-end='url(#amArrow)'><title>hd.operator1 -> MOOSEBANK\Helpdesk via Member of Helpdesk [High]</title></path>
+<rect x='536' y='516' width='150' height='44' rx='8' fill='#161513' stroke='#161513' stroke-width='2'/>
+<text x='611' y='536' text-anchor='middle' fill='#F3EFE6' font-size='13' font-weight='700'>Tier 0</text>
+<text x='611' y='551' text-anchor='middle' fill='#B9B1A1' font-size='10'>domain compromise</text>
 <g class='am-node' data-nid='2' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
 <rect x='276' y='54' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
 <rect x='276' y='54' width='4' height='24' rx='2' fill='#E2372A'/>
 <text x='286' y='70' font-size='11' fill='#161513'>adm.gialli</text>
 <title>adm.gialli [user] - AS-REP roastable Tier 0</title>
 </g>
-<g class='am-node' data-nid='26' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<g class='am-node' data-nid='28' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
 <rect x='16' y='54' width='190' height='24' rx='5' fill='#3A3631' stroke='#E2372A' stroke-width='1.6'/>
 <rect x='16' y='54' width='4' height='24' rx='2' fill='#E2372A'/>
 <text x='26' y='70' font-size='11' fill='#F3EFE6' font-weight='700'>Any domain user</text>
@@ -427,183 +461,201 @@ Set-ADUser -Identity &#39;temp.user&#39; -PasswordNotRequired $False</div>
 <text x='286' y='102' font-size='11' fill='#161513'>DC01$</text>
 <title>DC01$ [computer] - RBCD</title>
 </g>
-<g class='am-node' data-nid='14' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<g class='am-node' data-nid='39' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
 <rect x='276' y='118' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
 <rect x='276' y='118' width='4' height='24' rx='2' fill='#E2372A'/>
-<text x='286' y='134' font-size='11' fill='#161513'>evil.user</text>
-<title>evil.user [user] - Privileged SID history</title>
+<text x='286' y='134' font-size='11' fill='#161513'>Default Domain Policy</text>
+<title>Default Domain Policy [gpo] - Autologon password in a GPO</title>
 </g>
-<g class='am-node' data-nid='24' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<g class='am-node' data-nid='14' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
 <rect x='276' y='150' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
 <rect x='276' y='150' width='4' height='24' rx='2' fill='#E2372A'/>
-<text x='286' y='166' font-size='11' fill='#161513'>GPO {31B2F340-016D-11D2-945…</text>
-<title>GPO {31B2F340-016D-11D2-945F-00C04FB984F9} [gpo] - GPP password in SYSVOL</title>
+<text x='286' y='166' font-size='11' fill='#161513'>evil.user</text>
+<title>evil.user [user] - Privileged SID history</title>
 </g>
-<g class='am-node' data-nid='28' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='182' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
-<rect x='276' y='182' width='4' height='24' rx='2' fill='#E2372A'/>
-<text x='286' y='198' font-size='11' fill='#161513'>Moose ESC1 Vulnerable</text>
-<title>Moose ESC1 Vulnerable [certtemplate] - AD CS ESC1</title>
-</g>
-<g class='am-node' data-nid='34' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='214' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
-<rect x='276' y='214' width='4' height='24' rx='2' fill='#E2372A'/>
-<text x='286' y='230' font-size='11' fill='#161513'>Moose ESC13 PolicyLink</text>
-<title>Moose ESC13 PolicyLink [certtemplate] - AD CS ESC13</title>
-</g>
-<g class='am-node' data-nid='29' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='246' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
-<rect x='276' y='246' width='4' height='24' rx='2' fill='#E2372A'/>
-<text x='286' y='262' font-size='11' fill='#161513'>Moose ESC2 AnyPurpose</text>
-<title>Moose ESC2 AnyPurpose [certtemplate] - AD CS ESC2</title>
-</g>
-<g class='am-node' data-nid='38' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='278' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
-<rect x='276' y='278' width='4' height='24' rx='2' fill='#E2372A'/>
-<text x='286' y='294' font-size='11' fill='#161513'>MooseBank DC Extra</text>
-<title>MooseBank DC Extra [gpo] - GPO control -&gt; DCs</title>
-</g>
-<g class='am-node' data-nid='39' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='310' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
-<rect x='276' y='310' width='4' height='24' rx='2' fill='#E2372A'/>
-<text x='286' y='326' font-size='11' fill='#161513'>MooseBank DC Extra: \\fs01.…</text>
-<title>MooseBank DC Extra: \\fs01.moosebank.local\it$\dc-tools.cmd [gpo] - GPO runs code from a share</title>
-</g>
-<g class='am-node' data-nid='17' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='342' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
-<rect x='276' y='342' width='4' height='24' rx='2' fill='#E2372A'/>
-<text x='286' y='358' font-size='11' fill='#161513'>MOOSEBANK\backdoor.user</text>
-<title>MOOSEBANK\backdoor.user [acl] - DCSync, Dangerous ACL on Tier 0</title>
-</g>
-<g class='am-node' data-nid='20' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='374' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
-<rect x='276' y='374' width='4' height='24' rx='2' fill='#E2372A'/>
-<text x='286' y='390' font-size='11' fill='#161513'>MOOSEBANK\Exchange Windows …</text>
-<title>MOOSEBANK\Exchange Windows Permissions [acl] - Dangerous ACL on Tier 0</title>
-</g>
-<g class='am-node' data-nid='22' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<g class='am-node' data-nid='46' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
 <rect x='16' y='86' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
 <rect x='16' y='86' width='4' height='24' rx='2' fill='#E2372A'/>
-<text x='26' y='102' font-size='11' fill='#161513'>MOOSEBANK\IT-Ops</text>
-<title>MOOSEBANK\IT-Ops [acl] - Dangerous ACL on Tier 0, ACL path (WriteProperty(User-Account-Restrictions)), AD CS ESC5</title>
+<text x='26' y='102' font-size='11' fill='#161513'>EVILPC$</text>
+<title>EVILPC$ [computer] - Allowed to act on it (RBCD)</title>
+</g>
+<g class='am-node' data-nid='40' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='276' y='182' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
+<rect x='276' y='182' width='4' height='24' rx='2' fill='#E2372A'/>
+<text x='286' y='198' font-size='11' fill='#161513'>GPO {22222222-2222-2222-222…</text>
+<title>GPO {22222222-2222-2222-2222-222222222222} [gpo] - Autologon password in a GPO</title>
 </g>
 <g class='am-node' data-nid='25' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='276' y='214' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
+<rect x='276' y='214' width='4' height='24' rx='2' fill='#E2372A'/>
+<text x='286' y='230' font-size='11' fill='#161513'>GPO {31B2F340-016D-11D2-945…</text>
+<title>GPO {31B2F340-016D-11D2-945F-00C04FB984F9} [gpo] - GPP password in SYSVOL</title>
+</g>
+<g class='am-node' data-nid='30' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='276' y='246' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
+<rect x='276' y='246' width='4' height='24' rx='2' fill='#E2372A'/>
+<text x='286' y='262' font-size='11' fill='#161513'>Moose ESC1 Vulnerable</text>
+<title>Moose ESC1 Vulnerable [certtemplate] - AD CS ESC1</title>
+</g>
+<g class='am-node' data-nid='36' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='276' y='278' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
+<rect x='276' y='278' width='4' height='24' rx='2' fill='#E2372A'/>
+<text x='286' y='294' font-size='11' fill='#161513'>Moose ESC13 PolicyLink</text>
+<title>Moose ESC13 PolicyLink [certtemplate] - AD CS ESC13</title>
+</g>
+<g class='am-node' data-nid='31' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='276' y='310' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
+<rect x='276' y='310' width='4' height='24' rx='2' fill='#E2372A'/>
+<text x='286' y='326' font-size='11' fill='#161513'>Moose ESC2 AnyPurpose</text>
+<title>Moose ESC2 AnyPurpose [certtemplate] - AD CS ESC2</title>
+</g>
+<g class='am-node' data-nid='42' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='276' y='342' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
+<rect x='276' y='342' width='4' height='24' rx='2' fill='#E2372A'/>
+<text x='286' y='358' font-size='11' fill='#161513'>MooseBank DC Extra</text>
+<title>MooseBank DC Extra [gpo] - GPO control -&gt; DCs</title>
+</g>
+<g class='am-node' data-nid='43' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='276' y='374' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
+<rect x='276' y='374' width='4' height='24' rx='2' fill='#E2372A'/>
+<text x='286' y='390' font-size='11' fill='#161513'>MooseBank DC Extra: \\fs01.…</text>
+<title>MooseBank DC Extra: \\fs01.moosebank.local\it$\dc-tools.cmd [gpo] - GPO runs code from a share</title>
+</g>
+<g class='am-node' data-nid='18' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
 <rect x='276' y='406' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
 <rect x='276' y='406' width='4' height='24' rx='2' fill='#E2372A'/>
-<text x='286' y='422' font-size='11' fill='#161513'>NETLOGON (scripts)</text>
+<text x='286' y='422' font-size='11' fill='#161513'>MOOSEBANK\backdoor.user</text>
+<title>MOOSEBANK\backdoor.user [acl] - DCSync, Dangerous ACL on Tier 0</title>
+</g>
+<g class='am-node' data-nid='21' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='276' y='438' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
+<rect x='276' y='438' width='4' height='24' rx='2' fill='#E2372A'/>
+<text x='286' y='454' font-size='11' fill='#161513'>MOOSEBANK\Exchange Windows …</text>
+<title>MOOSEBANK\Exchange Windows Permissions [acl] - Dangerous ACL on Tier 0</title>
+</g>
+<g class='am-node' data-nid='23' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='16' y='118' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
+<rect x='16' y='118' width='4' height='24' rx='2' fill='#E2372A'/>
+<text x='26' y='134' font-size='11' fill='#161513'>MOOSEBANK\IT-Ops</text>
+<title>MOOSEBANK\IT-Ops [acl] - Dangerous ACL on Tier 0, ACL path (WriteProperty(User-Account-Restrictions)), AD CS ESC5</title>
+</g>
+<g class='am-node' data-nid='26' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='276' y='470' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
+<rect x='276' y='470' width='4' height='24' rx='2' fill='#E2372A'/>
+<text x='286' y='486' font-size='11' fill='#161513'>NETLOGON (scripts)</text>
 <title>NETLOGON (scripts) [file] - Writable SYSVOL / NETLOGON</title>
 </g>
 <g class='am-node' data-nid='10' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='438' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
-<rect x='276' y='438' width='4' height='24' rx='2' fill='#E2372A'/>
-<text x='286' y='454' font-size='11' fill='#161513'>RODC01</text>
+<rect x='276' y='502' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
+<rect x='276' y='502' width='4' height='24' rx='2' fill='#E2372A'/>
+<text x='286' y='518' font-size='11' fill='#161513'>RODC01</text>
 <title>RODC01 [dc] - Tier 0 password cached on RODC</title>
 </g>
 <g class='am-node' data-nid='0' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='470' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
-<rect x='276' y='470' width='4' height='24' rx='2' fill='#E2372A'/>
-<text x='286' y='486' font-size='11' fill='#161513'>svc_backup</text>
+<rect x='276' y='534' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
+<rect x='276' y='534' width='4' height='24' rx='2' fill='#E2372A'/>
+<text x='286' y='550' font-size='11' fill='#161513'>svc_backup</text>
 <title>svc_backup [user] - Kerberoastable Tier 0, Operator group (logon on DCs)</title>
 </g>
 <g class='am-node' data-nid='5' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='502' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
-<rect x='276' y='502' width='4' height='24' rx='2' fill='#E2372A'/>
-<text x='286' y='518' font-size='11' fill='#161513'>svc_iis_deleg</text>
+<rect x='276' y='566' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
+<rect x='276' y='566' width='4' height='24' rx='2' fill='#E2372A'/>
+<text x='286' y='582' font-size='11' fill='#161513'>svc_iis_deleg</text>
 <title>svc_iis_deleg [user] - Protocol transition</title>
 </g>
 <g class='am-node' data-nid='1' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='534' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
-<rect x='276' y='534' width='4' height='24' rx='2' fill='#E2372A'/>
-<text x='286' y='550' font-size='11' fill='#161513'>svc_sql_admin</text>
+<rect x='276' y='598' width='190' height='24' rx='5' fill='#fff' stroke='#E2372A' stroke-width='1.6'/>
+<rect x='276' y='598' width='4' height='24' rx='2' fill='#E2372A'/>
+<text x='286' y='614' font-size='11' fill='#161513'>svc_sql_admin</text>
 <title>svc_sql_admin [user] - Kerberoastable Tier 0, Shadow credentials</title>
 </g>
-<g class='am-node' data-nid='36' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='566' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
-<rect x='276' y='566' width='4' height='24' rx='2' fill='#EF8A6F'/>
-<text x='286' y='582' font-size='11' fill='#161513'>Debug programs</text>
-<title>Debug programs [gpo] - Sensitive right on DCs</title>
-</g>
-<g class='am-node' data-nid='37' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='598' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
-<rect x='276' y='598' width='4' height='24' rx='2' fill='#EF8A6F'/>
-<text x='286' y='614' font-size='11' fill='#161513'>Domain Controllers</text>
-<title>Domain Controllers [gpo] - AD CS ESC10</title>
-</g>
-<g class='am-node' data-nid='27' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<g class='am-node' data-nid='17' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
 <rect x='276' y='630' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
 <rect x='276' y='630' width='4' height='24' rx='2' fill='#EF8A6F'/>
-<text x='286' y='646' font-size='11' fill='#161513'>gmsa_sql$</text>
-<title>gmsa_sql$ [msa] - gMSA password read</title>
+<text x='286' y='646' font-size='11' fill='#161513'>dc02.moosebank.local</text>
+<title>dc02.moosebank.local [dc] - DSRM account logs on over the network</title>
 </g>
-<g class='am-node' data-nid='41' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='16' y='118' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
-<rect x='16' y='118' width='4' height='24' rx='2' fill='#EF8A6F'/>
-<text x='26' y='134' font-size='11' fill='#161513'>hd.operator1</text>
-<title>hd.operator1 [user] - Member of Helpdesk</title>
-</g>
-<g class='am-node' data-nid='42' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='16' y='150' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
-<rect x='16' y='150' width='4' height='24' rx='2' fill='#EF8A6F'/>
-<text x='26' y='166' font-size='11' fill='#161513'>hd.operator2</text>
-<title>hd.operator2 [user] - Member of Helpdesk</title>
-</g>
-<g class='am-node' data-nid='9' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<g class='am-node' data-nid='38' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
 <rect x='276' y='662' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
 <rect x='276' y='662' width='4' height='24' rx='2' fill='#EF8A6F'/>
-<text x='286' y='678' font-size='11' fill='#161513'>helpdesk.lead</text>
-<title>helpdesk.lead [user] - Operator group (logon on DCs)</title>
+<text x='286' y='678' font-size='11' fill='#161513'>Debug programs</text>
+<title>Debug programs [gpo] - Sensitive right on DCs</title>
 </g>
-<g class='am-node' data-nid='15' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<g class='am-node' data-nid='41' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
 <rect x='276' y='694' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
 <rect x='276' y='694' width='4' height='24' rx='2' fill='#EF8A6F'/>
-<text x='286' y='710' font-size='11' fill='#161513'>legacy-forest.local</text>
-<title>legacy-forest.local [trust] - Trust without SID filtering</title>
+<text x='286' y='710' font-size='11' fill='#161513'>Domain Controllers</text>
+<title>Domain Controllers [gpo] - AD CS ESC10</title>
 </g>
-<g class='am-node' data-nid='33' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<g class='am-node' data-nid='29' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
 <rect x='276' y='726' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
 <rect x='276' y='726' width='4' height='24' rx='2' fill='#EF8A6F'/>
-<text x='286' y='742' font-size='11' fill='#161513'>Moose ESC15 SchemaV1</text>
-<title>Moose ESC15 SchemaV1 [certtemplate] - AD CS ESC17 (spoofed update server), AD CS ESC15</title>
+<text x='286' y='742' font-size='11' fill='#161513'>gmsa_sql$</text>
+<title>gmsa_sql$ [msa] - gMSA password read</title>
+</g>
+<g class='am-node' data-nid='48' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='16' y='150' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
+<rect x='16' y='150' width='4' height='24' rx='2' fill='#EF8A6F'/>
+<text x='26' y='166' font-size='11' fill='#161513'>hd.operator1</text>
+<title>hd.operator1 [user] - Member of Helpdesk</title>
 </g>
 <g class='am-node' data-nid='6' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='918' width='190' height='24' rx='5' fill='#fff' stroke='#F2B632' stroke-width='1.6'/>
-<rect x='276' y='918' width='4' height='24' rx='2' fill='#F2B632'/>
-<text x='286' y='934' font-size='11' fill='#161513'>SRV-SQL01$</text>
+<rect x='276' y='1014' width='190' height='24' rx='5' fill='#fff' stroke='#F2B632' stroke-width='1.6'/>
+<rect x='276' y='1014' width='4' height='24' rx='2' fill='#F2B632'/>
+<text x='286' y='1030' font-size='11' fill='#161513'>SRV-SQL01$</text>
 <title>SRV-SQL01$ [computer] - Constrained delegation</title>
 </g>
-<g class='am-node' data-nid='30' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<g class='am-node' data-nid='27' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
 <rect x='276' y='758' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
 <rect x='276' y='758' width='4' height='24' rx='2' fill='#EF8A6F'/>
-<text x='286' y='774' font-size='11' fill='#161513'>Moose ESC3 EnrollAgent</text>
-<title>Moose ESC3 EnrollAgent [certtemplate] - AD CS ESC3</title>
-</g>
-<g class='am-node' data-nid='31' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='790' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
-<rect x='276' y='790' width='4' height='24' rx='2' fill='#EF8A6F'/>
-<text x='286' y='806' font-size='11' fill='#161513'>Moose ESC4 WeakACL</text>
-<title>Moose ESC4 WeakACL [certtemplate] - AD CS ESC4</title>
+<text x='286' y='774' font-size='11' fill='#161513'>mapdrives.bat</text>
+<title>mapdrives.bat [file] - Password in a SYSVOL script</title>
 </g>
 <g class='am-node' data-nid='32' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
 <rect x='276' y='822' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
 <rect x='276' y='822' width='4' height='24' rx='2' fill='#EF8A6F'/>
-<text x='286' y='838' font-size='11' fill='#161513'>Moose ESC9 NoSecExt</text>
+<text x='286' y='838' font-size='11' fill='#161513'>Moose ESC3 EnrollAgent</text>
+<title>Moose ESC3 EnrollAgent [certtemplate] - AD CS ESC3</title>
+</g>
+<g class='am-node' data-nid='33' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='276' y='854' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
+<rect x='276' y='854' width='4' height='24' rx='2' fill='#EF8A6F'/>
+<text x='286' y='870' font-size='11' fill='#161513'>Moose ESC4 WeakACL</text>
+<title>Moose ESC4 WeakACL [certtemplate] - AD CS ESC4</title>
+</g>
+<g class='am-node' data-nid='34' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='276' y='886' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
+<rect x='276' y='886' width='4' height='24' rx='2' fill='#EF8A6F'/>
+<text x='286' y='902' font-size='11' fill='#161513'>Moose ESC9 NoSecExt</text>
 <title>Moose ESC9 NoSecExt [certtemplate] - AD CS ESC9</title>
 </g>
 <g class='am-node' data-nid='35' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='886' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
-<rect x='276' y='886' width='4' height='24' rx='2' fill='#EF8A6F'/>
-<text x='286' y='902' font-size='11' fill='#161513'>MOOSEBANK-CA</text>
+<rect x='276' y='790' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
+<rect x='276' y='790' width='4' height='24' rx='2' fill='#EF8A6F'/>
+<text x='286' y='806' font-size='11' fill='#161513'>Moose ESC15 SchemaV1</text>
+<title>Moose ESC15 SchemaV1 [certtemplate] - AD CS ESC17 (spoofed update server), AD CS ESC15</title>
+</g>
+<g class='am-node' data-nid='37' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='276' y='918' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
+<rect x='276' y='918' width='4' height='24' rx='2' fill='#EF8A6F'/>
+<text x='286' y='934' font-size='11' fill='#161513'>MOOSEBANK-CA</text>
 <title>MOOSEBANK-CA [ca] - AD CS ESC6 (SAN in any request), AD CS ESC7 (CA officer), AD CS ESC8 (relay to web enrollment)</title>
 </g>
-<g class='am-node' data-nid='21' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
-<rect x='276' y='854' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
-<rect x='276' y='854' width='4' height='24' rx='2' fill='#EF8A6F'/>
-<text x='286' y='870' font-size='11' fill='#161513'>MOOSEBANK\Helpdesk</text>
+<g class='am-node' data-nid='45' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='276' y='982' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
+<rect x='276' y='982' width='4' height='24' rx='2' fill='#EF8A6F'/>
+<text x='286' y='998' font-size='11' fill='#161513'>Workstation Baseline: local…</text>
+<title>Workstation Baseline: local Administrators [gpo] - Local admin by GPO</title>
+</g>
+<g class='am-node' data-nid='22' onmouseover='amMap(this,true)' onmouseout='amMap(this,false)'>
+<rect x='276' y='950' width='190' height='24' rx='5' fill='#fff' stroke='#EF8A6F' stroke-width='1.6'/>
+<rect x='276' y='950' width='4' height='24' rx='2' fill='#EF8A6F'/>
+<text x='286' y='966' font-size='11' fill='#161513'>MOOSEBANK\Helpdesk</text>
 <title>MOOSEBANK\Helpdesk [acl] - Dangerous ACL on Tier 0, ACL path, Golden gMSA (KDS root key)</title>
 </g>
 </svg>
 </div>
-<p class='meta'>Showing the 26 highest-severity sources; 11 more escalation source(s) are in the findings tables below.</p>
+<p class='meta'>Showing the 35 highest-severity sources and the boxes their paths run through; 15 more escalation source(s) are in the findings tables below.</p>
 <p class='meta'>Each box is a principal or object that has a path to Tier 0; the arrow is the technique. Colour is the severity. Hover an arrow for the exact path. The dark box <b>Any domain user</b> is where an attacker starts with no special rights: every arrow out of it needs nothing more than an ordinary account (or, for a guessed password, none). Dashed arrows: the right is real but the object it is held over is not known to lead to Tier 0, so that step is an assumption; check those first. Boxes joined by an arrow are hops of one chain: a principal that holds a right over the next box (or owns it, or is a member of it) and so inherits what it reaches (2 steps at most). Hover a box to light up its whole path. This is derived from the deterministic findings, not a live reachability test.</p>
 <h3 style='margin-top:18px'>Trust map</h3>
 <div class='map-wrap'><svg viewBox='0 0 760 320' width='100%' preserveAspectRatio='xMinYMin meet' font-family='-apple-system,Segoe UI,Helvetica,Arial,sans-serif'>

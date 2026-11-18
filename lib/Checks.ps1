@@ -1698,6 +1698,11 @@ function Get-CheckPosition {
 # finding with the worst severity and every detail, sorted ordinally so the merge doesn't
 # depend on emission order.
 $script:MergedDetailMax = 25
+# ObjectDn keeps the first hit for the report, but the attack-path map needs every object the
+# right was held over, or a chain through the second hit disappears (and the first one is then
+# drawn as an assumption). ObjectDns carries them all, capped so a principal with rights over
+# the whole directory cannot blow up the finding.
+$script:MergedDnMax = 250
 function Merge-DuplicateFindings {
     param($Findings)
     $groups = [ordered]@{}
@@ -1720,11 +1725,19 @@ function Merge-DuplicateFindings {
             (($details[0..($script:MergedDetailMax - 1)]) -join ' | ') + " | (+$($details.Count - $script:MergedDetailMax) more)"
         }
         else { $details -join ' | ' }
+        $dns = New-Object 'System.Collections.Generic.List[string]'
+        $seenDn = @{}
+        foreach ($f in $ordered) {
+            $d = "$($f.ObjectDn)"
+            if (-not $d -or $seenDn.ContainsKey($d.ToLowerInvariant())) { continue }
+            $seenDn[$d.ToLowerInvariant()] = $true
+            if ($dns.Count -lt $script:MergedDnMax) { $dns.Add($d) }
+        }
         $first = $ordered[0]
         [PSCustomObject]@{
             Severity = $worst; Type = $first.Type; Title = $first.Title; Category = $first.Category
             Object = $first.Object; ObjectType = $first.ObjectType; ObjectDn = $first.ObjectDn
-            Detail = "$($g.Count) hits: $text"; Mitre = $first.Mitre
+            ObjectDns = @($dns); Detail = "$($g.Count) hits: $text"; Mitre = $first.Mitre
         }
     }
 }

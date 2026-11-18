@@ -187,7 +187,7 @@ $script:AiPromptFixedText = @(
     'Recent attack vectors (fired checks that the local tool links to attacks seen in public incidents or research; start known_exploitation from these):'
     'more object(s) with the same issue', 'object(s)', 'of the checks were evaluated', 'not reliable, only',
     'Counts: users', 'computers', 'domain controllers', 'Functional level:', 'Hygiene score:', 'Domain:',
-    'Tier 0  via', 'Still present:', 'NEW', 'RESOLVED', 'hits:'
+    'Tier 0 (assumed)  via', 'Tier 0  via', 'Still present:', 'NEW', 'RESOLVED', 'hits:'
 )
 function Get-AiStaticFragments {
     $set = @{}
@@ -313,7 +313,10 @@ Produce:
    For each: a short title, the severity, an ordered list of steps naming
    the object tokens and the technique at each hop toward Tier 0, and a one
    or two sentence narrative of the business impact and where to break the
-   chain. When the input has no such section, return an empty list.
+   chain. A line whose destination reads "Tier 0 (assumed)" means the right
+   is real but nothing in the input shows that it reaches Tier 0: say so in
+   the narrative instead of presenting that hop as a fact. When the input
+   has no such section, return an empty list.
 7. remediation_scripts: for the check ids where a safe, standard fix can be
    expressed as PowerShell, give a snippet. Each: the check id, a short
    PowerShell block using native cmdlets (use the object tokens as

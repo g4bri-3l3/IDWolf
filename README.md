@@ -1058,7 +1058,10 @@ Once the report is on disk, IDWolf can ask Gemini for:
 - quick wins, and what to monitor (event IDs, SIEM ideas) for the things you
   can't fix yet;
 - a trend story, when you use `-CompareTo`;
-- the real attack paths toward Tier 0, explained in defensive terms;
+- the real attack paths toward Tier 0, explained in defensive terms, built only
+  from the escalation steps IDWolf computed itself; a step the findings don't
+  prove reaches Tier 0 is handed over marked as assumed, so the model has to
+  present it as an assumption;
 - PowerShell snippets to fix a check, with names left as placeholders;
 - the findings re-ranked by how exploitable they really are in your environment;
 - which findings match attack vectors used in publicly known attacks of the last
@@ -1230,21 +1233,28 @@ palette. Only severity and risk keep a muted colour.
 has a path to Tier 0 and the technique at each step (DCSync, ACL, delegation,
 RBCD, GPO control, AD CS, gMSA read and so on), coloured by severity. When one
 box holds a right over another, the arrow goes to that box and the chain reads
-left to right, one column per step. A dashed arrow means the right is real but
+left to right, one column per step: a principal that can write to an account
+which can run DCSync is two steps away, and the computer account that is
+allowed to act on a DC through RBCD sits behind that DC. A dashed arrow means the right is real but
 nothing shows that the object it applies to leads to Tier 0. Hover a box to light
 up its whole path. Below the map, a table lists the Tier 0 members, which are
 the destination and not a source. A dark **Any domain user** box on the left
 gathers what any account can start from: Kerberoasting and AS-REP roasting a
 Tier 0 account, enrolling a vulnerable template, coercing a DC and relaying to
-the CA, noPac while the machine account quota is above zero, rights granted to
-Authenticated Users / Domain Users / Everyone, and, with a password-quality
-report attached, a breached or empty Tier 0 password. The members of a group
-that is a source are one step behind it ("Member of Helpdesk"), and a Tier 0
-password shared with a normal account is a step from that account. AD CS on the
-CA (ESC6/7/8/11/16), SID history, SID filtering off on a trust, operator groups,
-RODC caches, GPO scripts on a share, GPP passwords and LAPS readers are on the
-map too; the last few are dashed, because the finding alone doesn't prove the
-path. Next to it there is a **trust map**, with the domain in the middle and
+the CA or to LDAP for RBCD, noPac and Zerologon, rights granted to
+Authenticated Users / Domain Users / Everyone, a GPO that puts a broad group
+into local Administrators, autologon or GPP passwords and passwords in SYSVOL
+scripts, and, with a password-quality report attached, a breached or empty Tier
+0 password. Where an account that already has a path can itself be taken cheaply
+(it is kerberoastable, its description holds a password, its password is in a
+breach list), the arrow out of that box goes into it, so the chain starts where
+the attacker does. The members of a group that is a source are one step behind
+it ("Member of Helpdesk"), through nested groups as well (up to three levels),
+and a Tier 0 password shared with a normal account is a step from that account.
+AD CS on the CA (ESC6/7/8/11/16), SID history, SID filtering off on a trust,
+operator groups, RODC caches, GPO scripts on a share, GPP passwords, DSRM logon
+over the network and LAPS readers are on the map too; the last few are dashed,
+because the finding alone doesn't prove the path. Next to it there is a **trust map**, with the domain in the middle and
 each trust around it, in red when it's weak. Both maps come from the findings,
 not from probing the network.
 

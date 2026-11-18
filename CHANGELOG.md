@@ -1,6 +1,42 @@
 # Changelog
 
-## Unreleased
+## 1.14 - 2026-11-18
+
+- **The attack-path map no longer loses a chain inside a merged finding.** A principal with
+  dangerous rights over several objects is one finding (type + object must stay unique), and only
+  the first object survived in `ObjectDn`. The map read that one object, so a group with
+  `GenericAll` over a harmless account and `WriteDacl` over an account that holds DCSync was drawn
+  as a single dashed "leads nowhere known" arrow, and the chain - and everyone in the group behind
+  it - disappeared. Merged findings now carry every object (`ObjectDns`, capped at 250), the map
+  walks them all, and the arrow is labelled with the right held over *that* object instead of the
+  first one. The CSV, the JSON Lines and the report columns are unchanged.
+- **Nested groups are followed behind a source group.** The group that holds a right over Tier 0 is
+  rarely the group the people are in. Membership is now expanded through groups inside groups, up
+  to 3 levels and 120 boxes, so the staff two nestings behind an ACL show up on the map instead of
+  stopping at the first group. A group inside a source group is always drawn; plain members are
+  still collapsed into one box past five.
+- **One arrow per source, technique and destination.** The same step could be drawn twice, solid
+  and dashed, when the same right was held over a Tier 0 object and over a plain one. A shown step
+  now wins over an assumed one, then the worst severity.
+- **RBCD now names the attacker.** `msDS-AllowedToActOnBehalfOfOtherIdentity` on a DC was drawn as
+  "that DC has a path to Tier 0", while the box that matters - the computer account someone already
+  owns and that is allowed to act on it - was not on the map at all. The principals the check names
+  are now drawn one hop behind the target ("Allowed to act on it (RBCD)").
+- **New paths on the map**, all from checks that already existed: Zerologon (a DC that still
+  accepts a weak Netlogon secure channel) and coercion relayed to LDAP for RBCD (spooler, WebClient
+  or unfiltered RPC on a DC, plus no LDAP signing or channel binding, plus the machine account
+  quota) as entry points that need no account at all; autologon passwords in a GPO and passwords in
+  SYSVOL scripts, which anyone can read; a GPO that puts a broad group into local Administrators
+  (solid on the Domain Controllers OU, dashed elsewhere); DSRM logon over the network on a DC; and
+  an RODC allowed to cache Tier 0 passwords, which gives way to what it has already cached.
+  Weak credentials on an account that *already* has a path (kerberoastable, AS-REP roastable, a
+  password in the description or in a Unix attribute, reversible encryption, timeroastable, or a
+  breached, empty or guessable password from the password-quality report) now draw an arrow out of
+  the entry box into it, so the chain starts where the attacker starts.
+- **The AI input marks an assumed step as assumed.** A line of the "Attack surface toward Tier 0"
+  section whose step is an assumption (a GPP password, LAPS readers, SCCM, SYSVOL) now reads
+  `-> Tier 0 (assumed)`, and the prompt tells the model to present it as an assumption instead of a
+  fact. The same wording the map uses for a dashed arrow.
 
 - **A project page, generated from the repository.** `docs/` is a single static page for GitHub
   Pages, with the synthetic AD and Entra reports published as they are, next to their findings CSV

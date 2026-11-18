@@ -63,7 +63,10 @@ Produce:
    For each: a short title, the severity, an ordered list of steps naming
    the object tokens and the technique at each hop toward Tier 0, and a one
    or two sentence narrative of the business impact and where to break the
-   chain. When the input has no such section, return an empty list.
+   chain. A line whose destination reads "Tier 0 (assumed)" means the right
+   is real but nothing in the input shows that it reaches Tier 0: say so in
+   the narrative instead of presenting that hop as a fact. When the input
+   has no such section, return an empty list.
 7. remediation_scripts: for the check ids where a safe, standard fix can be
    expressed as PowerShell, give a snippet. Each: the check id, a short
    PowerShell block using native cmdlets (use the object tokens as
@@ -569,25 +572,25 @@ Attack surface toward Tier 0 (source object, then technique; use ONLY these for 
 - [Critical] NETBIOS-1\USER-31  ->  Tier 0  via Dangerous ACL on Tier 0
 - [Critical] NETBIOS-1\Exchange Windows Permissions  ->  Tier 0  via Dangerous ACL on Tier 0
 - [Critical] NETBIOS-1\GROUP-6  ->  Tier 0  via Dangerous ACL on Tier 0
-- [Critical] GPO {31B2F340-016D-11D2-945F-00C04FB984F9}  ->  Tier 0  via GPP password in SYSVOL
-- [Critical] NETLOGON (scripts)  ->  Tier 0  via Writable SYSVOL / NETLOGON
+- [Critical] GPO {31B2F340-016D-11D2-945F-00C04FB984F9}  ->  Tier 0 (assumed)  via GPP password in SYSVOL
+- [Critical] NETLOGON (scripts)  ->  Tier 0 (assumed)  via Writable SYSVOL / NETLOGON
 - [Critical] NT AUTHORITY\Authenticated Users  ->  Tier 0  via ACL path
 - [Critical] TEMPLATE-1  ->  Tier 0  via AD CS ESC1
 - [Critical] TEMPLATE-3  ->  Tier 0  via AD CS ESC2
 - [Critical] TEMPLATE-15  ->  Tier 0  via AD CS ESC13
+- [Critical] Default Domain Policy  ->  Tier 0 (assumed)  via Autologon password in a GPO
+- [Critical] GPO {22222222-2222-2222-2222-222222222222}  ->  Tier 0 (assumed)  via Autologon password in a GPO
 - [Critical] GPO-1  ->  Tier 0  via GPO control -> DCs
 - [Critical] GPO-1: PATH-4  ->  Tier 0  via GPO runs code from a share
 - [High] HOST-2$  ->  Tier 0  via Unconstrained delegation
 - [High] USER-29  ->  Tier 0  via Unconstrained delegation
 - [High] USER-13  ->  Tier 0  via Operator group (logon on DCs)
 - [High] USER-14  ->  Tier 0  via Operator group (logon on DCs)
+- [High] DC-3  ->  Tier 0 (assumed)  via RODC allowed to cache Tier 0 passwords
 - [High] HOST-1$  ->  Tier 0  via Computer in Tier 0
 - [High] FOREIGN-1  ->  Tier 0  via Foreign Tier 0 member
 - [High] TRUST-2  ->  Tier 0  via Trust without SID filtering
 - [High] TRUST-1  ->  Tier 0  via Trust without SID filtering
-- [High] NETBIOS-1\USER-30  ->  Tier 0  via DCSync
-- [High] NETBIOS-1\USER-32  ->  Tier 0  via DirSync of LAPS passwords
-- [High] NETBIOS-1\GROUP-5  ->  Tier 0  via Dangerous ACL on Tier 0
 
 Recent attack vectors (fired checks that the local tool links to attacks seen in public incidents or research; start known_exploitation from these):
 - kds_root_key_readable: Golden gMSA / Golden dMSA: managed service account passwords from the KDS root key (2025)

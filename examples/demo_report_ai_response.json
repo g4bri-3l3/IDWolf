@@ -1,353 +1,565 @@
 {
-    "executive_summary":  " me-domain Active Directory environment DOMAIN-1 has a critical security posture scoring 1/100, leaving Tier 0 assets at immediate risk of compromise. Multiple low-complexity attack vectors exist, including domain controller vulnerabilities such as missing noPac updates and unenforced Netlogon secure channels, combined with active AD CS misconfigurations (ESC1, ESC2, ESC13) allowing unauthenticated or domain-user level elevation to Domain Admin. Critical identity hygiene issues include exposed SYSVOL passwords, cleartext credentials, writable NETLOGON shares, and non-default DCSync/AdminSDHolder control rights held by standard accounts. Immediate remediation must focus on securing Active Directory Certificate Services, patching core domain controllers, revoking unauthorized domain rights, and rotating stale privileged credentials.",
-    "remediation_plan":  [
-                             {
-                                 "title":  "Remediate AD CS Escalation Paths (ESC1, ESC2, ESC13)",
-                                 "checks":  [
-                                                "adcs_esc1",
-                                                "adcs_esc2",
-                                                "adcs_esc13"
-                                            ],
-                                 "objects":  [
-                                                 "TEMPLATE-1",
-                                                 "TEMPLATE-3",
-                                                 "TEMPLATE-15"
-                                             ],
-                                 "rationale":  "Breaks instant privilege escalation paths from any domain user to Tier 0 identity certificate issuance.",
-                                 "effort":  "medium",
-                                 "caveats":  "Ensure legitimate PKI clients are identified before removing requester-supplied subject flags or broad enrollment rights."
-                             },
-                             {
-                                 "title":  "Patch Domain Controllers and Enforce RPC Security Controls",
-                                 "checks":  [
-                                                "nopac_unpatched_dc",
-                                                "netlogon_vulnerable_channel",
-                                                "coercion_unfiltered_dc"
-                                            ],
-                                 "objects":  [
-                                                 "DCHOST-2",
-                                                 "DCHOST-1"
-                                             ],
-                                 "rationale":  "Mitigates direct DC takeovers (noPac, ZeroLogon) and RPC coercion vectors.",
-                                 "effort":  "high",
-                                 "caveats":  "Requires domain controller OS updates and service restarts; test RPC dependencies for legacy services prior to strict enforcement."
-                             },
-                             {
-                                 "title":  "Revoke Unauthorized Tier 0 ACLs and DCSync Privileges",
-                                 "checks":  [
-                                                "dcsync_rights",
-                                                "dangerous_ace_tier0"
-                                            ],
-                                 "objects":  [
-                                                 "USER-31",
-                                                 "Exchange Windows Permissions",
-                                                 "GROUP-5",
-                                                 "GROUP-6"
-                                             ],
-                                 "rationale":  "Eliminates direct persistence and control points over Domain Controllers and AdminSDHolder.",
-                                 "effort":  "medium",
-                                 "caveats":  "Verify Exchange hybrid and synchronization service account requirements before stripping write rights."
-                             },
-                             {
-                                 "title":  "Clean Up Credentials in SYSVOL, GPOs, and Accounts",
-                                 "checks":  [
-                                                "gpp_cpassword",
-                                                "gpo_autologon_password",
-                                                "sysvol_writable",
-                                                "pwq_empty_password"
-                                            ],
-                                 "objects":  [
-                                                 "NETLOGON",
-                                                 "USER-22",
-                                                 "Default Domain Policy"
-                                             ],
-                                 "rationale":  "Removes plain-text credential exposures accessible to all domain users.",
-                                 "effort":  "low",
-                                 "caveats":  "Changing SYSVOL script access may impact non-standard deployment scripts; audit network drive mappings."
-                             },
-                             {
-                                 "title":  "Rotate Privileged Credentials and Enforce Account Protection",
-                                 "checks":  [
-                                                "krbtgt_password_old",
-                                                "privileged_kerberoastable",
-                                                "asrep_roastable"
-                                            ],
-                                 "objects":  [
-                                                 "krbtgt",
-                                                 "USER-14",
-                                                 "USER-6",
-                                                 "USER-8"
-                                             ],
-                                 "rationale":  "Stops offline credential cracking attacks (Kerberoasting/AS-REP Roasting) and golden ticket persistence.",
-                                 "effort":  "medium",
-                                 "caveats":  "Rotate krbtgt password twice over 24-48 hours; verify service availability for SPN accounts after password changes."
-                             }
-                         ],
-    "quick_wins":  [
-                       "Disable user-supplied subject names (ENROLLEE_SUPPLIES_SUBJECT) on certificate template TEMPLATE-1.",
-                       "Remove write permissions for \u0027Domain Users\u0027 on the NETLOGON share folder PATH-2.",
-                       "Enforce mandatory password requirement and reset credentials for account USER-22.",
-                       "Set RequireStrongKey = 1 to enforce Netlogon secure channel protection on Domain Controllers.",
-                       "Disable AlwaysInstallElevated policy setting in the Default Domain Policy GPO."
-                   ],
-    "monitoring":  [
-                       {
-                           "checks":  [
-                                          "dcsync_rights"
-                                      ],
-                           "event_ids":  [
-                                             "4662"
-                                         ],
-                           "guidance":  "Monitor for Directory Service access requests containing DS-Replication-Get-Changes-All (GUID 1131f6ad-9c4d-11d1-bf6d-00c04fd7d5a0) originating from non-DC accounts like USER-31."
-                       },
-                       {
-                           "checks":  [
-                                          "adcs_esc1",
-                                          "adcs_esc2"
-                                      ],
-                           "event_ids":  [
-                                             "4886",
-                                             "4887"
-                                         ],
-                           "guidance":  "Alert on certificate enrollment requests against TEMPLATE-1 or TEMPLATE-3 where Subject Alternative Name (SAN) modifications are submitted by non-administrative users."
-                       },
-                       {
-                           "checks":  [
-                                          "nopac_unpatched_dc"
-                                      ],
-                           "event_ids":  [
-                                             "4741",
-                                             "4742"
-                                         ],
-                           "guidance":  "Detect machine account creation or modification events where sAMAccountName is altered to mimic a Domain Controller without trailing dollar signs."
-                       }
-                   ],
-    "comparison_narrative":  "",
-    "attack_paths":  [
-                         {
-                             "title":  "Domain Escalation via AD CS ESC1 Template",
-                             "severity":  "Critical",
-                             "steps":  [
-                                           "NETBIOS-1\\Domain Users -\u003e Request certificate from TEMPLATE-1 supplying Domain Admin SAN",
-                                           "TEMPLATE-1 -\u003e Authenticate as Domain Admin to Tier 0"
-                                       ],
-                             "narrative":  "Any domain user can request a client authentication certificate matching high-privileged identities, yielding full domain takeover. Modify TEMPLATE-1 to disallow enrollee-supplied subjects."
-                         },
-                         {
-                             "title":  "Direct Domain Takeover via Non-Default DCSync Rights",
-                             "severity":  "Critical",
-                             "steps":  [
-                                           "USER-31 -\u003e Replicate AD secrets via DCSync",
-                                           "Tier 0 -\u003e Full domain compromise via hash extraction"
-                                       ],
-                             "narrative":  "USER-31 possesses ExtendedRight DS-Replication-Get-Changes-All on the domain root, enabling full extraction of domain credentials. Revoke DCSync rights from USER-31."
-                         },
-                         {
-                             "title":  "Privilege Escalation via Constrained Delegation with Protocol Transition",
-                             "severity":  "Critical",
-                             "steps":  [
-                                           "USER-18 -\u003e Perform protocol transition (S4U2Self/S4U2Proxy) to cifs/DCHOST-1",
-                                           "cifs/DCHOST-1 -\u003e Impersonate arbitrary privileged user on DC"
-                                       ],
-                             "narrative":  "USER-18 is configured with protocol transition targeting domain controller services, allowing arbitrary account impersonation against DCHOST-1. Remove protocol transition rights from USER-18."
-                         },
-                         {
-                             "title":  "Domain Controller Takeover via noPac Vulnerability",
-                             "severity":  "Critical",
-                             "steps":  [
-                                           "Any Domain User -\u003e Create computer account using MachineAccountQuota",
-                                           "Computer Account -\u003e Rename sAMAccountName to match DCHOST-2 without \u0027$\u0027",
-                                           "DCHOST-2 -\u003e Request TGT and exploit missing noPac patch to obtain Domain Admin TGT"
-                                       ],
-                             "narrative":  "Unpatched DC DCHOST-2 coupled with non-zero MachineAccountQuota permits unprivileged users to request DC-privileged tickets. Apply the noPac patch to DCHOST-2."
-                         },
-                         {
-                             "title":  "Domain Takeover via Unconstrained Delegation Computer Account",
-                             "severity":  "High",
-                             "steps":  [
-                                           "HOST-2$ -\u003e Coerce authentication from a Domain Controller to HOST-2$",
-                                           "HOST-2$ -\u003e Extract cached DC TGT from LSASS memory to compromise Tier 0"
-                                       ],
-                             "narrative":  "HOST-2$ is configured with unconstrained delegation, permitting extraction of administrative TGTs upon authentication. Remove TRUSTED_FOR_DELEGATION from HOST-2$."
-                         }
-                     ],
-    "remediation_scripts":  [
-                                {
-                                    "check":  "adcs_esc1",
-                                    "powershell":  "Set-ADCSTemplate -Name \u0027TEMPLATE-1\u0027 -AutoEnrollment False -msPKI-Certificate-Name-Flag 0",
-                                    "caveats":  "Ensure target template object name matches and test application authentication flow post-update."
-                                },
-                                {
-                                    "check":  "machine_account_quota",
-                                    "powershell":  "Set-ADDomain -Identity \u0027DOMAIN-1\u0027 -Replace @{\u0027ms-DS-MachineAccountQuota\u0027=0}",
-                                    "caveats":  "May break automated domain-join processes relying on non-administrative user credentials."
-                                },
-                                {
-                                    "check":  "pwq_empty_password",
-                                    "powershell":  "Set-ADAccountPassword -Identity \u0027USER-22\u0027 -Reset -NewPassword (ConvertTo-SecureString \u0027ChangeMe123!Secure\u0027 -AsPlainText -Force)\nSet-ADUser -Identity \u0027USER-22\u0027 -PasswordNotRequired $False",
-                                    "caveats":  "Coordinate credential updates with account owners."
-                                }
-                            ],
-    "triage":  [
-                   {
-                       "rank":  1,
-                       "checks":  [
-                                      "adcs_esc1"
-                                  ],
-                       "objects":  [
-                                       "TEMPLATE-1"
-                                   ],
-                       "rationale":  "Allows any standard user immediate elevation to full Domain Admin via certificate SAN injection."
-                   },
-                   {
-                       "rank":  2,
-                       "checks":  [
-                                      "dcsync_rights"
-                                  ],
-                       "objects":  [
-                                       "USER-31"
-                                   ],
-                       "rationale":  "Grants direct execution of DCSync replication to extract all domain password hashes."
-                   },
-                   {
-                       "rank":  3,
-                       "checks":  [
-                                      "nopac_unpatched_dc"
-                                  ],
-                       "objects":  [
-                                       "DCHOST-2"
-                                   ],
-                       "rationale":  "Provides a reliable privilege escalation path to DC host compromise from any authenticated account."
-                   },
-                   {
-                       "rank":  4,
-                       "checks":  [
-                                      "constrained_delegation_protocol_transition"
-                                  ],
-                       "objects":  [
-                                       "USER-18"
-                                   ],
-                       "rationale":  "Enables arbitrary user impersonation against CIFS services on domain controllers."
-                   },
-                   {
-                       "rank":  5,
-                       "checks":  [
-                                      "sysvol_writable"
-                                  ],
-                       "objects":  [
-                                       "NETLOGON"
-                                   ],
-                       "rationale":  "Allows authenticated attackers to modify domain-wide logon scripts for widespread code execution."
-                   }
-               ],
-    "known_exploitation":  [
-                               {
-                                   "checks":  [
-                                                  "adcs_esc1"
-                                              ],
-                                   "vector":  "AD CS Template Abuse (ESC1)",
-                                   "public":  "Widely reported in ransomware and advanced threat actor intrusions (Certified Pre-Owned research).",
-                                   "relevance":  "TEMPLATE-1 allows Domain Users to supply arbitrary subject names with client authentication."
-                               },
-                               {
-                                   "checks":  [
-                                                  "nopac_unpatched_dc"
-                                              ],
-                                   "vector":  "noPac / SamAccountName Spoofing (CVE-2021-42278 / CVE-2021-42287)",
-                                   "public":  "Actively exploited across enterprise environments post-disclosure.",
-                                   "relevance":  "DCHOST-2 is missing build patches while Machine Account Quota is set to 10."
-                               },
-                               {
-                                   "checks":  [
-                                                  "netlogon_vulnerable_channel"
-                                              ],
-                                   "vector":  "ZeroLogon (CVE-2020-1472)",
-                                   "public":  "Widely documented and integrated into automated attack frameworks.",
-                                   "relevance":  "Domain Controllers lack enforced secure channel protection."
-                               }
-                           ],
-    "compromise_assessment":  {
-                                  "verdict":  "likely",
-                                  "starting_point":  "any domain user",
-                                  "summary":  "The environment presents trivial path combinations allowing low-privileged domain users to achieve complete Tier 0 domain takeover. Exposure across AD CS configuration, unpatched domain controllers, and excess replication rights ensures high attack chain reliability.",
-                                  "chains":  [
-                                                 {
-                                                     "title":  "Standard Domain User to Domain Admin via AD CS ESC1",
-                                                     "starting_point":  "any domain user",
-                                                     "confidence":  "high",
-                                                     "links":  [
-                                                                   {
-                                                                       "check":  "adcs_esc1",
-                                                                       "objects":  [
-                                                                                       "TEMPLATE-1"
-                                                                                   ],
-                                                                       "gives":  "Domain Admin Client Authentication Certificate",
-                                                                       "evidence":  "shown",
-                                                                       "assumption":  ""
-                                                                   }
-                                                               ],
-                                                     "break_point":  {
-                                                                         "check":  "adcs_esc1",
-                                                                         "why":  "Disabling ENROLLEE_SUPPLIES_SUBJECT or restricting enrollment rights stops unauthorized identity impersonation."
-                                                                     },
-                                                     "checks":  [
-                                                                    "adcs_esc1"
-                                                                ],
-                                                     "objects":  [
-                                                                     "TEMPLATE-1"
-                                                                 ],
-                                                     "narrative":  "An authenticated low-privileged account requests a certificate using TEMPLATE-1 specifying a Domain Admin sAMAccountName, immediately receiving full administrative privileges."
-                                                 },
-                                                 {
-                                                     "title":  "Account USER-31 Direct DCSync Replication",
-                                                     "starting_point":  "USER-31",
-                                                     "confidence":  "high",
-                                                     "links":  [
-                                                                   {
-                                                                       "check":  "dcsync_rights",
-                                                                       "objects":  [
-                                                                                       "USER-31"
-                                                                                   ],
-                                                                       "gives":  "Domain Controller Password Hashes (krbtgt, Administrators)",
-                                                                       "evidence":  "shown",
-                                                                       "assumption":  ""
-                                                                   }
-                                                               ],
-                                                     "break_point":  {
-                                                                         "check":  "dcsync_rights",
-                                                                         "why":  "Revoking DS-Replication-Get-Changes-All from USER-31 removes secret replication privileges."
-                                                                     },
-                                                     "checks":  [
-                                                                    "dcsync_rights"
-                                                                ],
-                                                     "objects":  [
-                                                                     "USER-31"
-                                                                 ],
-                                                     "narrative":  "Control over USER-31 enables immediate execution of DCSync against the domain head to pull all domain account hashes, granting full control."
-                                                 }
-                                             ]
-                              },
-    "rejected_chains":  [
-                            {
-                                "title":  "Coercion to WebDAV Relay via Disabled WebClient",
-                                "checks":  [
-                                               "webclient_on_dc"
-                                           ],
-                                "reason":  "WebClient service is running on DCHOST-2; chain was evaluated as viable rather than rejected."
-                            }
-                        ],
-    "verify_next":  [
-                        {
-                            "question":  "Are the actual credentials for USER-14 and USER-6 susceptible to immediate offline dictionary cracking?",
-                            "checks":  [
-                                           "privileged_kerberoastable"
-                                       ]
-                        },
-                        {
-                            "question":  "Is SMB signing enforced network-wide across workstation subnets to prevent SMB relay targeting?",
-                            "checks":  [
-                                           "smb_client_signing_not_required"
-                                       ]
-                        }
-                    ]
+  "executive_summary": "The Active Directory domain DOMAIN-1 exhibits an extremely critical security posture with a hygiene score of 1 out of 100, indicating widespread misconfigurations and multiple pathways to complete domain compromise. Intruders can leverage unpatched vulnerabilities like ZeroLogon and noPac alongside severe certificate services misconfigurations (such as ESC1, ESC15, and ESC8 NTLM relay) to rapidly escalate privileges to Tier 0. Furthermore, critical infrastructure weaknesses include writable SYSVOL shares, exposed Group Policy Preferences passwords, and multiple accounts with unrotated credentials or dangerous delegated permissions. Immediate intervention is required to patch domain controllers, harden AD CS templates, secure SYSVOL permissions, and revoke unauthorized administrative and replication rights.",
+  "remediation_plan": [
+    {
+      "title": "Harden Active Directory Certificate Services (AD CS) and Disable Vulnerable Templates",
+      "checks": [
+        "adcs_esc1",
+        "adcs_esc2",
+        "adcs_esc3",
+        "adcs_esc4",
+        "adcs_esc5",
+        "adcs_esc6",
+        "adcs_esc7",
+        "adcs_esc8",
+        "adcs_esc9",
+        "adcs_esc10",
+        "adcs_esc11",
+        "adcs_esc13",
+        "adcs_esc15",
+        "adcs_esc17",
+        "adcs_weak_ca_key"
+      ],
+      "objects": [
+        "TEMPLATE-1",
+        "TEMPLATE-3",
+        "TEMPLATE-5",
+        "TEMPLATE-7",
+        "TEMPLATE-11",
+        "TEMPLATE-13",
+        "TEMPLATE-15",
+        "CA-1"
+      ],
+      "rationale": "Removes multiple critical escalation paths (ESC1, ESC2, ESC3, ESC4, ESC8, ESC13, ESC15) that allow low-privileged users to request high-privilege or client-authentication certificates for immediate domain takeover.",
+      "effort": "high",
+      "caveats": "Disabling or modifying certificate templates and CA settings may impact applications requiring automated enrollment. Test template modifications in a staging environment before production deployment."
+    },
+    {
+      "title": "Patch Domain Controllers and Enforce Secure Channels",
+      "checks": [
+        "nopac_unpatched_dc",
+        "netlogon_vulnerable_channel",
+        "ldap_signing_not_required",
+        "ldap_channel_binding_off",
+        "smb1_server_enabled"
+      ],
+      "objects": [
+        "DCHOST-2",
+        "Domain Controllers"
+      ],
+      "rationale": "Closes critical execution and impersonation vectors (ZeroLogon, noPac) and prevents NTLM relay attacks against domain controllers by enforcing signing and channel binding.",
+      "effort": "high",
+      "caveats": "Enforcing LDAP signing and channel binding can break legacy applications relying on unsigned or unchannel-bound LDAP queries. Audit legacy traffic prior to enforcement."
+    },
+    {
+      "title": "Secure SYSVOL, GPOs, and Remove Hardcoded Credentials",
+      "checks": [
+        "sysvol_writable",
+        "gpp_cpassword",
+        "gpo_dangerous_acl",
+        "gpo_autologon_password",
+        "gpo_runs_code_from_share",
+        "sysvol_script_secrets"
+      ],
+      "objects": [
+        "NETLOGON (scripts)",
+        "GPO-1",
+        "Default Domain Policy",
+        "GPO {31B2F340-016D-11D2-945F-00C04FB984F9}",
+        "GPO {22222222-2222-2222-2222-222222222222}"
+      ],
+      "rationale": "Stops attackers from modifying Group Policy Objects or planting scripts and credentials in SYSVOL to achieve arbitrary code execution on domain controllers and workstations.",
+      "effort": "medium",
+      "caveats": "Ensure deployment scripts or administrative tools do not rely on writable SYSVOL paths or embedded credentials before revoking permissions."
+    },
+    {
+      "title": "Revoke Unauthorized Tier 0 Permissions and Clean Up Dangerous ACLs",
+      "checks": [
+        "dcsync_rights",
+        "sync_laps_rights",
+        "dangerous_ace_anywhere",
+        "dangerous_ace_tier0",
+        "kds_root_key_readable",
+        "laps_readers",
+        "gmsa_password_readable"
+      ],
+      "objects": [
+        "NETBIOS-1\\USER-31",
+        "NETBIOS-1\\USER-30",
+        "NETBIOS-1\\USER-32",
+        "NETBIOS-1\\GROUP-5",
+        "NETBIOS-1\\GROUP-6",
+        "NETBIOS-1\\Exchange Windows Permissions",
+        "USER-66$"
+      ],
+      "rationale": "Eliminates excessive administrative privileges and dangerous access controls (such as unauthorized DCSync rights, AdminSDHolder modifications, and readable gMSA/LAPS secrets) granted to non-Tier 0 principals.",
+      "effort": "medium",
+      "caveats": "Removing permissions from built-in or integration accounts (such as Exchange Windows Permissions or sync accounts) requires validating proper split-permissions configurations and administrative boundaries."
+    },
+    {
+      "title": "Rotate and Secure Privileged Credentials and Kerberos Settings",
+      "checks": [
+        "krbtgt_password_old",
+        "rodc_krbtgt_password_old",
+        "cloud_kerberos_trust_key_old",
+        "privileged_kerberoastable",
+        "asrep_roastable",
+        "privileged_password_old",
+        "privileged_password_never_expires",
+        "spn_account_rc4",
+        "des_enabled"
+      ],
+      "objects": [
+        "krbtgt",
+        "USER-1",
+        "krbtgt_AzureAD",
+        "USER-6",
+        "USER-14",
+        "USER-8",
+        "USER-19",
+        "USER-3",
+        "USER-5",
+        "Administrator"
+      ],
+      "rationale": "Mitigates Kerberoasting, AS-REP roasting, and ticket forgery attacks by enforcing strong encryption types (AES), disabling pre-authentication requirements, and rotating long-lived credentials.",
+      "effort": "medium",
+      "caveats": "Rotating the krbtgt password twice in succession invalidates all existing Kerberos tickets. Ensure domain replication is healthy before rotation."
+    },
+    {
+      "title": "Harden Domain Controller Services and Attack Surface Configurations",
+      "checks": [
+        "always_install_elevated",
+        "point_and_print_unsafe",
+        "webclient_on_dc",
+        "coercion_unfiltered_dc",
+        "winrm_basic_auth",
+        "wdigest_cleartext",
+        "spooler_on_dc"
+      ],
+      "objects": [
+        "Default Domain Policy",
+        "Domain Controllers",
+        "DCHOST-2",
+        "CA-1"
+      ],
+      "rationale": "Disables unnecessary services (Print Spooler, WebClient) and insecure authentication features (WDigest, basic WinRM) on domain controllers to prevent coercion and local credential harvesting.",
+      "effort": "low",
+      "caveats": "Verify whether printing services or legacy web-based management tools depend on the Print Spooler or WebClient before disabling."
+    }
+  ],
+  "quick_wins": [
+    "Disable the WebClient service via GPO across all domain controllers to mitigate web-based NTLM coercion vectors.",
+    "Disable WDigest authentication via GPO on domain controllers to prevent cleartext credential caching in LSASS.",
+    "Enforce strong Kerberos encryption types and disable RC4/DES where possible across domain controllers.",
+    "Remove unnecessary accounts from privileged groups such as Domain Admins and Backup Operators.",
+    "Enable Account Lockout threshold settings in the Default Domain Policy to prevent brute-force attacks."
+  ],
+  "monitoring": [
+    {
+      "checks": [
+        "dcsync_rights",
+        "sync_laps_rights"
+      ],
+      "event_ids": [
+        "4662"
+      ],
+      "guidance": "Monitor for Directory Service Access events (4662) where the DS-Replication-Get-Changes or DS-Replication-Get-Changes-All extended rights are requested against the domain object by non-standard accounts."
+    },
+    {
+      "checks": [
+        "adcs_esc1",
+        "adcs_esc8",
+        "adcs_esc15"
+      ],
+      "event_ids": [
+        "4886",
+        "4887"
+      ],
+      "guidance": "Monitor AD CS Certificate Services audit logs for event IDs 4886 (certificate request received) and 4887 (certificate issued), paying attention to requests containing alternative subject names or unusual user principal names."
+    },
+    {
+      "checks": [
+        "netlogon_vulnerable_channel",
+        "nopac_unpatched_dc"
+      ],
+      "event_ids": [
+        "5827",
+        "5828",
+        "5830",
+        "4741"
+      ],
+      "guidance": "Monitor System and Security logs for Netlogon secure channel establishment attempts using vulnerable cryptographic algorithms or anomalous computer account creation bursts (Event 4741)."
+    },
+    {
+      "checks": [
+        "privileged_kerberoastable",
+        "kerberoastable_user"
+      ],
+      "event_ids": [
+        "4769"
+      ],
+      "guidance": "Detect potential Kerberoasting activity by monitoring for Kerberos service ticket requests (Event 4769) requesting RC4 encryption (0x17) or high volumes of TGS requests from a single user account in a short timeframe."
+    },
+    {
+      "checks": [
+        "coercion_unfiltered_dc",
+        "webclient_on_dc"
+      ],
+      "event_ids": [
+        "4624",
+        "4672"
+      ],
+      "guidance": "Monitor for anomalous network logon events (Event 4624 with Logon Type 3) using NTLM authentication against domain controllers, especially originating from unexpected internal hosts or service accounts."
+    }
+  ],
+  "comparison_narrative": "",
+  "attack_paths": [
+    {
+      "title": "Kerberoasting Privileged Accounts",
+      "severity": "Critical",
+      "steps": [
+        "USER-14 -> Request service ticket for SPN backup/HOSTFQDN-34",
+        "USER-14 -> Offline password cracking",
+        "USER-14 -> Tier 0 (assumed)"
+      ],
+      "narrative": "An attacker with standard domain user access requests a Kerberos service ticket for a privileged service account with a weak password, cracks it offline, and gains administrative control."
+    },
+    {
+      "title": "AD CS ESC1 Certificate Enrollment",
+      "severity": "Critical",
+      "steps": [
+        "NETBIOS-1\\Domain Users -> Enroll in TEMPLATE-1 with alternate subject name",
+        "TEMPLATE-1 -> Authenticate as Domain Admin using issued certificate",
+        "Tier 0 (assumed)"
+      ],
+      "narrative": "Low-privileged domain users can request certificates from a vulnerable template supplying an arbitrary subject name mapped to a privileged account, achieving full domain compromise."
+    },
+    {
+      "title": "RBCD Delegation Abuse against Domain Controllers",
+      "severity": "Critical",
+      "steps": [
+        "HOST-7$ -> Configure Resource-Based Constrained Delegation on DC-1$",
+        "DC-1$ -> Impersonate privileged user via S4U2Self/S4U2Proxy",
+        "Tier 0 (assumed)"
+      ],
+      "narrative": "Control over an object with RBCD configured targeting a domain controller allows an intruder to forge authentication tickets for privileged users, leading to Tier 0 control."
+    },
+    {
+      "title": "DCSync via Direct Domain Rights",
+      "severity": "Critical",
+      "steps": [
+        "NETBIOS-1\\USER-31 -> Invoke DS-Replication-Get-Changes-All on domain head",
+        "NETBIOS-1\\USER-31 -> Extract domain credential database",
+        "Tier 0"
+      ],
+      "narrative": "An account holding explicit DCSync replication rights can replicate all domain password hashes directly from the domain controllers, achieving full domain compromise."
+    },
+    {
+      "title": "GPO Abuse Leading to DC Control",
+      "severity": "Critical",
+      "steps": [
+        "GPO-1 -> Modify machine startup script or tasks linked to Domain Controllers OU",
+        "GPO-1 -> Execute arbitrary code on domain controllers",
+        "Tier 0"
+      ],
+      "narrative": "Control over a GPO linked to the Domain Controllers OU allows an intruder to deploy malicious startup scripts or tasks executed with SYSTEM privileges on all domain controllers."
+    },
+    {
+      "title": "Unconstrained Delegation Exploitation",
+      "severity": "High",
+      "steps": [
+        "HOST-2$ -> Wait for privileged user authentication or coerce connection",
+        "HOST-2$ -> Capture TGT from memory cache",
+        "Tier 0 (assumed)"
+      ],
+      "narrative": "Compromise of a non-DC computer configured with unconstrained delegation allows capture of forwarded Kerberos TGTs from administrative users connecting to the host."
+    }
+  ],
+  "remediation_scripts": [
+    {
+      "check": "adcs_esc6",
+      "powershell": "certutil -setreg CA\\EditFlags -EDITF_ATTRIBUTESUBJECTALTNAME2",
+      "caveats": "Clearing EDITF_ATTRIBUTESUBJECTALTNAME2 removes requester-supplied SAN support on the CA. Verify that no legitimate applications rely on this flag before executing."
+    },
+    {
+      "check": "wdigest_cleartext",
+      "powershell": "Set-ItemProperty -Path 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest' -Name 'UseLogonCredential' -Value 0",
+      "caveats": "Disables WDigest cleartext credential caching in LSASS. Requires a reboot or service restart to take full effect."
+    },
+    {
+      "check": "webclient_on_dc",
+      "powershell": "Stop-Service WebClient -Force\nSet-Service WebClient -StartupType Disabled",
+      "caveats": "Stops and disables the WebClient service to prevent WebDAV-based NTLM coercion."
+    }
+  ],
+  "triage": [
+    {
+      "rank": 1,
+      "checks": [
+        "dcsync_rights"
+      ],
+      "objects": [
+        "NETBIOS-1\\USER-31",
+        "NETBIOS-1\\USER-30"
+      ],
+      "rationale": "Direct DCSync rights grant immediate ability to extract all domain password hashes and achieve full domain compromise."
+    },
+    {
+      "rank": 2,
+      "checks": [
+        "adcs_esc1",
+        "adcs_esc15"
+      ],
+      "objects": [
+        "TEMPLATE-1",
+        "TEMPLATE-13"
+      ],
+      "rationale": "Allows low-privileged users to request certificates for arbitrary accounts including Domain Admins."
+    },
+    {
+      "rank": 3,
+      "checks": [
+        "nopac_unpatched_dc",
+        "netlogon_vulnerable_channel"
+      ],
+      "objects": [
+        "DCHOST-2",
+        "Domain Controllers"
+      ],
+      "rationale": "Unpatched domain controller vulnerabilities allow unauthenticated attackers to elevate to Domain Admin instantly."
+    },
+    {
+      "rank": 4,
+      "checks": [
+        "sysvol_writable",
+        "gpp_cpassword"
+      ],
+      "objects": [
+        "NETLOGON (scripts)",
+        "GPO {31B2F340-016D-11D2-945F-00C04FB984F9}"
+      ],
+      "rationale": "Writable SYSVOL and exposed GPP passwords enable trivial code execution and credential theft across the domain."
+    },
+    {
+      "rank": 5,
+      "checks": [
+        "privileged_kerberoastable",
+        "asrep_roastable"
+      ],
+      "objects": [
+        "USER-6",
+        "USER-8",
+        "USER-14"
+      ],
+      "rationale": "Exposes privileged service and user accounts to offline brute-force credential recovery."
+    }
+  ],
+  "known_exploitation": [
+    {
+      "checks": [
+        "netlogon_vulnerable_channel"
+      ],
+      "vector": "ZeroLogon (CVE-2020-1472)",
+      "public": "Widely exploited by ransomware groups and threat actors for initial domain takeover via Netlogon cryptographic weakness.",
+      "relevance": "Domain controllers have weakened Netlogon secure channel enforcement, permitting immediate exploitation."
+    },
+    {
+      "checks": [
+        "nopac_unpatched_dc"
+      ],
+      "vector": "noPac (CVE-2021-42278 / CVE-2021-42287)",
+      "public": "Extensively used in intrusion campaigns to spoof domain controller computer accounts and escalate privileges.",
+      "relevance": "Domain controller DCHOST-2 lacks the necessary security updates and permits high machine account quotas."
+    },
+    {
+      "checks": [
+        "adcs_esc1",
+        "adcs_esc8"
+      ],
+      "vector": "AD CS Certificate Template Abuse & NTLM Relay (ESC1 / ESC8)",
+      "public": "Core vector in numerous ransomware and APT intrusions involving Active Directory Certificate Services exploitation.",
+      "relevance": "Templates allow requester-supplied subject names and web enrollment is active without adequate protection."
+    },
+    {
+      "checks": [
+        "gpp_cpassword"
+      ],
+      "vector": "Group Policy Preferences Password Harvesting",
+      "public": "Standard automated check in nearly all penetration tests and red team engagements targeting Windows domains.",
+      "relevance": "Exposed cpassword strings found in SYSVOL files."
+    },
+    {
+      "checks": [
+        "privileged_kerberoastable",
+        "kerberoastable_user"
+      ],
+      "vector": "Kerberoasting",
+      "public": "Pervasive technique in enterprise intrusions through 2026 for extracting service account credentials.",
+      "relevance": "Multiple privileged and standard user accounts feature Service Principal Names with old or weak passwords."
+    }
+  ],
+  "compromise_assessment": {
+    "verdict": "likely",
+    "starting_point": "any domain user",
+    "summary": "An attacker with standard domain user access can leverage multiple independent paths to achieve full domain compromise, including certificate template abuse (ESC1), Kerberoasting of privileged accounts, and exploiting unpatched domain controller vulnerabilities.",
+    "chains": [
+      {
+        "title": "AD CS ESC1 Certificate Escalation",
+        "starting_point": "any domain user",
+        "confidence": "high",
+        "links": [
+          {
+            "check": "adcs_esc1",
+            "objects": [
+              "TEMPLATE-1"
+            ],
+            "gives": "Ability to request a certificate as a Domain Admin",
+            "evidence": "shown",
+            "assumption": ""
+          }
+        ],
+        "break_point": {
+          "check": "adcs_esc1",
+          "why": "Disabling or reconfiguring TEMPLATE-1 removes enrollee-supplied subject capability."
+        },
+        "checks": [
+          "adcs_esc1"
+        ],
+        "objects": [
+          "TEMPLATE-1"
+        ],
+        "narrative": "A standard domain user requests a certificate via TEMPLATE-1 specifying a Domain Admin principal in the subject alternative name, authenticates via Schannel, and gains Tier 0 control."
+      },
+      {
+        "title": "Privileged Kerberoasting",
+        "starting_point": "any domain user",
+        "confidence": "medium",
+        "links": [
+          {
+            "check": "privileged_kerberoastable",
+            "objects": [
+              "USER-6"
+            ],
+            "gives": "Kerberos service ticket for a Domain Admin account",
+            "evidence": "shown",
+            "assumption": "Password is weak enough to crack offline"
+          }
+        ],
+        "break_point": {
+          "check": "privileged_kerberoastable",
+          "why": "Removing SPNs from privileged accounts or enforcing strong, frequently rotated passwords stops offline cracking."
+        },
+        "checks": [
+          "privileged_kerberoastable"
+        ],
+        "objects": [
+          "USER-6"
+        ],
+        "narrative": "An attacker requests a service ticket for USER-6 (Domain Admin), cracks the ticket offline, and uses the recovered password to authenticate as a Domain Admin."
+      },
+      {
+        "title": "DCSync via Explicit Rights",
+        "starting_point": "NETBIOS-1\\USER-31",
+        "confidence": "high",
+        "links": [
+          {
+            "check": "dcsync_rights",
+            "objects": [
+              "NETBIOS-1\\USER-31"
+            ],
+            "gives": "DS-Replication-Get-Changes-All rights on domain head",
+            "evidence": "shown",
+            "assumption": ""
+          }
+        ],
+        "break_point": {
+          "check": "dcsync_rights",
+          "why": "Removing the explicit DCSync ACE from NETBIOS-1\\USER-31 prevents unauthorized replication."
+        },
+        "checks": [
+          "dcsync_rights"
+        ],
+        "objects": [
+          "NETBIOS-1\\USER-31"
+        ],
+        "narrative": "Compromising USER-31 allows the principal to invoke directory replication functions against the domain root and extract all domain secrets."
+      },
+      {
+        "title": "GPO Abuse leading to Domain Controller Code Execution",
+        "starting_point": "NETBIOS-1\\GROUP-5",
+        "confidence": "medium",
+        "links": [
+          {
+            "check": "gpo_dangerous_acl",
+            "objects": [
+              "GPO-1"
+            ],
+            "gives": "GenericWrite over GPO-1 linked to Domain Controllers OU",
+            "evidence": "shown",
+            "assumption": ""
+          },
+          {
+            "check": "gpo_runs_code_from_share",
+            "objects": [
+              "GPO-1: PATH-4"
+            ],
+            "gives": "Execution of arbitrary code on domain controllers",
+            "evidence": "shown",
+            "assumption": "Attacker can write to PATH-4 share"
+          }
+        ],
+        "break_point": {
+          "check": "gpo_dangerous_acl",
+          "why": "Revoking GenericWrite permissions on GPO-1 stops unauthorized GPO modification."
+        },
+        "checks": [
+          "gpo_dangerous_acl",
+          "gpo_runs_code_from_share"
+        ],
+        "objects": [
+          "GPO-1"
+        ],
+        "narrative": "Members of GROUP-5 modify GPO-1 to execute scripts or tasks on domain controllers during startup, yielding complete control over all DCs."
+      }
+    ]
+  },
+  "rejected_chains": [
+    {
+      "title": "Anonymous LDAP Enumeration to Domain Compromise",
+      "checks": [
+        "anonymous_ldap_enabled"
+      ],
+      "reason": "While anonymous LDAP operations are enabled via dSHeuristics, anonymous access alone does not grant write or administrative privileges required for domain control without an additional credential or exploit chain."
+    }
+  ],
+  "verify_next": [
+    {
+      "question": "Are vulnerable AD CS certificate templates (such as TEMPLATE-1 and TEMPLATE-13) actively monitored or restricted by application controls?",
+      "checks": [
+        "adcs_esc1",
+        "adcs_esc15"
+      ]
+    },
+    {
+      "question": "Is network reachability restricted between workstations and domain controllers for WebDAV/RPC coercion vectors?",
+      "checks": [
+        "coercion_unfiltered_dc",
+        "webclient_on_dc"
+      ]
+    },
+    {
+      "question": "Are the accounts flagged for Kerberoasting (USER-6, USER-14) protected by exceptionally long, randomly generated passwords?",
+      "checks": [
+        "privileged_kerberoastable",
+        "kerberoastable_user"
+      ]
+    },
+    {
+      "question": "Is network traffic between domain controllers and member servers subjected to mandatory SMB and LDAP signing in practice?",
+      "checks": [
+        "ldap_signing_not_required",
+        "smb_client_signing_not_required"
+      ]
+    }
+  ]
 }

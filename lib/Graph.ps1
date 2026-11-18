@@ -48,8 +48,23 @@ $script:EscalationKinds = [ordered]@{
     sync_laps_rights                           = 'DirSync of LAPS passwords'
     laps_readers                               = 'Reads LAPS passwords'
     sccm_system_management_writable            = 'SCCM System Management'
+    gpo_broad_local_group                      = 'Local admin by GPO'
+    gpo_autologon_password                     = 'Autologon password in a GPO'
+    sysvol_script_secrets                      = 'Password in a SYSVOL script'
+    dsrm_logon_behavior                        = 'DSRM account logs on over the network'
+    rodc_prp_too_broad                         = 'RODC allowed to cache Tier 0 passwords'
     dangerous_ace_anywhere                     = 'ACL path'
     dangerous_privilege_right                  = 'Sensitive right on DCs'
+}
+# Weak credentials on an account that already has a path: they turn it into a starting point for
+# anyone with an ordinary account. Only ever drawn into a box that is already on the map.
+$script:WeakCredentialKinds = [ordered]@{
+    kerberoastable_user           = 'Kerberoast'
+    asrep_roastable               = 'AS-REP roast'
+    password_in_description       = 'Password in the description'
+    reversible_encryption_account = 'Reversible encryption (cleartext password)'
+    unix_password_present         = 'Password in a Unix attribute'
+    timeroast_computer_password   = 'Timeroast (NTP password hash)'
 }
 # Kinds that are a path only under a condition: 'skip' leaves the finding off the map,
 # 'unverified' draws it dashed (the right is real, reaching Tier 0 is an assumption).
@@ -60,6 +75,14 @@ $script:EscalationConditions = @{
     gpo_runs_code_from_share        = { param($f) if ($f.Severity -eq 'Critical' -or $f.Severity -eq 'High') { 'ok' } else { 'unverified' } }
     gpp_cpassword                   = { param($f) 'unverified' }
     sysvol_writable                 = { param($f) 'unverified' }
+    gpo_autologon_password          = { param($f) 'unverified' }
+    sysvol_script_secrets           = { param($f) 'unverified' }
+    # The DSRM hash has to come from somewhere (an old backup, a dump), so the step is real but not shown.
+    dsrm_logon_behavior             = { param($f) 'unverified' }
+    rodc_prp_too_broad              = { param($f) 'unverified' }
+    # Critical means the GPO puts a broad group in local Administrators on the Domain Controllers OU;
+    # High is the same on member servers or workstations, which is a path only through what runs there.
+    gpo_broad_local_group           = { param($f) if ($f.Severity -eq 'Critical') { 'ok' } elseif ($f.Severity -eq 'High') { 'unverified' } else { 'skip' } }
     sync_laps_rights                = { param($f) 'unverified' }
     laps_readers                    = { param($f) 'unverified' }
     sccm_system_management_writable = { param($f) 'unverified' }
@@ -83,12 +106,40 @@ $script:EntraEscalationKinds = [ordered]@{
 
 $script:GraphSevColor = @{ Critical = '#E2372A'; High = '#EF8A6F'; Medium = '#F2B632'; Low = '#B9B1A1' }
 
+# How far nested group membership is followed behind a source group, and how many member boxes the
+# whole map may add. Both are there to keep one nested mess from drowning the real paths.
+$script:MemberHopMaxDepth = 3
+$script:MemberNodeBudget = 120
+
 function Get-GraphSevRank { param([string]$S) if ($script:SeverityRank.ContainsKey($S)) { return $script:SeverityRank[$S] } return 0 }
 
 # --------------------------------------------------------------------------
 # Graph plumbing shared by the AD and the Entra map
 # --------------------------------------------------------------------------
 function New-GraphState { return [PSCustomObject]@{ Nodes = [ordered]@{}; Edges = New-Object System.Collections.Generic.List[object] } }
+# Every object one finding was raised over. Merge-DuplicateFindings keeps them all in ObjectDns
+# (several hits on one principal are one finding); an unmerged finding has only ObjectDn.
+function Get-FindingObjectDns {
+    param($F)
+    if ($F.PSObject.Properties['ObjectDns']) {
+        $all = @($F.ObjectDns | Where-Object { $_ })
+        if ($all.Count -gt 0) { return $all }
+    }
+    if ("$($F.ObjectDn)") { return @("$($F.ObjectDn)") }
+    return @()
+}
+# "WriteDacl over user 'x'." -> "ACL path (WriteDacl)", for the hit that names this victim. A merged
+# detail is "N hits: a | b | c", so the prefix goes and the right segment is picked.
+function Get-AclPathKind {
+    param($F, [string]$VictimName)
+    $segs = @("$($F.Detail)" -split ' \| ')
+    $hit = $null
+    if ($VictimName) { foreach ($s in $segs) { if ("$s" -match [regex]::Escape("'$VictimName'")) { $hit = "$s"; break } } }
+    if (-not $hit) { $hit = "$($segs[0])" }
+    $hit = $hit -replace '^\d+ hits:\s*', ''
+    if ($hit -match '^(.+?) over ') { return "ACL path ($($Matches[1]))" }
+    return 'ACL path'
+}
 # One node per label; the worst severity wins.
 function Add-GraphNode {
     param($Gs, [string]$Label, [string]$Type, [string]$Sev)
@@ -111,9 +162,16 @@ function Add-GraphEdge {
 # Dedup edges (worst severity kept), hop levels, sort. Returns Nodes and Edges.
 function Complete-AttackGraph {
     param($Gs)
+    # Same source, same technique, same destination: one arrow. A verified step wins over an
+    # assumed one (the same right can be held over a Tier 0 object and over a plain one), then the
+    # worst severity wins.
     $byEdge = [ordered]@{}
     foreach ($e in $Gs.Edges) {
-        if (-not $byEdge.Contains($e.EdgeKey) -or (Get-GraphSevRank $e.Sev) -gt (Get-GraphSevRank $byEdge[$e.EdgeKey].Sev)) { $byEdge[$e.EdgeKey] = $e }
+        $k = "$($e.From)|$($e.Kind)|$($e.To)"
+        if (-not $byEdge.Contains($k)) { $byEdge[$k] = $e; continue }
+        $old = $byEdge[$k]
+        if ($old.Unverified -and -not $e.Unverified) { $byEdge[$k] = $e }
+        elseif (($old.Unverified -eq $e.Unverified) -and (Get-GraphSevRank $e.Sev) -gt (Get-GraphSevRank $old.Sev)) { $byEdge[$k] = $e }
     }
     # Hops to the anchor: 0 when every edge goes straight there, else 1 + the longest chain behind it.
     $outTo = @{}; foreach ($e in $byEdge.Values) { if ($e.To -ge 0) { if (-not $outTo.ContainsKey($e.From)) { $outTo[$e.From] = New-Object System.Collections.Generic.List[int] }; $outTo[$e.From].Add($e.To) } }
@@ -149,43 +207,91 @@ function Get-AttackGraph {
     foreach ($e in $PrivMap.Groups.Values) { if ($e.Group -and $e.Group.distinguishedName) { $t0Dns["$($e.Group.distinguishedName)".ToLower()] = $true } }
     # A golden gMSA only reaches Tier 0 through a gMSA that is Tier 0.
     $privGmsa = @($Index.Users | Where-Object { $_.kind -eq 'msa' -and $_.isGroupManaged -eq $true -and $_.distinguishedName -and $t0Dns.ContainsKey("$($_.distinguishedName)".ToLower()) }).Count -gt 0
+    # samAccountName -> object, for the principals a finding names in its detail and for the
+    # password-quality lists.
+    $objBySam = @{}
+    foreach ($o in @($Index.Users) + @($Index.Computers) + @($Index.Groups)) {
+        if ($o.samAccountName -and -not $objBySam.ContainsKey("$($o.samAccountName)".ToLower())) { $objBySam["$($o.samAccountName)".ToLower()] = $o }
+    }
+
+    $types = @{}; foreach ($f in $findings) { $types[$f.Type] = $true }
 
     $items = New-Object System.Collections.Generic.List[object]
     foreach ($f in $findings) {
         if (-not $script:EscalationKinds.Contains($f.Type) -or -not "$($f.Object)") { continue }
         $cond = if ($script:EscalationConditions.ContainsKey($f.Type)) { & $script:EscalationConditions[$f.Type] $f } else { 'ok' }
         if ($f.Type -eq 'kds_root_key_readable' -and -not $privGmsa) { $cond = 'unverified' }
+        # What the RODC already caches is the precise finding; "it is allowed to" adds nothing then.
+        if ($f.Type -eq 'rodc_prp_too_broad' -and $types['rodc_tier0_revealed']) { $cond = 'skip' }
         if ($cond -eq 'skip') { continue }
         $key = if ("$($f.Object)" -match $script:BroadPrincipalRegex) { $anyKey } else { "$($f.Object)" }
         $n = Add-GraphNode $Gs $key $(if ($key -eq $anyKey) { 'entry' } else { "$($f.ObjectType)" }) $f.Severity
         $items.Add([PSCustomObject]@{ F = $f; Node = $n; Unverified = ($cond -eq 'unverified') })
     }
-    # A node is found by the short name of its object ("TEST\sales" -> "sales").
+    # A node is found by the short name of its object ("TEST\sales" -> "sales"). A principal of
+    # another domain ("PARTNER\sales") must not be taken for the local object of the same name, so
+    # a local label owns the slot and a foreign one is not a hop target at all.
+    $nb = "$($Snapshot.domain.netbios)".ToLower()
+    $localPrefix = @{ 'builtin' = $true; 'nt authority' = $true; 'nt service' = $true }
+    if ($nb) { $localPrefix[$nb] = $true }
     $nodeByName = @{}
-    foreach ($n in $Gs.Nodes.Values) { if ($n.Label -ne $anyKey) { $nodeByName[(($n.Label -split '\\')[-1]).ToLower()] = $n } }
+    foreach ($n in $Gs.Nodes.Values) {
+        if ($n.Label -eq $anyKey) { continue }
+        $parts = @("$($n.Label)" -split '\\')
+        if ($parts.Count -gt 1 -and $nb -and -not $localPrefix.ContainsKey($parts[0].ToLower())) { continue }
+        $nodeByName[$parts[-1].ToLower()] = $n
+    }
 
     foreach ($it in $items) {
         $f = $it.F; $n = $it.Node
         $kind = $script:EscalationKinds[$f.Type]
-        $to = $null
-        $unverified = $it.Unverified
         # An ACL over an object that is itself a source is a hop, not a jump to Tier 0:
-        # group A -> GenericWrite over account B -> B has DCSync.
-        if ($f.Type -eq 'dangerous_ace_anywhere' -and $f.ObjectDn) {
-            $victim = $Index.ByDn["$($f.ObjectDn)".ToLower()]
-            if ($victim) {
-                $vn = if ($victim.samAccountName) { "$($victim.samAccountName)" } else { "$($victim.name)" }
-                $t = $nodeByName[$vn.ToLower()]
+        # group A -> GenericWrite over account B -> B has DCSync. One finding can hold the rights
+        # over many objects (they are merged by principal), so every one of them is looked at: the
+        # second hit is often the one that leads somewhere.
+        if ($f.Type -eq 'dangerous_ace_anywhere') {
+            $hops = 0; $overT0 = $false
+            foreach ($dn in @(Get-FindingObjectDns $f)) {
+                $low = "$dn".ToLower()
+                $victim = $Index.ByDn[$low]
+                $t = $null
+                $vn = ''
+                if ($victim) {
+                    $vn = if ($victim.samAccountName) { "$($victim.samAccountName)" } else { "$($victim.name)" }
+                    $t = $nodeByName[$vn.ToLower()]
+                }
+                # The hop says more than the jump, so an object that is both Tier 0 and a source of
+                # its own is drawn as a hop.
                 if ($t -and $t.Id -ne $n.Id) {
-                    $to = $t
-                    $kind = if ("$($f.Detail)" -match '^(.+?) over ') { "ACL path ($($Matches[1]))" } else { 'ACL path' }
+                    Add-GraphEdge $Gs $n $t (Get-AclPathKind $f $vn) $f.Severity $false
+                    $hops++
+                    continue
+                }
+                if ($t0Dns.ContainsKey($low)) { $overT0 = $true }
+            }
+            # A right over Tier 0 itself is the end of the path; with no hop and nothing Tier 0 the
+            # right is real, but nothing in the findings shows where it leads, so the arrow is dashed.
+            if ($overT0) { Add-GraphEdge $Gs $n $null $kind $f.Severity $false }
+            elseif ($hops -eq 0) { Add-GraphEdge $Gs $n $null $kind $f.Severity $true }
+            continue
+        }
+        Add-GraphEdge $Gs $n $null $kind $f.Severity $it.Unverified
+        # RBCD is held by someone else: the attacker is the principal allowed to act on the object,
+        # which the check names in its detail, and the object is the hop. Without this the box that
+        # matters most (the computer account an attacker already owns) is not on the map at all.
+        if ($f.Type -eq 'rbcd_configured') {
+            foreach ($m in [regex]::Matches("$($f.Detail)", 'act on behalf of other identities: (.+?)\.(?:\s|$)')) {
+                foreach ($nm in @("$($m.Groups[1].Value)" -split ',\s*')) {
+                    $o = $objBySam["$nm".ToLower()]
+                    if (-not $o -or -not $o.distinguishedName -or $t0Dns.ContainsKey("$($o.distinguishedName)".ToLower())) { continue }
+                    $sn = Add-GraphNode $Gs "$($o.samAccountName)" "$($o._type)" $f.Severity
+                    if ($sn.Id -eq $n.Id) { continue }
+                    Add-GraphEdge $Gs $sn $n 'Allowed to act on it (RBCD)' $f.Severity $false
+                    $skey = "$($o.samAccountName)".ToLower()
+                    if (-not $nodeByName.ContainsKey($skey)) { $nodeByName[$skey] = $sn }
                 }
             }
-            # No hop and the object is not Tier 0: the right is real, but nothing in the findings
-            # shows that the object leads to Tier 0, so the arrow is drawn as unverified.
-            if (-not $to -and -not $t0Dns.ContainsKey("$($f.ObjectDn)".ToLower())) { $unverified = $true }
         }
-        Add-GraphEdge $Gs $n $to $kind $f.Severity $unverified
     }
 
     # ---- Entry point: what any domain account (or anyone on the network) can start from ----
@@ -194,7 +300,6 @@ function Get-AttackGraph {
         if ($To -and $To.Id -eq $a.Id) { return }
         Add-GraphEdge $Gs $a $To $Kind $Sev $Unv
     }
-    $types = @{}; foreach ($f in $findings) { $types[$f.Type] = $true }
     $lowEnroll = [bool]($types['adcs_esc1'] -or $types['adcs_esc2'] -or $types['adcs_esc3'] -or $types['adcs_esc9'] -or $types['adcs_esc15'] -or $types['adcs_low_priv_enroll'])
     foreach ($f in $findings) {
         $tn = if ("$($f.Object)") { $Gs.Nodes["$($f.Object)"] } else { $null }
@@ -210,48 +315,115 @@ function Get-AttackGraph {
             'asrep_roastable' { if ($tn) { & $any $tn 'AS-REP roast' $f.Severity }; break }
             # noPac needs a computer account the attacker controls: the machine account quota gives one to everyone.
             'nopac_unpatched_dc' { if ($types['machine_account_quota']) { & $any $null "noPac ($($f.Object))" $f.Severity }; break }
+            'gpo_autologon_password' { if ($tn) { & $any $tn 'Read SYSVOL' $f.Severity $true }; break }
+            'sysvol_script_secrets' { if ($tn) { & $any $tn 'Read SYSVOL' $f.Severity $true }; break }
+            # The member the GPO adds is always a broad principal, so every account is already in it.
+            'gpo_broad_local_group' { if ($tn) { & $any $tn 'Already in the group' $f.Severity ($f.Severity -ne 'Critical') }; break }
+            # A DC that still accepts a weak Netlogon secure channel is domain compromise from the
+            # network: no account needed at all.
+            'netlogon_vulnerable_channel' { & $any $null 'Zerologon (weak Netlogon secure channel)' $f.Severity; break }
         }
+    }
+    # Coerce a DC to authenticate (spooler, WebClient, unfiltered RPC), relay it to LDAP on another
+    # DC: with no LDAP signing or channel binding the relayed DC account can write to the directory.
+    # The classic end is RBCD on the DC, which needs a computer account the machine account quota
+    # hands to every user; without it the relay is still a write as a DC account, hence dashed.
+    $coerce = @(@('spooler_on_dc', 'webclient_on_dc', 'coercion_unfiltered_dc') | Where-Object { $types[$_] })
+    $relay = @(@('ldap_signing_not_required', 'ldap_channel_binding_off') | Where-Object { $types[$_] })
+    if ($coerce.Count -gt 0 -and $relay.Count -gt 0) {
+        $relaySev = 'Low'
+        foreach ($f in $findings) {
+            if (($coerce -notcontains $f.Type) -and ($relay -notcontains $f.Type)) { continue }
+            if ((Get-GraphSevRank $f.Severity) -gt (Get-GraphSevRank $relaySev)) { $relaySev = $f.Severity }
+        }
+        & $any $null 'Coerce a DC, relay to LDAP (RBCD)' $relaySev (-not $types['machine_account_quota'])
+    }
+    # Weak credentials on an account that is already a source: the chain now starts at the entry box.
+    foreach ($f in $findings) {
+        if (-not $script:WeakCredentialKinds.Contains($f.Type) -or -not "$($f.Object)") { continue }
+        $wn = $nodeByName[(("$($f.Object)" -split '\\')[-1]).ToLower()]
+        if ($wn -and $wn.Label -ne $anyKey) { & $any $wn $script:WeakCredentialKinds[$f.Type] $f.Severity }
     }
     # Password quality: a guessable Tier 0 password, or a Tier 0 password shared with a normal account.
     $pq = $Snapshot.passwordQuality
     if ($pq) {
-        $bySam = @{}; foreach ($o in @($Index.Users) + @($Index.Computers)) { if ($o.samAccountName) { $bySam["$($o.samAccountName)".ToLower()] = $o } }
-        $isT0 = { param([string]$Name) $o = $bySam[$Name.ToLower()]; [bool]($o -and $o.distinguishedName -and $t0Dns.ContainsKey("$($o.distinguishedName)".ToLower())) }
+        $isT0 = { param([string]$Name) $o = $objBySam[$Name.ToLower()]; [bool]($o -and $o.distinguishedName -and $t0Dns.ContainsKey("$($o.distinguishedName)".ToLower())) }
         foreach ($l in @(@{ P = 'emptyPassword'; K = 'Empty password'; S = 'Critical' }, @{ P = 'defaultOrUsernamePassword'; K = 'Guessable password'; S = 'Critical' }, @{ P = 'breachedPassword'; K = 'Breached password'; S = 'High' })) {
-            foreach ($a in @(ConvertTo-PqNameList $pq.($l.P))) { if (& $isT0 $a) { & $any $null "$($l.K) ($a)" $l.S } }
+            foreach ($a in @(ConvertTo-PqNameList $pq.($l.P))) {
+                if (& $isT0 $a) { & $any $null "$($l.K) ($a)" $l.S; continue }
+                # Not Tier 0, but the account already holds a path: the password is how it is taken.
+                $pn = $nodeByName[$a.ToLower()]
+                if ($pn -and $pn.Label -ne $anyKey) { & $any $pn $l.K $l.S }
+            }
         }
         foreach ($grp in @($pq.duplicatePasswordGroups | Where-Object { $_ })) {
             $accts = @(ConvertTo-PqNameList $grp)
             $t0 = @($accts | Where-Object { & $isT0 $_ })
             if (-not $t0.Count) { continue }
             foreach ($a in @($accts | Where-Object { $t0 -notcontains $_ })) {
-                $o = $bySam[$a.ToLower()]
+                $o = $objBySam[$a.ToLower()]
                 $on = Add-GraphNode $Gs $a $(if ($o) { "$($o._type)" } else { 'user' }) 'High'
                 Add-GraphEdge $Gs $on $null "Same password as $($t0 -join ', ')" 'High'
             }
         }
     }
 
-    # ---- Membership: the direct members of a (non Tier 0) source group inherit its path ----
+    # ---- Membership: the members of a (non Tier 0) source group inherit its path ----
+    # Nested groups are followed, because the group that holds the right is rarely the one the
+    # people are in: a right over Tier 0 on "IT-Ops" is reached by whoever is in "Helpdesk" inside
+    # it. Bounded on purpose (depth and a node budget) so one huge group cannot flood the map.
     $groupBySam = @{}; foreach ($o in @($Index.Groups)) { foreach ($k in @($o.samAccountName, $o.name)) { if ($k) { $groupBySam["$k".ToLower()] = $o } } }
+    $queue = New-Object System.Collections.Generic.List[object]
     foreach ($n in @($Gs.Nodes.Values)) {
         if ($n.Label -eq $anyKey -or $n.Type -eq 'members') { continue }
+        $queue.Add([PSCustomObject]@{ Node = $n; Depth = 0; Chain = @{} })
+    }
+    $seenGroup = @{}
+    $budget = $script:MemberNodeBudget
+    for ($qi = 0; $qi -lt $queue.Count; $qi++) {
+        if ($budget -le 0) { break }
+        $n = $queue[$qi].Node
+        if ($queue[$qi].Depth -ge $script:MemberHopMaxDepth) { continue }
         $grp = $groupBySam[(($n.Label -split '\\')[-1]).ToLower()]
-        if (-not $grp -or -not $grp.distinguishedName -or $t0Dns.ContainsKey("$($grp.distinguishedName)".ToLower()) -or "$($grp.name)" -match $script:BroadPrincipalRegex) { continue }
+        if (-not $grp -or -not $grp.distinguishedName) { continue }
+        $gkey = "$($grp.distinguishedName)".ToLower()
+        if ($seenGroup.ContainsKey($gkey)) { continue }
+        $seenGroup[$gkey] = $true
+        if ($t0Dns.ContainsKey($gkey) -or "$($grp.name)" -match $script:BroadPrincipalRegex) { continue }
         $members = @(@($grp.members | Where-Object { $_ }) | ForEach-Object { $d = Get-DnString $_; if ($d) { $Index.ByDn[$d.ToLower()] } } | Where-Object {
                 $_ -and $_.distinguishedName -and -not $t0Dns.ContainsKey("$($_.distinguishedName)".ToLower()) -and ($_._type -eq 'group' -or $_.enabled)
             })
         if (-not $members.Count) { continue }
         $via = "Member of $($grp.name)"
-        if ($members.Count -le 5) {
-            foreach ($m in $members) {
+        # The groups walked to get here, so a circular nesting doesn't produce an arrow pointing
+        # back up the chain (which would also break the left-to-right layout).
+        $childChain = @{}
+        foreach ($k in $queue[$qi].Chain.Keys) { $childChain[$k] = $true }
+        $childChain[$gkey] = $true
+        # A group inside is always drawn: it carries the path on to its own members.
+        foreach ($m in @($members | Where-Object { $_._type -eq 'group' })) {
+            if ($budget -le 0) { break }
+            if ($childChain.ContainsKey("$($m.distinguishedName)".ToLower())) { continue }
+            $gn = Add-GraphNode $Gs $(if ($m.samAccountName) { "$($m.samAccountName)" } else { "$($m.name)" }) 'group' $n.Sev
+            Add-GraphEdge $Gs $gn $n $via $n.Sev
+            $budget--
+            $queue.Add([PSCustomObject]@{ Node = $gn; Depth = $queue[$qi].Depth + 1; Chain = $childChain })
+        }
+        $direct = @($members | Where-Object { $_._type -ne 'group' })
+        if ($direct.Count -eq 0) { continue }
+        if ($direct.Count -le 5) {
+            foreach ($m in $direct) {
+                if ($budget -le 0) { break }
                 $mn = Add-GraphNode $Gs $(if ($m.samAccountName) { "$($m.samAccountName)" } else { "$($m.name)" }) "$($m._type)" $n.Sev
                 Add-GraphEdge $Gs $mn $n $via $n.Sev
+                $budget--
             }
         }
         else {
-            $mn = Add-GraphNode $Gs "$($members.Count) members of $($grp.name)" 'members' $n.Sev
+            # Too many to draw one by one: one box stands for them.
+            $mn = Add-GraphNode $Gs "$($direct.Count) members of $($grp.name)" 'members' $n.Sev
             Add-GraphEdge $Gs $mn $n $via $n.Sev
+            $budget--
         }
     }
 
@@ -274,15 +446,19 @@ function Get-AttackPathLines {
     $rows = @()
     foreach ($f in @($Findings | Where-Object { $_ })) {
         if (-not $script:EscalationKinds.Contains($f.Type)) { continue }
-        if ($script:EscalationConditions.ContainsKey($f.Type) -and (& $script:EscalationConditions[$f.Type] $f) -eq 'skip') { continue }
-        $rows += [PSCustomObject]@{ Sev = $f.Severity; Obj = $f.Object; Kind = $script:EscalationKinds[$f.Type] }
+        $cond = if ($script:EscalationConditions.ContainsKey($f.Type)) { & $script:EscalationConditions[$f.Type] $f } else { 'ok' }
+        if ($cond -eq 'skip') { continue }
+        # Same wording as the map: the right is real, that it reaches Tier 0 is an assumption. The
+        # model is told to present an assumed step as assumed instead of as a fact.
+        $dest = if ($cond -eq 'unverified') { 'Tier 0 (assumed)' } else { 'Tier 0' }
+        $rows += [PSCustomObject]@{ Sev = $f.Severity; Obj = $f.Object; Kind = $script:EscalationKinds[$f.Type]; Dest = $dest }
     }
     # Worst first, otherwise input order (Sort-Object on PS 5.1 isn't stable).
     $rows = @(foreach ($s in 'Critical', 'High', 'Medium', 'Low') { $rows | Where-Object { $_.Sev -eq $s } })
     $rows = @($rows | Select-Object -First $Max)
     foreach ($r in $rows) {
         $o = if ($Pz) { Protect-AiText $Pz $r.Obj } else { $r.Obj }
-        $lines.Add("- [$($r.Sev)] $o  ->  Tier 0  via $($r.Kind)")
+        $lines.Add("- [$($r.Sev)] $o  ->  $($r.Dest)  via $($r.Kind)")
     }
     return $lines
 }
@@ -465,9 +641,10 @@ function ConvertTo-AttackGraphSvg {
 
 # Caption under a map: what boxes, arrows, dashes and hops mean.
 function Get-AttackMapCaption {
-    param($R, [int]$Cap, [string]$AnchorTitle, [string]$EntryLabel)
+    param($R, [string]$AnchorTitle, [string]$EntryLabel)
     $out = New-Object System.Collections.Generic.List[string]
-    if ($R.MoreCount -gt 0) { $out.Add("<p class='meta'>Showing the $Cap highest-severity sources; $($R.MoreCount) more escalation source(s) are in the findings tables below.</p>") }
+    # ShownCount, not the cap: a chain whose first box made the cut brings the rest of its boxes in.
+    if ($R.MoreCount -gt 0) { $out.Add("<p class='meta'>Showing the $($R.ShownCount) highest-severity sources and the boxes their paths run through; $($R.MoreCount) more escalation source(s) are in the findings tables below.</p>") }
     $note = ''
     if ($R.HasEntry) { $note += " The dark box <b>$EntryLabel</b> is where an attacker starts with no special rights: every arrow out of it needs nothing more than an ordinary account (or, for a guessed password, none)." }
     if ($R.HasUnverified) { $note += " Dashed arrows: the right is real but the object it is held over is not known to lead to $AnchorTitle, so that step is an assumption; check those first." }
@@ -493,7 +670,7 @@ function ConvertTo-AttackMapHtml {
     else {
         $r = ConvertTo-AttackGraphSvg -Graph $g -AnchorTitle 'Tier 0' -AnchorSub 'domain compromise' -Cap $cap
         & $w "<div class='map-wrap'>$($r.Svg)</div>"
-        & $w (Get-AttackMapCaption -R $r -Cap $cap -AnchorTitle 'Tier 0' -EntryLabel 'Any domain user')
+        & $w (Get-AttackMapCaption -R $r -AnchorTitle 'Tier 0' -EntryLabel 'Any domain user')
     }
 
     # ---- Trust map ----
@@ -568,7 +745,7 @@ function ConvertTo-EntraAttackMapHtml {
     else {
         $r = ConvertTo-AttackGraphSvg -Graph $g -AnchorTitle 'Admin roles' -AnchorSub 'tenant takeover' -Cap $cap
         & $w "<div class='map-wrap'>$($r.Svg)</div>"
-        & $w (Get-AttackMapCaption -R $r -Cap $cap -AnchorTitle 'an admin role' -EntryLabel 'Any user')
+        & $w (Get-AttackMapCaption -R $r -AnchorTitle 'an admin role' -EntryLabel 'Any user')
     }
     & $w '</details>'
     return $sb.ToString()
