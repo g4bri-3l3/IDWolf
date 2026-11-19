@@ -26,6 +26,7 @@ $script:ComplianceCategoryThemes = @{
     'Operational Health'   = @('resil')
     'Permissions'          = @('priv')
     'Certificate Services' = @('priv', 'config')
+    'Federation'           = @('priv', 'config')
     'Host Hardening'       = @('config')
     'Password Quality'     = @('auth')
     'Entra Access Policy'  = @('access')

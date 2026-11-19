@@ -29,6 +29,14 @@ $script:HostCheckCatalog = [ordered]@{
         Title = 'Machine account password changes disabled or too rare'
         Description = 'A GPO stops domain members from changing their machine account password, or lets it live far longer than the 30-day default. That password is the key of the computer account: once it is stolen it stays valid, and it signs silver tickets for every service of that host.'
         Remediation = 'Leave "Domain member: Disable machine account password changes" disabled and keep "Domain member: Maximum machine account password age" at 30 days (CIS 2.3.6.1 and 2.3.6.2).' }
+    dc_refuse_password_change = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1558'; Needs = @('gpo')
+        Title = 'Domain controllers refuse machine account password changes'
+        Description = 'A GPO sets RefusePasswordChange on the domain controllers, so they turn down the password change a domain member asks for every 30 days. The members keep trying and keep the old password: machine account hashes across the estate then never change, and each one signs Silver Tickets for every service on its host for as long as the setting is there. The value exists for a narrow replication corner case and is almost always left behind by mistake.'
+        Remediation = 'Remove RefusePasswordChange (or set it to 0) from the GPO on the Domain Controllers OU, then reset the machine passwords that went stale while it was on.' }
+    net_session_enum_open = @{ Category = 'Host Hardening'; Severity = 'Medium'; Mitre = 'T1049'; Needs = @('health', 'health.dcState', 'health.netSession', 'health.dcStatePartial')
+        Title = 'Any authenticated user can enumerate sessions on a domain controller'
+        Description = 'The SrvsvcSessionInfo permissions let a plain domain account call NetSessionEnum on this DC and get back who is logged on from where. That single call is how BloodHound and its kin build the user-to-host graph that turns a foothold into a path to Domain Admin: it tells an attacker which workstation an administrator is using right now, without any privilege at all.'
+        Remediation = 'Restrict SrvsvcSessionInfo to Administrators and Server Operators (what the NetCease script does) through a GPO that sets the value on every domain controller and server, then confirm with a non-privileged account that NetSessionEnum is refused.' }
     machine_inactivity_limit_missing = @{ Category = 'Host Hardening'; Severity = 'Low'; Mitre = ''; Needs = @('gpo')
         Title = 'No machine inactivity limit on the domain controllers'
         Description = 'No effective GPO locks the console after a while (InactivityTimeoutSecs), or the limit is longer than 15 minutes. A session left open on a domain controller or an admin host is a logged-on Tier 0 token waiting for whoever walks past it.'
@@ -400,6 +408,12 @@ function Invoke-GpoChecks {
     }
     elseif ($null -ne $mpa -and $mpa -gt 30) {
         Add-Finding -Type machine_password_rotation_off -Object $dcLabel -ObjectType 'gpo' -Severity 'Low' -Detail "MaximumPasswordAge = $mpa days (the default is 30)."
+    }
+    # The DC side of the same thing: RefusePasswordChange makes the DCs turn down the change the
+    # members ask for, so every machine password in the domain goes stale at once.
+    $rpc = Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\RefusePasswordChange')
+    if ($rpc -eq 1) {
+        Add-Finding -Type dc_refuse_password_change -Object $dcLabel -ObjectType 'gpo' -Detail 'RefusePasswordChange = 1: the domain controllers refuse machine account password changes, so no domain member can rotate its password.'
     }
     # Console lock: CIS and the STIG want 900 seconds or less; 0 never locks.
     $inact = Get-RegInt (Get-EffectiveRegValue $order 'MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System\InactivityTimeoutSecs')

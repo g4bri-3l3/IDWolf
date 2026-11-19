@@ -28,7 +28,8 @@ function Assert-True {
 }
 
 $config = @{ KrbtgtMaxAgeDays = 180; KrbtgtCriticalDays = 365; PrivInactiveDays = 90; InactiveDays = 180; NeverLoggedOnGraceDays = 90
-    StaleComputerDays = 90; PasswordMaxAgeDays = 365; MinPasswordLength = 12; MaxDomainAdmins = 5; LapsOverdueDays = 30; BuiltinAdminRecentDays = 30; DcPasswordMaxAgeDays = 90 }
+    StaleComputerDays = 90; PasswordMaxAgeDays = 365; MinPasswordLength = 12; MaxDomainAdmins = 5; LapsOverdueDays = 30; BuiltinAdminRecentDays = 30; DcPasswordMaxAgeDays = 90
+    ComputerPasswordMaxAgeDays = 90 }
 
 function Invoke-Analysis {
     param($Snap)
@@ -50,8 +51,8 @@ $demo = Import-ADSnapshot (Join-Path $tmp 'demo.json')
 $r = Invoke-Analysis $demo
 $bySev = @{}; foreach ($s in 'Critical', 'High', 'Medium', 'Low') { $bySev[$s] = @($r.Findings | Where-Object { $_.Severity -eq $s }).Count }
 Write-Host ("  {0} findings (C {1} / H {2} / M {3} / L {4}), {5} Tier 0 principals" -f $r.Findings.Count, $bySev.Critical, $bySev.High, $bySev.Medium, $bySev.Low, $r.PrivMap.Principals.Count)
-Assert-True ($r.Findings.Count -eq 228) "demo total findings: expected 228, got $($r.Findings.Count)"
-Assert-True ($bySev.Critical -eq 26 -and $bySev.High -eq 82 -and $bySev.Medium -eq 86 -and $bySev.Low -eq 34) "demo severity split: expected 26/82/86/34 (got $($bySev.Critical)/$($bySev.High)/$($bySev.Medium)/$($bySev.Low))"
+Assert-True ($r.Findings.Count -eq 251) "demo total findings: expected 251, got $($r.Findings.Count)"
+Assert-True ($bySev.Critical -eq 28 -and $bySev.High -eq 88 -and $bySev.Medium -eq 99 -and $bySev.Low -eq 36) "demo severity split: expected 28/88/99/36 (got $($bySev.Critical)/$($bySev.High)/$($bySev.Medium)/$($bySev.Low))"
 # New checks: DSRM logon behavior on a DC, tombstone lifetime below 180, Tier 0 accounts
 # that log on with a reusable password (not in Protected Users, no smart card).
 Assert-True ((Has $r 'dsrm_logon_behavior' 'dc02.moosebank.local' 'High') -and @($r.Findings | Where-Object { $_.Type -eq 'dsrm_logon_behavior' }).Count -eq 1) 'demo: DsrmAdminLogonBehavior=2 on DC02 flagged, DC01 (0) clean'
@@ -432,6 +433,154 @@ $snapRe = Import-ADSnapshot (Join-Path $tmp 'demo.json')
 $snapRe.meta.collectionErrors = @([PSCustomObject]@{ section = 'rodcPolicy'; message = 'RODC01: Access is denied (synthetic)' })
 Assert-True (@(Get-NotEvaluatedChecks -Index (New-SnapshotIndex -Snapshot $snapRe) -Snapshot $snapRe | Where-Object { $_.Type -eq 'rodc_tier0_revealed' }).Count -eq 1) 'RODC policy read failure: checks not evaluated'
 
+
+# --- "Detecting and mitigating Active Directory compromises" (ASD/CISA/NSA/CCCS/NCSC, Sept 2026),
+#     plus the PingCastle and Purple Knight indicators that went with it.
+Write-Host "[asd 2026 gaps]"
+# Shadow Credentials: a Tier 0 user and a domain controller object. The DC is Critical and is
+# reported even though a DC is not a member of any Tier 0 group.
+Assert-True (Has $r 'shadow_credentials_present' 'svc_sql_admin' 'High') 'key credential on a Tier 0 user flagged'
+Assert-True (Has $r 'shadow_credentials_present' 'DC02$' 'Critical') 'key credential on a domain controller object = Critical'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'shadow_credentials_present' }).Count -eq 2) 'key credentials on ordinary accounts are not reported'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'shadow_credentials_present' -and $_.Object -eq 'DC02$' })[0].Detail -match 'active compromise') 'the DC key credential finding says it is never legitimate'
+# Key Admins / Enterprise Key Admins: empty by default, and able to write msDS-KeyCredentialLink.
+Assert-True (Has $r 'key_admins_populated' 'adm.gialli' 'Medium') 'member of Key Admins flagged'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'key_admins_populated' }).Count -eq 1) 'Enterprise Key Admins is empty: no finding'
+$snapKa = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+@($snapKa.groups | Where-Object { $_.sid -eq "$rootSidX-526" })[0].members = @()
+Assert-True (@((Invoke-Analysis $snapKa).Findings | Where-Object { $_.Type -eq 'key_admins_populated' }).Count -eq 0) 'empty Key Admins: no finding'
+# Orphan RODC krbtgt: krbtgt_12345 is linked by RODC01, krbtgt_55555 by nothing.
+Assert-True (Has $r 'rodc_krbtgt_orphan' 'krbtgt_55555' 'Medium') 'krbtgt account no RODC links flagged'
+Assert-True (-not (Has $r 'rodc_krbtgt_orphan' 'krbtgt_12345')) 'krbtgt linked by an RODC is not orphan'
+Assert-True (-not (Has $r 'rodc_krbtgt_orphan' 'krbtgt_AzureAD')) 'the Entra Kerberos server object is not taken for an RODC krbtgt'
+$snapKl = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+@($snapKl.domainControllers | Where-Object { $_.isReadOnly })[0].rodcPolicy.PSObject.Properties.Remove('krbtgtLink')
+$rKl = Invoke-Analysis $snapKl
+Assert-True (@($rKl.Findings | Where-Object { $_.Type -eq 'rodc_krbtgt_orphan' }).Count -eq 0 -and (@($rKl.NotEvaluated | ForEach-Object { $_.Type }) -contains 'rodc_krbtgt_orphan')) 'older snapshot without msDS-KrbTgtLink: not evaluated and silent, not clean'
+# Lockout: the demo has none at all, so the "too permissive" variant is tested on its own.
+Assert-True (-not (Has $r 'password_policy_lockout_weak' 'Default Domain Policy')) 'lockout threshold 0 is password_policy_no_lockout, not the weak-lockout finding'
+$snapLo = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$snapLo.domain.passwordPolicy.lockoutThreshold = 50; $snapLo.domain.passwordPolicy.lockoutDurationMinutes = 5
+$rLo = Invoke-Analysis $snapLo
+Assert-True ((Has $rLo 'password_policy_lockout_weak' 'Default Domain Policy' 'Low') -and -not (Has $rLo 'password_policy_no_lockout' 'Default Domain Policy')) '50 attempts and a 5-minute lockout flagged'
+Assert-True (@($rLo.Findings | Where-Object { $_.Type -eq 'password_policy_lockout_weak' })[0].Detail -match 'threshold 50' -and @($rLo.Findings | Where-Object { $_.Type -eq 'password_policy_lockout_weak' })[0].Detail -match 'duration 5 minutes') 'the weak-lockout finding names both the threshold and the duration'
+$snapLo.domain.passwordPolicy.lockoutThreshold = 5; $snapLo.domain.passwordPolicy.lockoutDurationMinutes = 30
+Assert-True (-not (Has (Invoke-Analysis $snapLo) 'password_policy_lockout_weak' 'Default Domain Policy')) '5 attempts and 30 minutes: no finding'
+# Machine password rotation on an active member, and the DC side of it.
+Assert-True (Has $r 'computer_password_old' 'SRV-OLD2008$' 'Medium') 'active computer whose machine password froze flagged'
+Assert-True (-not (Has $r 'computer_password_old' 'DC02$')) 'a DC goes to dc_password_old, not to computer_password_old'
+Assert-True (-not (Has $r 'computer_password_old' 'KIOSK-PRE01$')) 'a never-joined computer is timeroast_computer_password, not computer_password_old'
+Assert-True (-not (Has $r 'computer_password_old' 'WKS-W7-01$')) 'a stale computer is stale_computer, not computer_password_old'
+Assert-True (Has $r 'dc_refuse_password_change' 'Domain Controllers' 'Medium') 'RefusePasswordChange on the DCs flagged'
+# Cert Publishers: the CA host belongs there, nothing else does.
+Assert-True (Has $r 'cert_publishers_unexpected' 'user001' 'Medium') 'user in Cert Publishers flagged'
+Assert-True (Has $r 'cert_publishers_unexpected' 'SRV-WEB01$' 'Medium') 'non-CA server in Cert Publishers flagged'
+Assert-True (-not (Has $r 'cert_publishers_unexpected' 'CA01$')) 'the CA computer account in Cert Publishers is expected'
+$snapCp = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$snapCp.adcs.collected = $false
+$rCp = Invoke-Analysis $snapCp
+Assert-True ((Has $rCp 'cert_publishers_unexpected' 'user001') -and -not (Has $rCp 'cert_publishers_unexpected' 'SRV-WEB01$') -and @($rCp.Findings | Where-Object { $_.Type -eq 'cert_publishers_unexpected' })[0].Detail -match 'AD CS was not collected') 'without AD CS only members that cannot be a CA are reported, and the detail says so'
+# Duplicate SPN.
+Assert-True (Has $r 'duplicate_spn' 'http/app01.moosebank.local' 'Medium') 'SPN held by two accounts flagged'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'duplicate_spn' }).Count -eq 1) 'SPNs held once, and a host SPN in two forms, are not duplicates'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'duplicate_spn' })[0].Detail -match 'svc_app' -and @($r.Findings | Where-Object { $_.Type -eq 'duplicate_spn' })[0].Detail -match 'SRV-WEB01\$') 'the duplicate-SPN finding names both holders'
+# gMSA in use: the demo has one, so the finding is tested on a domain without.
+Assert-True (-not (Has $r 'gmsa_not_used' 'moosebank.local')) 'a domain with a gMSA is clean'
+$snapGm = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+@($snapGm.serviceAccounts | Where-Object { $_.samAccountName -eq 'gmsa_sql$' })[0].isGroupManaged = $false
+Assert-True (Has (Invoke-Analysis $snapGm) 'gmsa_not_used' 'moosebank.local' 'Low') 'only standalone MSAs and SPN users: gmsa_not_used'
+$snapGm2 = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+foreach ($m in @($snapGm2.serviceAccounts)) { $m.PSObject.Properties.Remove('isGroupManaged') }
+$rGm2 = Invoke-Analysis $snapGm2
+Assert-True (@($rGm2.Findings | Where-Object { $_.Type -eq 'gmsa_not_used' }).Count -eq 0 -and (@($rGm2.NotEvaluated | ForEach-Object { $_.Type }) -contains 'gmsa_not_used')) 'older snapshot that does not split gMSA from sMSA: not evaluated and silent'
+# dSHeuristics, character by character.
+Assert-True (Has $r 'anonymous_ldap_enabled' 'moosebank.local' 'High') 'dSHeuristics character 7 = 2 still flagged'
+Assert-True (Has $r 'dsheuristics_list_object' 'moosebank.local' 'Low') 'fDoListObject flagged'
+Assert-True (Has $r 'dsheuristics_anonymous_nspi' 'moosebank.local' 'High') 'fAllowAnonNSPI flagged'
+Assert-True (Has $r 'dsheuristics_adminsdholder_exempt' 'moosebank.local' 'High') 'dwAdminSDExMask flagged'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'dsheuristics_adminsdholder_exempt' })[0].Detail -match 'Account Operators, Server Operators, Print Operators, Backup Operators') 'the dwAdminSDExMask finding names every excluded operator group'
+Assert-True (Has $r 'dsheuristics_spn_uniqueness_off' 'moosebank.local' 'High') 'DoNotVerifyUPNAndOrSPNUniqueness flagged'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'dsheuristics_spn_uniqueness_off' })[0].Detail -match 'userPrincipalName uniqueness, servicePrincipalName uniqueness') 'the UPN/SPN uniqueness finding decodes the bits'
+Assert-True (Has $r 'dsheuristics_ldap_add_unprotected' 'moosebank.local' 'Medium') 'CVE-2021-42291 hardening left at 0 flagged'
+Assert-True (Has $r 'dsheuristics_confidential_cleartext' 'moosebank.local' 'High') 'DisableConfidentialAttributeEncryptionRequirements flagged'
+$snapDs = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+# Hardened: anonymous operations blocked, every switch back to 0, CVE-2021-42291 enforced.
+$dsOk = @('0') * 31
+$dsOk[9] = '1'; $dsOk[19] = '2'; $dsOk[27] = '2'; $dsOk[28] = '2'; $dsOk[29] = '3'
+$snapDs.domain.dsHeuristics = -join $dsOk
+$rDs = Invoke-Analysis $snapDs
+Assert-True (@($rDs.Findings | Where-Object { $_.Type -like 'dsheuristics_*' -or $_.Type -eq 'anonymous_ldap_enabled' }).Count -eq 0) 'a hardened dSHeuristics string produces no finding at all'
+# An unset attribute is the default behavior, so only the CVE-2021-42291 pair fires.
+$snapDs.domain.dsHeuristics = $null
+$rDs0 = Invoke-Analysis $snapDs
+Assert-True (@($rDs0.Findings | Where-Object { $_.Type -like 'dsheuristics_*' }).Count -eq 1 -and (Has $rDs0 'dsheuristics_ldap_add_unprotected' 'moosebank.local')) 'no dSHeuristics at all: only the CVE-2021-42291 default is reported'
+Assert-True (@($rDs0.Findings | Where-Object { $_.Type -eq 'dsheuristics_ldap_add_unprotected' })[0].Detail -match 'not set') 'the finding says the attribute is not set'
+$snapDs2 = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$snapDs2.meta.collectionErrors = @([PSCustomObject]@{ section = 'domain.dsHeuristics'; message = 'Access is denied (synthetic)' })
+$rDs2 = Invoke-Analysis $snapDs2
+Assert-True (@($rDs2.Findings | Where-Object { $_.Type -like 'dsheuristics_*' }).Count -eq 0 -and (@($rDs2.NotEvaluated | ForEach-Object { $_.Type }) -contains 'dsheuristics_spn_uniqueness_off')) 'a failed dSHeuristics read is not evaluated and silent'
+# Reanimate-Tombstones, DPAPI backup key, AdminSDHolder inheritance, OU deletion protection.
+Assert-True (Has $r 'reanimate_tombstones_right' 'MOOSEBANK\Helpdesk' 'Medium') 'Reanimate-Tombstones granted to a non-Tier 0 principal flagged'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'reanimate_tombstones_right' }).Count -eq 1) 'the default holders of Reanimate-Tombstones are not flagged'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'dangerous_ace_tier0' -and $_.Detail -match 'Reanimate' }).Count -eq 0) 'Reanimate-Tombstones is not also reported as a generic dangerous ACE'
+Assert-True (Has $r 'dpapi_backup_key_readable' 'MOOSEBANK\Helpdesk' 'High') 'non-Tier 0 read on the DPAPI domain backup key flagged'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'dpapi_backup_key_readable' }).Count -eq 1) 'SYSTEM on the DPAPI backup key is expected'
+$snapDp = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$snapDp.acls = @($snapDp.acls | Where-Object { $_.target -ne 'DpapiBackupKey' })
+$rDp = Invoke-Analysis $snapDp
+Assert-True (@($rDp.Findings | Where-Object { $_.Type -eq 'dpapi_backup_key_readable' }).Count -eq 0 -and (@($rDp.NotEvaluated | ForEach-Object { $_.Type }) -contains 'dpapi_backup_key_readable')) 'older snapshot without the DPAPI backup key: not evaluated and silent'
+Assert-True (Has $r 'adminsdholder_inheritance_enabled' 'AdminSDHolder' 'High') 'AdminSDHolder with inheritance on flagged'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'adminsdholder_inheritance_enabled' })[0].Detail -match 'Helpdesk') 'the AdminSDHolder finding names the entries that already arrived by inheritance'
+$snapAs = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+@($snapAs.acls | Where-Object { $_.target -eq 'AdminSDHolder' })[0].inheritanceProtected = $true
+Assert-True (-not (Has (Invoke-Analysis $snapAs) 'adminsdholder_inheritance_enabled' 'AdminSDHolder')) 'AdminSDHolder with inheritance blocked is clean'
+$snapAs2 = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+foreach ($a in @($snapAs2.acls)) { $a.PSObject.Properties.Remove('inheritanceProtected') }
+$rAs2 = Invoke-Analysis $snapAs2
+Assert-True (@($rAs2.Findings | Where-Object { $_.Type -eq 'adminsdholder_inheritance_enabled' }).Count -eq 0 -and (@($rAs2.NotEvaluated | ForEach-Object { $_.Type }) -contains 'adminsdholder_inheritance_enabled')) 'older snapshot without the inheritance flag: not evaluated and silent'
+Assert-True (Has $r 'ou_not_protected_from_deletion' 'OU=ServiceAccounts,OU=MooseBank,DC=moosebank,DC=local' 'Low') 'populated OU without deletion protection flagged'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'ou_not_protected_from_deletion' }).Count -eq 1) 'an empty unprotected OU is not reported'
+$snapOu = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+foreach ($o in @($snapOu.ouAcls)) { $o.PSObject.Properties.Remove('protectedFromDeletion') }
+$rOu = Invoke-Analysis $snapOu
+Assert-True (@($rOu.Findings | Where-Object { $_.Type -eq 'ou_not_protected_from_deletion' }).Count -eq 0 -and (@($rOu.NotEvaluated | ForEach-Object { $_.Type }) -contains 'ou_not_protected_from_deletion')) 'older snapshot without the protection flag: not evaluated and silent'
+# AD FS / Golden SAML.
+Assert-True (Has $r 'adfs_dkm_key_readable' 'NT AUTHORITY\Authenticated Users' 'Critical') 'any account able to read the AD FS DKM key = Critical'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'adfs_dkm_key_readable' }).Count -eq 1) 'the AD FS service account reading its own DKM key is expected, not a finding'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'adfs_dkm_key_readable' })[0].Detail -match 'key object') 'the DKM finding says which object is readable'
+Assert-True (Has $r 'adfs_service_account_not_gmsa' 'svc_adfs' 'Medium') 'AD FS running as a plain user account flagged'
+Assert-True (Has $r 'adfs_service_account_password_old' 'svc_adfs' 'Medium') 'AD FS service account password not rotated flagged'
+$snapFs = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$snapFs.adfs = [PSCustomObject]@{ present = $false; farms = @() }
+$rFs = Invoke-Analysis $snapFs
+Assert-True (@($rFs.Findings | Where-Object { $_.Type -like 'adfs_*' }).Count -eq 0 -and -not (@($rFs.NotEvaluated | ForEach-Object { $_.Type }) -contains 'adfs_dkm_key_readable')) 'no AD FS in the domain is a clean result, not a gap'
+$snapFs2 = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$snapFs2.PSObject.Properties.Remove('adfs')
+$rFs2 = Invoke-Analysis $snapFs2
+Assert-True (@($rFs2.Findings | Where-Object { $_.Type -like 'adfs_*' }).Count -eq 0 -and (@($rFs2.NotEvaluated | ForEach-Object { $_.Type }) -contains 'adfs_dkm_key_readable')) 'older snapshot without the AD FS container: not evaluated and silent'
+$snapFs3 = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+$gmsaSid = @($snapFs3.serviceAccounts | Where-Object { $_.samAccountName -eq 'gmsa_sql$' })[0].sid
+$svcSid = @($snapFs3.users | Where-Object { $_.samAccountName -eq 'svc_adfs' })[0].sid
+foreach ($rec in @(@($snapFs3.adfs.farms[0].acl) + @($snapFs3.adfs.farms[0].keyAcls))) {
+    foreach ($ace in @($rec.aces)) { if ($ace.sid -eq $svcSid) { $ace.sid = $gmsaSid; $ace.name = 'MOOSEBANK\gmsa_sql$' } }
+}
+$rFs3 = Invoke-Analysis $snapFs3
+Assert-True (@($rFs3.Findings | Where-Object { $_.Type -eq 'adfs_service_account_not_gmsa' -or $_.Type -eq 'adfs_service_account_password_old' }).Count -eq 0 -and (Has $rFs3 'adfs_dkm_key_readable' 'NT AUTHORITY\Authenticated Users')) 'an AD FS farm on a gMSA leaves both service-account checks clean'
+# NetSessionEnum (NetCease).
+Assert-True (Has $r 'net_session_enum_open' 'dc01.moosebank.local' 'Medium') 'session enumeration open to Authenticated Users flagged'
+Assert-True (-not (Has $r 'net_session_enum_open' 'dc02.moosebank.local')) 'a DC with NetCease applied is clean'
+Assert-True (@($r.Findings | Where-Object { $_.Type -eq 'net_session_enum_open' })[0].Detail -match 'Authenticated Users') 'the finding names the principal that may enumerate'
+$snapNs = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+@($snapNs.health.dcState | Where-Object { $_.dc -eq 'dc01.moosebank.local' })[0].netSessionAces = @()
+Assert-True (@((Invoke-Analysis $snapNs).Findings | Where-Object { $_.Type -eq 'net_session_enum_open' -and $_.Object -eq 'dc01.moosebank.local' })[0].Detail -match 'not set') 'an unset SrvsvcSessionInfo is the permissive default, not a clean result'
+$snapNs2 = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+foreach ($s in @($snapNs2.health.dcState)) { $s.PSObject.Properties.Remove('netSessionAces') }
+$rNs2 = Invoke-Analysis $snapNs2
+Assert-True (@($rNs2.Findings | Where-Object { $_.Type -eq 'net_session_enum_open' }).Count -eq 0 -and (@($rNs2.NotEvaluated | ForEach-Object { $_.Type }) -contains 'net_session_enum_open')) 'older snapshot without the session permissions: not evaluated and silent'
+$snapNs3 = Import-ADSnapshot (Join-Path $tmp 'demo.json')
+@($snapNs3.health.dcState | Where-Object { $_.dc -eq 'dc01.moosebank.local' })[0].netSessionAces = $null
+$rNs3 = Invoke-Analysis $snapNs3
+Assert-True (-not (Has $rNs3 'net_session_enum_open' 'dc01.moosebank.local') -and @($rNs3.NotEvaluated | Where-Object { $_.Type -eq 'net_session_enum_open' -and $_.Reason -match 'remote registry rights' }).Count -eq 1) 'a failed registry read on one DC is reported as a gap naming that DC'
 # ------------------------------------------------------------------ deep
 Write-Host "[deep]"
 & (Join-Path $PSScriptRoot 'New-SyntheticSnapshot.ps1') -Scenario demo -Deep -OutFile (Join-Path $tmp 'deep.json') | Out-Null
@@ -439,7 +588,7 @@ $deep = Import-ADSnapshot (Join-Path $tmp 'deep.json')
 $rd = Invoke-Analysis $deep
 Assert-True (@($rd.NotEvaluated | Where-Object { $_.Type -eq 'dangerous_ace_anywhere' }).Count -eq 0) 'deep run evaluates dangerous_ace_anywhere'
 Assert-True (Has $rd 'dangerous_ace_anywhere' 'MOOSEBANK\Helpdesk' 'High') 'deep: non-priv GenericAll over a DA'
-Assert-True ($rd.Findings.Count -eq 233) "deep total findings: expected 233, got $($rd.Findings.Count)"
+Assert-True ($rd.Findings.Count -eq 256) "deep total findings: expected 256, got $($rd.Findings.Count)"
 Assert-True (Has $rd 'kds_root_key_readable' 'MOOSEBANK\Helpdesk' 'High') 'deep: Helpdesk can read the KDS root key (Golden gMSA)'
 Assert-True (-not (Has $rd 'kds_root_key_readable' 'MOOSEBANK\Domain Admins')) 'deep: Domain Admins on the KDS root key is the default'
 Assert-True (@($r.NotEvaluated | Where-Object { $_.Type -eq 'kds_root_key_readable' }).Count -eq 1) 'kds_root_key_readable not evaluated without -Deep'
@@ -491,8 +640,8 @@ Write-Host "[partial]"
 $partial = Import-ADSnapshot (Join-Path $tmp 'partial.json')
 $rp = Invoke-Analysis $partial
 $ne = @($rp.NotEvaluated | ForEach-Object { $_.Type })
-Assert-True ($rp.Findings.Count -eq 213) "partial total findings: expected 213, got $($rp.Findings.Count)"
-Assert-True (($ne -join ',') -eq 'fgpp_weak,dcsync_rights,sync_laps_rights,dangerous_ace_tier0,nonstandard_owner_tier0,gpp_cpassword,sysvol_writable,sysvol_script_secrets,dangerous_ace_anywhere,kds_root_key_readable,badsuccessor_dmsa_create,laps_readers,gpo_autologon_password,gpo_trusted_root_added,bitlocker_key_missing,pwq_duplicate_passwords,pwq_default_password,pwq_empty_password,pwq_breached_password,pwq_cleartext_stored') "partial not-evaluated set: got $($ne -join ',')"
+Assert-True ($rp.Findings.Count -eq 235) "partial total findings: expected 235, got $($rp.Findings.Count)"
+Assert-True (($ne -join ',') -eq 'fgpp_weak,dcsync_rights,sync_laps_rights,dangerous_ace_tier0,nonstandard_owner_tier0,reanimate_tombstones_right,dpapi_backup_key_readable,adminsdholder_inheritance_enabled,gpp_cpassword,sysvol_writable,sysvol_script_secrets,dangerous_ace_anywhere,kds_root_key_readable,badsuccessor_dmsa_create,laps_readers,gpo_autologon_password,gpo_trusted_root_added,bitlocker_key_missing,pwq_duplicate_passwords,pwq_default_password,pwq_empty_password,pwq_breached_password,pwq_cleartext_stored') "partial not-evaluated set: got $($ne -join ',')"
 
 # ------------------------------------------------------------- mutations
 Write-Host "[mutations]"
@@ -740,7 +889,10 @@ $script:RefDate = ConvertTo-UtcDate $demo.meta.collectedAtUtc
 $pz = New-Pseudonymizer -Snapshot $demo -Index $r.Index
 $prompt = New-AiPrompt -Findings $r.Findings -Pz $pz -Snapshot $demo -Score $score -Comparison $cmp -NotEvaluated $r.NotEvaluated
 Assert-True (@(Test-AiLeak -Pz $pz -Text $prompt).Count -eq 0) "leak check clean: $((Test-AiLeak -Pz $pz -Text $prompt) -join ', ')"
-foreach ($secret in 'moosebank', 'MOOSEBANK', 'adm.rossi', 'svc_sql_admin', 'SRV-BACKUP01', 'sql01', 'app01', 'DC01', 'S-1-5-21-1111111111', 'partner.example', 'PSO-Admins', 'ext.admin', 'Groups.xml', 'Workstation Baseline', 'Inventory', 'fs01', 'dc-tools', '10.0.0.12') {
+foreach ($secret in 'moosebank', 'MOOSEBANK', 'adm.rossi', 'svc_sql_admin', 'SRV-BACKUP01', 'sql01', 'app01', 'DC01', 'S-1-5-21-1111111111', 'partner.example', 'PSO-Admins', 'ext.admin', 'Groups.xml', 'Workstation Baseline', 'Inventory', 'fs01', 'dc-tools', '10.0.0.12',
+    # Objects the 1.15 checks put in a finding: an SPN carries a host name, an OU finding carries
+    # a whole DN, and the AD FS and Cert Publishers findings carry account names.
+    'svc_adfs', 'ServiceAccounts', 'krbtgt_55555', 'CA01', 'SRV-WEB01', 'adm.gialli', 'SRV-OLD2008') {
     Assert-True ($prompt.IndexOf($secret, [StringComparison]::OrdinalIgnoreCase) -lt 0) "prompt must not contain '$secret'"
 }
 foreach ($kept in 'Domain Admins', 'krbtgt', 'Administrator', 'privileged_kerberoastable') {
@@ -1662,7 +1814,7 @@ $tempBefore = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Di
 $bz = New-IDWolfBundle -Snapshot (Join-Path $tmp 'demo.json') -PasswordQuality (Join-Path $root 'examples\passwordquality.example.json') -OutFile (Join-Path $tmp 'bundle.zip')
 $bzCsv = Join-Path $tmp 'bundle.csv'
 & (Join-Path $root 'IDWolf.ps1') -Snapshot $bz -OutHtml (Join-Path $tmp 'bundle.html') -OutCsv $bzCsv -SkipLLM 6>&1 2>&1 | Out-Null
-Assert-True ((Test-Path $bzCsv) -and @(Import-Csv $bzCsv).Count -eq 236) "zip with snapshot + password quality analyzes like the two files (236 findings, got $(if (Test-Path $bzCsv) { @(Import-Csv $bzCsv).Count }))"
+Assert-True ((Test-Path $bzCsv) -and @(Import-Csv $bzCsv).Count -eq 259) "zip with snapshot + password quality analyzes like the two files (259 findings, got $(if (Test-Path $bzCsv) { @(Import-Csv $bzCsv).Count }))"
 $tempAfter = @(Get-ChildItem -LiteralPath ([System.IO.Path]::GetTempPath()) -Directory -Filter 'idwolf_bundle_*' -ErrorAction SilentlyContinue).Count
 Assert-True ($tempAfter -eq $tempBefore) 'extracted bundle removed from TEMP after the analysis'
 # A file changed inside the zip no longer matches the manifest.
@@ -1688,7 +1840,7 @@ $encRaw = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes(
 Assert-True ($encHead -eq 'IDWOLFENC1' -and $encZipMsg -and $encRaw -notmatch 'moosebank|snapshot\.json') 'encrypted bundle: IDWolf header, not readable as a zip, no plain names inside'
 $encCsv = Join-Path $tmp 'bundle_enc.csv'
 & (Join-Path $root 'IDWolf.ps1') -Snapshot $encBz -BundlePassword $encPw -OutHtml (Join-Path $tmp 'bundle_enc.html') -OutCsv $encCsv -SkipLLM 6>&1 2>&1 | Out-Null
-Assert-True ((Test-Path $encCsv) -and @(Import-Csv $encCsv).Count -eq 236) "encrypted bundle analyzes like the plain one with the right password (got $(if (Test-Path $encCsv) { @(Import-Csv $encCsv).Count }))"
+Assert-True ((Test-Path $encCsv) -and @(Import-Csv $encCsv).Count -eq 259) "encrypted bundle analyzes like the plain one with the right password (got $(if (Test-Path $encCsv) { @(Import-Csv $encCsv).Count }))"
 $wrongMsg = ''; try { Expand-IDWolfBundle -Path $encBz -Password (ConvertTo-SecureString 'wrong password here' -AsPlainText -Force) | Out-Null } catch { $wrongMsg = $_.Exception.Message }
 $tamper2 = Join-Path $tmp 'tampered.idwolf'; $tb = [System.IO.File]::ReadAllBytes($encBz); $tb[100] = $tb[100] -bxor 1; [System.IO.File]::WriteAllBytes($tamper2, $tb)
 $tamperMsg = ''; try { Expand-IDWolfBundle -Path $tamper2 -Password $encPw | Out-Null } catch { $tamperMsg = $_.Exception.Message }
@@ -1706,8 +1858,8 @@ $jl = Join-Path $tmp 'demo.jsonl'
 $jlRows = @([System.IO.File]::ReadAllLines($jl) | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })
 $jlFind = @($jlRows | Where-Object { $_.event_type -eq 'finding' })
 $jlSum = @($jlRows | Where-Object { $_.event_type -eq 'summary' })
-Assert-True ($jlFind.Count -eq 228 -and $jlSum.Count -eq 1) "jsonl: 228 findings + 1 summary (got $($jlFind.Count) + $($jlSum.Count))"
-Assert-True ($jlSum[0].critical -eq 26 -and $jlSum[0].findings -eq 228 -and $jlSum[0].score -ge 0 -and $jlSum[0].domain -eq 'moosebank.local') 'jsonl summary: counts, score, domain'
+Assert-True ($jlFind.Count -eq 251 -and $jlSum.Count -eq 1) "jsonl: 251 findings + 1 summary (got $($jlFind.Count) + $($jlSum.Count))"
+Assert-True ($jlSum[0].critical -eq 28 -and $jlSum[0].findings -eq 251 -and $jlSum[0].score -ge 0 -and $jlSum[0].domain -eq 'moosebank.local') 'jsonl summary: counts, score, domain'
 Assert-True (@($jlFind | Where-Object { $_.finding_id -notmatch '^[0-9a-f]{16}$' -or $_.severity_score -lt 1 }).Count -eq 0) 'jsonl: every finding has a finding_id and a severity_score'
 Assert-True (@($jlFind | ForEach-Object { $_.finding_id } | Select-Object -Unique).Count -eq $jlFind.Count) 'jsonl: finding_id unique within a run'
 Assert-True ((Get-FindingId 'x_check' 'Bob') -eq (Get-FindingId 'X_CHECK' 'bob')) 'finding_id ignores case, so it survives renames in case only'
@@ -1940,7 +2092,7 @@ try {
     # What the rights leave out, named from the catalog's Needs.
     $uacDa = [PSCustomObject]@{ DomainAdmin = $false; EnterpriseAdmin = $false; Replication = $false; FilteredByUac = $true; Error = '' }
     $gapTypes = @(Get-RightsGaps -Rights $uacDa -Deep $true | ForEach-Object { Get-ChecksNeeding -Catalog $script:CheckCatalog -Sections $_.Sections })
-    Assert-True ($gapTypes.Count -eq 22 -and $gapTypes -contains 'fgpp_weak' -and $gapTypes -contains 'adcs_esc7' -and $gapTypes -contains 'laps_readers' -and $gapTypes -contains 'pwq_empty_password' -and @(Get-RightsGaps -Rights $uacDa)[0].Reason -match 'filtered by UAC') "rights gaps: a UAC-filtered admin with -Deep misses 22 checks, named by reason (got $($gapTypes.Count))"
+    Assert-True ($gapTypes.Count -eq 23 -and $gapTypes -contains 'fgpp_weak' -and $gapTypes -contains 'adcs_esc7' -and $gapTypes -contains 'laps_readers' -and $gapTypes -contains 'pwq_empty_password' -and @(Get-RightsGaps -Rights $uacDa)[0].Reason -match 'filtered by UAC') "rights gaps: a UAC-filtered admin with -Deep misses 23 checks, named by reason (got $($gapTypes.Count))"
     $fullDa = [PSCustomObject]@{ DomainAdmin = $true; EnterpriseAdmin = $false; Replication = $true; FilteredByUac = $false; Error = '' }
     Assert-True (@(Get-RightsGaps -Rights $fullDa -Deep $true).Count -eq 0 -and @(Get-RightsGaps -Rights $rights).Count -eq 0) 'rights gaps: none for a Domain Admin with replication rights, none claimed when the rights could not be read'
 

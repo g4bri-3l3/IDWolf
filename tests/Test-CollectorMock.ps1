@@ -47,6 +47,17 @@ Check (@(@($snap.acls | Where-Object target -eq 'DomainRoot').aces | Where-Objec
 $staff = @($snap.ouAcls | Where-Object { $_.distinguishedName -eq 'OU=Staff,DC=mock,DC=local' })
 Check (@($snap.ouAcls).Count -eq 2 -and $staff.Count -eq 1) "OU and top-level container ACLs collected (got $(@($snap.ouAcls).Count))"
 Check ((@($staff[0].aces | ForEach-Object { "$($_.sid)|$($_.rights)|$($_.objectType)" }) -join ';') -match '^S-1-5-21-[\d-]+-512\|GenericAll\|00000000-0000-0000-0000-000000000000;S-1-5-21-[\d-]+-1301\|CreateChild\|0feb936f-47b3-49f2-9386-1dedc2c23765$') "OU ACL keeps explicit create/control ACEs only (got $(@($staff[0].aces | ForEach-Object { "$($_.sid)|$($_.rights)" }) -join ';'))"
+# Every OU record carries the accidental-deletion flag, and every security descriptor the
+# inheritance flag: without them the checks that read them are listed as not evaluated.
+Check (@($snap.ouAcls | Where-Object { $null -eq $_.protectedFromDeletion }).Count -eq 0) 'OU records carry the accidental-deletion protection flag'
+Check (@($snap.acls | Where-Object { $null -eq $_.inheritanceProtected }).Count -eq 0) 'security descriptors carry the inheritance flag'
+# The DPAPI domain backup key is read as a Tier 0 control point, security descriptor only.
+Check (@($snap.acls | Where-Object { $_.target -eq 'DpapiBackupKey' }).Count -eq 1 -and -not ($errSections -contains 'acl.DpapiBackupKey')) 'DPAPI domain backup key security descriptor collected'
+# No AD FS container in the mock domain: present = false, which is a result, not a collection gap.
+Check ($null -ne $snap.adfs -and $snap.adfs.present -eq $false -and -not ($errSections -contains 'adfs')) 'no AD FS DKM container reads as present = false, not as an error'
+# RODC records name the krbtgt account they are linked to, so an orphan one can be told apart.
+$rodcRec = @($snap.domainControllers | Where-Object { $_.isReadOnly })
+Check ($rodcRec.Count -ge 1 -and $null -ne $rodcRec[0].rodcPolicy -and $rodcRec[0].rodcPolicy.PSObject.Properties['krbtgtLink']) 'RODC policy records msDS-KrbTgtLink'
 # SCCM: the System Management container's ACL and the published management point.
 Check ($snap.sccm.present -and $snap.sccm.acl.target -eq 'SystemManagement' -and @($snap.sccm.acl.aces).Count -eq 4 -and (@($snap.sccm.managementPoints | ForEach-Object { "$($_.host)/$($_.siteCode)" }) -join ',') -eq 'pc1.mock.local/MCK') 'SCCM System Management container and management points collected'
 # RODC policy: DN-String values of msDS-RevealedList come out as plain DNs.

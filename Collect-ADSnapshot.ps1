@@ -608,7 +608,7 @@ function ConvertFrom-DnString {
 foreach ($dc in @($dcs | Where-Object { $_.isReadOnly -and $_.computerDN })) {
     $dc['rodcPolicy'] = $null
     try {
-        $o = Get-ADObject -Identity $dc.computerDN -Properties 'msDS-RevealOnDemandGroup', 'msDS-NeverRevealGroup', 'msDS-RevealedList', managedBy @common -ErrorAction Stop
+        $o = Get-ADObject -Identity $dc.computerDN -Properties 'msDS-RevealOnDemandGroup', 'msDS-NeverRevealGroup', 'msDS-RevealedList', 'msDS-KrbTgtLink', managedBy @common -ErrorAction Stop
         # ConvertTo-StringArray hands back one array object: a foreach statement walks it, a pipe would not.
         $revealed = @()
         foreach ($v in (ConvertTo-StringArray $o.'msDS-RevealedList')) { $d = ConvertFrom-DnString $v; if ($d -and $revealed -notcontains $d) { $revealed += $d } }
@@ -617,6 +617,9 @@ foreach ($dc in @($dcs | Where-Object { $_.isReadOnly -and $_.computerDN })) {
             denied    = ConvertTo-StringArray $o.'msDS-NeverRevealGroup'
             revealed  = $revealed
             managedBy = "$($o.managedBy)"
+            # The krbtgt_NNNNN account this RODC signs its tickets with. A krbtgt_NNNNN that no
+            # RODC points at is left over from a demoted one and nobody rotates its key.
+            krbtgtLink = "$($o.'msDS-KrbTgtLink')"
         }
     }
     catch { Add-CollectionError 'rodcPolicy' "$($dc.name): $($_.Exception.Message)" }
@@ -857,7 +860,12 @@ function Read-ObjectSecurity {
                     isInherited         = [bool]$_.IsInherited
                 }
             })
-        return [ordered]@{ target = $Target; distinguishedName = $Dn; objectClass = $ObjectClass; ownerSid = $owner; ownerName = Resolve-SidName $owner; aces = $aces }
+        # AreAccessRulesProtected = inheritance is blocked on this object. On AdminSDHolder that
+        # must stay true: with inheritance on, an ACE on a parent container reaches every
+        # protected admin through SDProp.
+        $prot = $null
+        try { $prot = [bool]$sd.AreAccessRulesProtected } catch { $prot = $null }
+        return [ordered]@{ target = $Target; distinguishedName = $Dn; objectClass = $ObjectClass; ownerSid = $owner; ownerName = Resolve-SidName $owner; inheritanceProtected = $prot; aces = $aces }
     }
     catch {
         # The object is simply not there (NTAuthCertificates on a forest that never had a CA).
@@ -891,6 +899,14 @@ if (-not $SkipAcl) {
         $rec = Read-ObjectSecurity -Dn $aclTargets[$key] -Target $key
         if ($rec) { $acls += $rec }
     }
+
+    # DPAPI domain backup key: whoever reads this secret decrypts every DPAPI blob protected with
+    # the domain key (saved credentials, private keys, certificates) for the whole domain, offline
+    # and without ever touching the accounts again. Only the security descriptor is read here,
+    # never the key material. The object is normally unreadable to anyone but Tier 0, so a failed
+    # read leaves the check "not evaluated" instead of clean.
+    $dpapiKey = Read-ObjectSecurity -Dn "CN=BCKUPKEY_PREFERRED Secret,CN=System,$domainDN" -Target 'DpapiBackupKey' -ObjectClass 'secret' -ErrorSection 'acl.DpapiBackupKey' -OptionalIfMissing
+    if ($dpapiKey) { $acls += $dpapiKey }
 }
 
 # OUs and top-level containers (not -Deep): who can create objects in them. A non-Tier 0
@@ -907,6 +923,9 @@ if (-not $SkipAcl) {
             if ((++$seen % $script:PaceEvery) -eq 0) { Start-CollectorPace }
             $rec = Read-ObjectSecurity -Dn $o.DistinguishedName -Target "ou:$($o.DistinguishedName)" -ObjectClass "$($o.ObjectClass)" -ErrorSection 'ouAcls'
             if (-not $rec) { continue }
+            # "Protect object from accidental deletion" is a Deny ACE for Everyone on Delete /
+            # DeleteTree. Read before the Allow-only filter below, which drops Deny ACEs.
+            $rec['protectedFromDeletion'] = @($rec.aces | Where-Object { $_.accessType -eq 'Deny' -and $_.sid -eq 'S-1-1-0' -and $_.rights -match 'Delete' }).Count -gt 0
             $rec.aces = @($rec.aces | Where-Object { -not $_.isInherited -and $_.accessType -eq 'Allow' -and $_.rights -match 'CreateChild|GenericAll|WriteDacl|WriteOwner' })
             $ouAcls += $rec
         }
@@ -934,6 +953,42 @@ if (-not $SkipAcl) {
         }
     }
     catch { Add-CollectionError 'sccm' $_.Exception.Message; $sccm = $null }
+}
+
+# AD FS: the Distributed Key Manager (DKM) master key lives in AD, under
+# CN=<farm>,CN=Microsoft,CN=Program Data, as contact objects. That key plus the token-signing
+# certificate is all a Golden SAML forgery needs, so who can read the container is the control
+# that matters. Only the security descriptors and the names are read here, never thumbnailPhoto
+# (the key itself). A container counts as an AD FS farm only if it holds contact objects: other
+# products use CN=Microsoft,CN=Program Data too. No such container means no AD FS in this domain
+# (present = false), which is a clean result, not a gap.
+$adfs = $null
+if (-not $SkipAcl) {
+    try {
+        $msDn = "CN=Microsoft,CN=Program Data,$domainDN"
+        $farms = @()
+        $containers = @()
+        try { $containers = @(Get-ADObject -SearchBase $msDn -SearchScope OneLevel -LDAPFilter '(objectClass=container)' @common | Where-Object { $_ }) }
+        catch {
+            # No CN=Microsoft,CN=Program Data at all: nothing ever created it, so no AD FS.
+            if (-not ($_.Exception.GetType().FullName -eq 'Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException' -or "$($_.CategoryInfo.Category)" -eq 'ObjectNotFound')) { throw }
+        }
+        foreach ($ct in $containers) {
+            $keys = @(Get-ADObject -SearchBase $ct.DistinguishedName -SearchScope OneLevel -LDAPFilter '(objectClass=contact)' @common | Where-Object { $_ })
+            if ($keys.Count -eq 0) { continue }
+            $rec = Read-ObjectSecurity -Dn $ct.DistinguishedName -Target "adfs:$($ct.Name)" -ObjectClass 'container' -ErrorSection 'adfs'
+            if (-not $rec) { continue }
+            $keyAcls = @()
+            foreach ($k in $keys) {
+                $kr = Read-ObjectSecurity -Dn $k.DistinguishedName -Target "adfsKey:$($k.Name)" -ObjectClass 'contact' -ErrorSection 'adfs'
+                if ($kr) { $keyAcls += $kr }
+            }
+            $farms += [ordered]@{ name = "$($ct.Name)"; distinguishedName = "$($ct.DistinguishedName)"; acl = $rec; keyCount = $keys.Count; keyAcls = $keyAcls }
+        }
+        $adfs = [ordered]@{ present = ($farms.Count -gt 0); farms = $farms }
+        if ($farms.Count) { Write-Host "  $($farms.Count) AD FS DKM container(s) read" }
+    }
+    catch { Add-CollectionError 'adfs' $_.Exception.Message; $adfs = $null }
 }
 
 # --------------------------------------------------------------------------
@@ -1830,7 +1885,7 @@ if (-not $SkipHealth) {
     # (or remote WMI rights); without them this part is "not evaluated".
     $svcNames = 'NTDS', 'ADWS', 'Kdc', 'Netlogon', 'W32Time', 'DFSR', 'IsmServ', 'LanmanServer', 'LanmanWorkstation', 'SamSs', 'RpcSs', 'EventSystem', 'DNS', 'Dnscache'
     $state = @(foreach ($dc in $dcs) {
-            $rec = [ordered]@{ dc = "$($dc.hostName)"; systemDrive = $null; freeGB = $null; sizeGB = $null; stoppedServices = @(); spoolerStartMode = $null; spoolerState = $null; webClientStartMode = $null; webClientState = $null; netbiosAdapters = $null; osBuild = $null; osUbr = $null; coercionServices = $null; rpcFilterInterfaces = $null; dsrmAdminLogonBehavior = $null; error = '' }
+            $rec = [ordered]@{ dc = "$($dc.hostName)"; systemDrive = $null; freeGB = $null; sizeGB = $null; stoppedServices = @(); spoolerStartMode = $null; spoolerState = $null; webClientStartMode = $null; webClientState = $null; netbiosAdapters = $null; osBuild = $null; osUbr = $null; coercionServices = $null; rpcFilterInterfaces = $null; dsrmAdminLogonBehavior = $null; netSessionAces = $null; error = '' }
             $reach = @($healthData.dcReachability | Where-Object { $_.dc -eq "$($dc.hostName)" })[0]
             if ($reach -and -not $reach.reachable) { $rec.error = 'not reachable'; $rec; continue }
             $cs = $null
@@ -1854,6 +1909,25 @@ if (-not $SkipHealth) {
                 try {
                     $dsrm = Invoke-CimMethod -CimSession $cs -Namespace 'root/default' -ClassName StdRegProv -MethodName GetDWORDValue -Arguments @{ hDefKey = [uint32]2147483650; sSubKeyName = 'SYSTEM\CurrentControlSet\Control\Lsa'; sValueName = 'DsrmAdminLogonBehavior' } -OperationTimeoutSec 20 -ErrorAction Stop
                     if ($dsrm -and $dsrm.ReturnValue -eq 0) { $rec.dsrmAdminLogonBehavior = [int]$dsrm.uValue }
+                }
+                catch { }
+                # Who may call NetSessionEnum on this DC (SrvsvcSessionInfo). Left at the default
+                # it lets any authenticated account list who is logged on where, which is how
+                # BloodHound builds its session graph. NetCease removes that. The value is a
+                # security descriptor: it is parsed here so the snapshot carries principals, not
+                # raw bytes. $null = could not be read, @() = the value is not set at all.
+                try {
+                    $ns = Invoke-CimMethod -CimSession $cs -Namespace 'root/default' -ClassName StdRegProv -MethodName GetBinaryValue -Arguments @{ hDefKey = [uint32]2147483650; sSubKeyName = 'SYSTEM\CurrentControlSet\Services\LanmanServer\DefaultSecurity'; sValueName = 'SrvsvcSessionInfo' } -OperationTimeoutSec 20 -ErrorAction Stop
+                    if ($ns -and $ns.ReturnValue -eq 0 -and $ns.uValue) {
+                        $sdBytes = [byte[]]$ns.uValue
+                        $rsd = New-Object System.Security.AccessControl.RawSecurityDescriptor (, $sdBytes)
+                        $rec.netSessionAces = @(foreach ($ace in @($rsd.DiscretionaryAcl)) {
+                                if (-not $ace.PSObject.Properties['SecurityIdentifier']) { continue }
+                                $asid = "$($ace.SecurityIdentifier)"
+                                [ordered]@{ sid = $asid; name = (Resolve-SidName $asid); aceType = "$($ace.AceType)"; accessMask = [int]$ace.AccessMask }
+                            })
+                    }
+                    elseif ($ns -and $ns.ReturnValue -ne 0) { $rec.netSessionAces = @() }
                 }
                 catch { }
                 $rec.freeGB = [Math]::Round($disk.FreeSpace / 1GB, 1); $rec.sizeGB = [Math]::Round($disk.Size / 1GB, 1)
@@ -1936,6 +2010,7 @@ $snapshot = [ordered]@{
     acls              = $acls
     ouAcls            = $ouAcls
     sccm              = $sccm
+    adfs              = $adfs
     deepAcls          = $deepAcls
     kdsRootKeyAcls    = $kdsRootKeyAcls
     preWin2000        = $preWin2000

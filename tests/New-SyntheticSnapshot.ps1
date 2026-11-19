@@ -55,7 +55,7 @@ function New-U {
 function New-C {
     param([string]$Name, [string]$Ou = $wksOu, [string]$Os = 'Windows 11 Enterprise', [string]$OsVer = '10.0 (22631)',
         [int64]$Uac = 0x1000, $Logon = 3, $PwdAge = 10, $Created = 500, [int]$Pg = 515, $LapsV2 = -20, $LapsLegacy = $null,
-        [string[]]$Deleg = @(), [string[]]$Rbcd = @(), [string]$Desc = '', [bool]$DescSusp = $false, $Enc = 28)
+        [string[]]$Deleg = @(), [string[]]$Rbcd = @(), [string]$Desc = '', [bool]$DescSusp = $false, $Enc = 28, [int]$KeyCred = 0)
     $sam = "$Name`$"
     [ordered]@{
         kind = 'computer'; samAccountName = $sam; distinguishedName = "CN=$Name,$Ou"; sid = (Next-Sid)
@@ -65,6 +65,7 @@ function New-C {
         description = $Desc; descriptionSuspicious = $DescSusp; sidHistory = @()
         supportedEncryptionTypes = $Enc; allowedToDelegateTo = @($Deleg); rbcdPrincipals = @($Rbcd)
         operatingSystem = $Os; osVersion = $OsVer; dnsHostName = "$($Name.ToLower()).moosebank.local"
+        keyCredentialCount = $KeyCred
         lapsLegacyExpiry = (Iso $LapsLegacy); lapsV2Expiry = (Iso $LapsV2)
     }
 }
@@ -126,6 +127,10 @@ $u.gmsa            = New-U 'gmsa_sql$' -Ou "CN=Managed Service Accounts,$dn" -Ua
 $u.smsa            = New-U 'svc_smsa$' -Ou "CN=Managed Service Accounts,$dn" -Uac 0x1000 -PwdAge 400 -Logon 1 -Spn @('MSSQLSvc/legacy.moosebank.local:1433') -Pg 515 -Kind 'msa' -Enc 4
 # gMSA whose managed password can be read by a non-Tier 0 group (Helpdesk).
 $u.gmsa['gmsaReadPrincipals'] = @("CN=Helpdesk,CN=Users,$dn")
+# Group-managed (AD rotates the password) versus standalone: the domain has a gMSA, so
+# gmsa_not_used stays silent here.
+$u.gmsa['isGroupManaged'] = $true
+$u.smsa['isGroupManaged'] = $false
 foreach ($i in 1..30) { $u["std$i"] = New-U ("user{0:D3}" -f $i) -PwdAge (($i * 7) % 90 + 5) -Logon (($i * 3) % 20 + 1) }
 $u.hd1 = New-U 'hd.operator1' -PwdAge 30 -Logon 1
 $u.hd2 = New-U 'hd.operator2' -PwdAge 30 -Logon 1
@@ -134,16 +139,26 @@ $u.hd2 = New-U 'hd.operator2' -PwdAge 30 -Logon 1
 $u.scard = New-U 'sc.bianchi' -Uac (0x200 -bor 0x40000) -PwdAge 900 -Logon 1 -AltSec @('IssuerSerial', 'SubjectOnly')
 # Entra Kerberos server object (cloud Kerberos trust), key not rotated: cloud_kerberos_trust_key_old.
 $u.krbAad = New-U 'krbtgt_AzureAD' -Ou "CN=Users,$dn" -Uac (0x200 -bor $UAC_DIS) -PwdAge 250 -Logon $null -Created 900
+# Left behind by an RODC that was demoted badly: no RODC links to it (rodc_krbtgt_orphan).
+$u.krbOrphan = New-U 'krbtgt_55555' -Ou "CN=Users,$dn" -Uac (0x200 -bor $UAC_DIS) -PwdAge 600 -Logon $null -Created 1200
+# Runs the AD FS farm and may read the DKM master key, as a plain user account with an old
+# password: adfs_service_account_not_gmsa + adfs_service_account_password_old.
+$u.adfs = New-U 'svc_adfs' -Ou $svcOu -PwdAge 800 -Logon 1 -Created 1400
 
 # -------------------------------------------------------------- computers
 $c = [ordered]@{}
 $DC_UAC = 0x2000 -bor $TFD
 $c.dc01   = New-C 'DC01' -Ou $dcOu -Os 'Windows Server 2022 Datacenter' -OsVer '10.0 (20348)' -Uac $DC_UAC -Pg 516 -LapsV2 $null -Rbcd @("CN=EVILPC,CN=Computers,$dn")
-$c.dc02   = New-C 'DC02' -Ou $dcOu -Os 'Windows Server 2016 Standard' -OsVer '10.0 (14393)' -Uac $DC_UAC -Pg 516 -LapsV2 $null -PwdAge 200
+# A key credential planted on a DC object: Shadow Credentials persistence, never legitimate
+# (shadow_credentials_present, Critical).
+$c.dc02   = New-C 'DC02' -Ou $dcOu -Os 'Windows Server 2016 Standard' -OsVer '10.0 (14393)' -Uac $DC_UAC -Pg 516 -LapsV2 $null -PwdAge 200 -KeyCred 1
 $c.rodc   = New-C 'RODC01' -Ou $dcOu -Os 'Windows Server 2019 Standard' -OsVer '10.0 (17763)' -Uac (0x1000 -bor 0x4000000) -Pg 521 -LapsV2 $null
 $c.bkp    = New-C 'SRV-BACKUP01' -Ou $srvOu -Os 'Windows Server 2019 Standard' -OsVer '10.0 (17763)'
 $c.print  = New-C 'SRV-PRINT01' -Ou $srvOu -Os 'Windows Server 2019 Standard' -OsVer '10.0 (17763)' -Uac (0x1000 -bor $TFD)
-$c.old08  = New-C 'SRV-OLD2008' -Ou $srvOu -Os 'Windows Server 2008 R2 Standard' -OsVer '6.1 (7601)' -LapsV2 $null
+# Still logging on, machine password frozen for 400 days: computer_password_old.
+$c.old08  = New-C 'SRV-OLD2008' -Ou $srvOu -Os 'Windows Server 2008 R2 Standard' -OsVer '6.1 (7601)' -LapsV2 $null -PwdAge 400
+# Hosts the enterprise CA, so its account belongs in Cert Publishers and must not be flagged.
+$c.ca     = New-C 'CA01' -Ou $srvOu -Os 'Windows Server 2022 Standard' -OsVer '10.0 (20348)'
 $c.win7   = New-C 'WKS-W7-01' -Os 'Windows 7 Professional' -OsVer '6.1 (7601)' -Logon 300 -LapsV2 $null
 $c.app    = New-C 'SRV-APP01' -Ou $srvOu -Os 'Windows Server 2022 Standard' -OsVer '10.0 (20348)' -Rbcd @("CN=SRV-WEB01,$srvOu")
 $c.web    = New-C 'SRV-WEB01' -Ou $srvOu -Os 'Windows Server 2022 Standard' -OsVer '10.0 (20348)'
@@ -166,6 +181,8 @@ foreach ($i in 1..20) {
     if ($i -eq 18) { $desc = '[masked by collector: 28 chars]'; $susp = $true }
     $c["wks$i"] = New-C $name -Logon $logon -LapsV2 $laps -Desc $desc -DescSusp $susp
 }
+# The web server kept the SPN of a service that moved to svc_app: duplicate_spn.
+$c.web.servicePrincipalNames = @($c.web.servicePrincipalNames) + @('HTTP/app01.moosebank.local')
 
 # ----------------------------------------------------------------- groups
 $fspDn = "CN=S-1-5-21-999999999-999999999-999999999-1105,CN=ForeignSecurityPrincipals,$dn"
@@ -184,8 +201,12 @@ $g.prnop   = New-G 'Print Operators' 'S-1-5-32-550' @() -Ou "CN=Builtin,$dn" -Ad
 $g.bkpop   = New-G 'Backup Operators' 'S-1-5-32-551' @($u.backup.distinguishedName) -Ou "CN=Builtin,$dn" -AdminCount 1 -Scope 'DomainLocal'
 $g.dnsadm  = New-G 'DnsAdmins' "$dom-1101" @($u.dns.distinguishedName) -Scope 'DomainLocal'
 $g.gpco    = New-G 'Group Policy Creator Owners' "$dom-520" @($u.Administrator.distinguishedName)
-$g.ka      = New-G 'Key Admins' "$dom-526" @()
+# An admin left in Key Admins: it can write msDS-KeyCredentialLink on every computer
+# (key_admins_populated). Enterprise Key Admins stays empty, as it should.
+$g.ka      = New-G 'Key Admins' "$dom-526" @($u.gialli.distinguishedName)
 $g.eka     = New-G 'Enterprise Key Admins' "$dom-527" @() -Scope 'Universal'
+# CA01$ is the CA host and belongs here; user001 and SRV-WEB01$ do not (cert_publishers_unexpected).
+$g.certpub = New-G 'Cert Publishers' "$dom-517" @($c.ca.distinguishedName, $u.std1.distinguishedName, $c.web.distinguishedName) -Ou "CN=Users,$dn" -Scope 'DomainLocal'
 $g.pu      = New-G 'Protected Users' "$dom-525" @()
 $g.du      = New-G 'Domain Users' "$dom-513" @()
 $g.dg      = New-G 'Domain Guests' "$dom-514" @()
@@ -229,22 +250,57 @@ $rootAces = @(Default-Aces) + @(
     (Ace "$dom-1103" 'MOOSEBANK\Helpdesk' 'ExtendedRight' -ObjectType $FCP -InhObj $USER -Inh 'Descendents')
     # Exchange left without split permissions: WriteDacl on the domain head (PrivExchange).
     (Ace "$dom-1108" 'MOOSEBANK\Exchange Windows Permissions' 'WriteDacl' -Inh 'None')
+    # Restore tool delegation nobody reviewed: bring a deleted admin back (reanimate_tombstones_right).
+    (Ace "$dom-1103" 'MOOSEBANK\Helpdesk' 'ExtendedRight' -ObjectType '45ec5156-db7e-47bb-b53f-dbeb2d03c40f' -Inh 'None')
     (Ace 'S-1-5-11' 'NT AUTHORITY\Authenticated Users' 'WriteProperty' -ObjectType $GPLINK -Inh 'None' -Type 'Deny')
 )
 $acls = @(
-    [ordered]@{ target = 'DomainRoot'; distinguishedName = $dn; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; aces = $rootAces }
-    [ordered]@{ target = 'AdminSDHolder'; distinguishedName = "CN=AdminSDHolder,CN=System,$dn"; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'
-        aces = @(Default-Aces) + @((Ace $u.backdoor.sid 'MOOSEBANK\backdoor.user' 'GenericAll' -Inh 'None')) }
-    [ordered]@{ target = 'DomainControllersOU'; distinguishedName = $dcOu; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'
+    [ordered]@{ target = 'DomainRoot'; distinguishedName = $dn; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; inheritanceProtected = $true; aces = $rootAces }
+    # Inheritance left on, and an ACE already arrived from the parent container:
+    # adminsdholder_inheritance_enabled (SDProp stamps it onto every protected admin).
+    [ordered]@{ target = 'AdminSDHolder'; distinguishedName = "CN=AdminSDHolder,CN=System,$dn"; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; inheritanceProtected = $false
+        aces = @(Default-Aces) + @((Ace $u.backdoor.sid 'MOOSEBANK\backdoor.user' 'GenericAll' -Inh 'None')) +
+            @([ordered]@{ sid = "$dom-1103"; name = 'MOOSEBANK\Helpdesk'; rights = 'ReadProperty'; accessType = 'Allow'
+                    objectType = '00000000-0000-0000-0000-000000000000'; inheritedObjectType = '00000000-0000-0000-0000-000000000000'
+                    inheritanceType = 'All'; isInherited = $true }) }
+    [ordered]@{ target = 'DomainControllersOU'; distinguishedName = $dcOu; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; inheritanceProtected = $true
         aces = @(Default-Aces) + @((Ace "$dom-1106" 'MOOSEBANK\IT-Ops' 'ReadProperty, WriteProperty' -ObjectType $GPLINK -Inh 'None')) }
-    [ordered]@{ target = 'Group:Domain Admins'; distinguishedName = $g.da.distinguishedName; ownerSid = $u.old.sid; ownerName = 'MOOSEBANK\adm.old'; aces = @(Default-Aces) }
-    [ordered]@{ target = 'Group:Schema Admins'; distinguishedName = $g.sa.distinguishedName; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; aces = @(Default-Aces) }
-    [ordered]@{ target = 'Group:Enterprise Admins'; distinguishedName = $g.ea.distinguishedName; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; aces = @(Default-Aces) }
-    [ordered]@{ target = 'Group:Administrators'; distinguishedName = $g.admins.distinguishedName; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; aces = @(Default-Aces) }
+    # The domain DPAPI backup key: Helpdesk can read the secret, which decrypts every
+    # domain-key DPAPI blob offline (dpapi_backup_key_readable). ReadProperty only, so it is
+    # not also a dangerous ACE.
+    [ordered]@{ target = 'DpapiBackupKey'; distinguishedName = "CN=BCKUPKEY_PREFERRED Secret,CN=System,$dn"; objectClass = 'secret'
+        ownerSid = 'S-1-5-18'; ownerName = 'NT AUTHORITY\SYSTEM'; inheritanceProtected = $true
+        aces = @((Ace 'S-1-5-18' 'NT AUTHORITY\SYSTEM' 'GenericAll' -Inh 'None'),
+            (Ace "$dom-1103" 'MOOSEBANK\Helpdesk' 'ReadProperty' -Inh 'None')) }
+    [ordered]@{ target = 'Group:Domain Admins'; distinguishedName = $g.da.distinguishedName; ownerSid = $u.old.sid; ownerName = 'MOOSEBANK\adm.old'; inheritanceProtected = $true; aces = @(Default-Aces) }
+    [ordered]@{ target = 'Group:Schema Admins'; distinguishedName = $g.sa.distinguishedName; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; inheritanceProtected = $true; aces = @(Default-Aces) }
+    [ordered]@{ target = 'Group:Enterprise Admins'; distinguishedName = $g.ea.distinguishedName; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; inheritanceProtected = $true; aces = @(Default-Aces) }
+    [ordered]@{ target = 'Group:Administrators'; distinguishedName = $g.admins.distinguishedName; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; inheritanceProtected = $true; aces = @(Default-Aces) }
     # Default ACL of a non-protected group: Account Operators has GenericAll. Must not be flagged.
-    [ordered]@{ target = 'Group:Group Policy Creator Owners'; distinguishedName = $g.gpco.distinguishedName; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'
+    [ordered]@{ target = 'Group:Group Policy Creator Owners'; distinguishedName = $g.gpco.distinguishedName; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; inheritanceProtected = $true
         aces = @(Default-Aces) + @((Ace 'S-1-5-32-548' 'BUILTIN\Account Operators' 'GenericAll' -Inh 'None')) }
 )
+
+# ------------------------------------------------------------------- AD FS
+# DKM master key container: the service account may read it (that is how AD FS works), but so
+# can Authenticated Users on the key object itself -> adfs_dkm_key_readable (Critical).
+$adfsDn = "CN=adfs,CN=Microsoft,CN=Program Data,$dn"
+$adfsKeyDn = "CN=d9b1a2e4-7c3f-4a85-9f0b-11c2b3d4e5f6,$adfsDn"
+$adfs = [ordered]@{ present = $true; farms = @(
+        [ordered]@{ name = 'adfs'; distinguishedName = $adfsDn; keyCount = 1
+            acl = [ordered]@{ target = 'adfs:adfs'; distinguishedName = $adfsDn; objectClass = 'container'
+                ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; inheritanceProtected = $false
+                aces = @((Ace 'S-1-5-18' 'NT AUTHORITY\SYSTEM' 'GenericAll' -Inh 'All'),
+                    (Ace "$dom-512" 'MOOSEBANK\Domain Admins' 'GenericAll' -Inh 'All'),
+                    (Ace $u.adfs.sid 'MOOSEBANK\svc_adfs' 'GenericRead' -Inh 'All')) }
+            keyAcls = @(
+                [ordered]@{ target = 'adfsKey:d9b1a2e4-7c3f-4a85-9f0b-11c2b3d4e5f6'; distinguishedName = $adfsKeyDn; objectClass = 'contact'
+                    ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; inheritanceProtected = $false
+                    aces = @((Ace 'S-1-5-18' 'NT AUTHORITY\SYSTEM' 'GenericAll' -Inh 'None'),
+                        (Ace $u.adfs.sid 'MOOSEBANK\svc_adfs' 'GenericRead' -Inh 'None'),
+                        (Ace 'S-1-5-11' 'NT AUTHORITY\Authenticated Users' 'ReadProperty' -Inh 'None')) }
+            ) }
+    ) }
 
 # ----------------------------------------------------------- extra (large)
 if ($Scenario -eq 'large') {
@@ -376,16 +432,20 @@ $dmsaGuid = '0feb936f-47b3-49f2-9386-1dedc2c23765'
 $ouAcls = @(
     # Helpdesk may create dMSAs in the workstations OU: the BadSuccessor delegation.
     # Account Operators (Tier 0) and a user-only CreateChild for IT-Ops are fine.
-    [ordered]@{ target = "ou:$wksOu"; distinguishedName = $wksOu; objectClass = 'organizationalUnit'; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'
+    [ordered]@{ target = "ou:$wksOu"; distinguishedName = $wksOu; objectClass = 'organizationalUnit'; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; protectedFromDeletion = $true
         aces = @((Ace "$dom-1103" 'MOOSEBANK\Helpdesk' 'CreateChild' -ObjectType $dmsaGuid -Inh 'None'),
             (Ace 'S-1-5-32-548' 'BUILTIN\Account Operators' 'CreateChild, DeleteChild' -ObjectType 'bf967aba-0de6-11d0-a285-00aa003049e2' -Inh 'None'),
             (Ace "$dom-1106" 'MOOSEBANK\IT-Ops' 'CreateChild, DeleteChild' -ObjectType 'bf967aba-0de6-11d0-a285-00aa003049e2' -Inh 'None')) }
     # GenericAll that only reaches user objects below the OU: not a container right.
-    [ordered]@{ target = "ou:$srvOu"; distinguishedName = $srvOu; objectClass = 'organizationalUnit'; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'
+    [ordered]@{ target = "ou:$srvOu"; distinguishedName = $srvOu; objectClass = 'organizationalUnit'; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; protectedFromDeletion = $true
         aces = @((Ace "$dom-1106" 'MOOSEBANK\IT-Ops' 'GenericAll' -InhObj 'bf967aba-0de6-11d0-a285-00aa003049e2' -Inh 'Descendents')) }
-    # IT-Ops owns the service accounts OU: as owner it can grant itself CreateChild.
-    [ordered]@{ target = "ou:$svcOu"; distinguishedName = $svcOu; objectClass = 'organizationalUnit'; ownerSid = "$dom-1106"; ownerName = 'MOOSEBANK\IT-Ops'; aces = @() }
-    [ordered]@{ target = "ou:CN=Users,$dn"; distinguishedName = "CN=Users,$dn"; objectClass = 'container'; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; aces = @() }
+    # IT-Ops owns the service accounts OU: as owner it can grant itself CreateChild. Created by a
+    # script that did not protect it from deletion, and it holds the service accounts:
+    # ou_not_protected_from_deletion.
+    [ordered]@{ target = "ou:$svcOu"; distinguishedName = $svcOu; objectClass = 'organizationalUnit'; ownerSid = "$dom-1106"; ownerName = 'MOOSEBANK\IT-Ops'; protectedFromDeletion = $false; aces = @() }
+    # Unprotected as well, but empty: not worth a finding.
+    [ordered]@{ target = "ou:OU=Staging,$dn"; distinguishedName = "OU=Staging,$dn"; objectClass = 'organizationalUnit'; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; protectedFromDeletion = $false; aces = @() }
+    [ordered]@{ target = "ou:CN=Users,$dn"; distinguishedName = "CN=Users,$dn"; objectClass = 'container'; ownerSid = "$dom-512"; ownerName = 'MOOSEBANK\Domain Admins'; protectedFromDeletion = $true; aces = @() }
 )
 
 # ------------------------------------------------------ SCCM System Management
@@ -422,6 +482,8 @@ $gpo = [ordered]@{
                 'MACHINE\Software\Policies\Microsoft\Windows\WinRM\Service\AllowBasic' = '4,1'
                 # Machine account passwords frozen: machine_password_rotation_off.
                 'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\DisablePasswordChange' = '4,1'
+                # And the DC side of it: dc_refuse_password_change.
+                'MACHINE\System\CurrentControlSet\Services\Netlogon\Parameters\RefusePasswordChange' = '4,1'
                 # LDAP client signing set to None: ldap_client_signing_not_required.
                 'MACHINE\System\CurrentControlSet\Services\LDAP\LDAPClientIntegrity' = '4,0'
                 # No InactivityTimeoutSecs anywhere: machine_inactivity_limit_missing (not configured).
@@ -514,6 +576,18 @@ if ($Scenario -eq 'partial') {
 $users = @($u.Values | Where-Object { $_.kind -eq 'user' })
 $msas = @($u.Values | Where-Object { $_.kind -eq 'msa' } | ForEach-Object { $_['isGroupManaged'] = ($_.samAccountName -like 'gmsa*'); $_ })
 
+# dSHeuristics with every hardening character wrong, so the whole family fires. Positions are
+# 1-based (MS-ADTS 7.1.1.2.4.1.2), the array below is 0-based: 3 = fDoListObject,
+# 7 = fLDAPBlockAnonOps ("2" allows anonymous LDAP), 8 = fAllowAnonNSPI, 16 = dwAdminSDExMask
+# ("f" takes all four operator groups out of SDProp), 21 = DoNotVerifyUPNAndOrSPNUniqueness
+# ("3" = UPN and SPN), 28/29 = the CVE-2021-42291 hardening, left at the default "0",
+# 31 = DisableConfidentialAttributeEncryptionRequirements. Characters 10, 20 and 30 must be
+# "1", "2" and "3" or a DC refuses the write, so a realistic string carries them.
+$dshChars = @('0') * 31
+$dshChars[2] = '1'; $dshChars[6] = '2'; $dshChars[7] = '1'; $dshChars[9] = '1'
+$dshChars[15] = 'f'; $dshChars[19] = '2'; $dshChars[20] = '3'; $dshChars[29] = '3'; $dshChars[30] = '1'
+$dsHeuristics = -join $dshChars
+
 $snapshot = [ordered]@{
     meta = [ordered]@{
         tool = 'IDWolf'; schemaVersion = 2; collectorVersion = 'synthetic'
@@ -542,7 +616,7 @@ $snapshot = [ordered]@{
     domain = [ordered]@{
         dnsRoot = 'moosebank.local'; netbios = 'MOOSEBANK'; distinguishedName = $dn; sid = $dom
         domainMode = 'Windows2012R2Domain'; forestName = 'moosebank.local'; forestRootDomain = 'moosebank.local'; forestRootSid = $dom; forestMode = 'Windows2012R2Forest'
-        machineAccountQuota = 10; dsHeuristics = '0000002'; smartcardPwdRotation = $false; recycleBinEnabled = $false; tombstoneLifetime = 90; lapsLegacySchema = $false; lapsV2Schema = $true; javaSchemaClasses = @('javaSerializedObject', 'javaContainer'); possSuperiorClasses = @([ordered]@{ name = 'msExchStorageGroup'; possSuperiors = @('computer'); subClassChain = @('container'); inheritsContainer = $true }, [ordered]@{ name = 'mooseDevice'; possSuperiors = @('user'); subClassChain = @('device'); inheritsContainer = $false }); lapsAttrGuids = @($lapsGuid); authPolicySiloCount = 0; subnetCount = 0; sysvolReplication = 'FRS'
+        machineAccountQuota = 10; dsHeuristics = $dsHeuristics; smartcardPwdRotation = $false; recycleBinEnabled = $false; tombstoneLifetime = 90; lapsLegacySchema = $false; lapsV2Schema = $true; javaSchemaClasses = @('javaSerializedObject', 'javaContainer'); possSuperiorClasses = @([ordered]@{ name = 'msExchStorageGroup'; possSuperiors = @('computer'); subClassChain = @('container'); inheritsContainer = $true }, [ordered]@{ name = 'mooseDevice'; possSuperiors = @('user'); subClassChain = @('device'); inheritsContainer = $false }); lapsAttrGuids = @($lapsGuid); authPolicySiloCount = 0; subnetCount = 0; sysvolReplication = 'FRS'
         passwordPolicy = [ordered]@{ minPasswordLength = 8; complexityEnabled = $true; reversibleEncryptionEnabled = $false; lockoutThreshold = 0
             lockoutDurationMinutes = 30; maxPasswordAgeDays = 90; minPasswordAgeDays = 1; passwordHistoryCount = 24 }
         fineGrainedPolicies = if ($Scenario -eq 'partial') { $null } else { @(
@@ -559,7 +633,9 @@ $snapshot = [ordered]@{
                 allowed = @($g.allowedRodc.distinguishedName, $g.du.distinguishedName)
                 denied = @($g.deniedRodc.distinguishedName)
                 revealed = @($u.neri.distinguishedName, $u.std5.distinguishedName, $c.rodc.distinguishedName)
-                managedBy = $g.hd.distinguishedName } }
+                managedBy = $g.hd.distinguishedName
+                # Links krbtgt_12345; krbtgt_55555 is linked by nothing (rodc_krbtgt_orphan).
+                krbtgtLink = $u.krbtgtRodc.distinguishedName } }
     )
     trusts = @(
         [ordered]@{ name = 'partner.example'; target = 'partner.example'; direction = 'Inbound'; trustType = 'Uplevel'; trustAttributes = 0x80; forestTransitive = $false; intraForest = $false
@@ -580,6 +656,7 @@ $snapshot = [ordered]@{
     acls = $acls
     ouAcls = $ouAcls
     sccm = $sccm
+    adfs = $adfs
     deepAcls = $deepAcls
     kdsRootKeyAcls = $kdsRootKeyAcls
     preWin2000 = $preWin2000
@@ -638,7 +715,14 @@ $snapshot = [ordered]@{
             [ordered]@{ dc = 'dc01.moosebank.local'; systemDrive = 'C:'; freeGB = 41.2; sizeGB = 99.4; stoppedServices = @(); webClientStartMode = 'absent'; webClientState = 'absent'
                 netbiosAdapters = @([ordered]@{ adapter = 'vmxnet3 Ethernet Adapter'; netbiosOption = 2 }); osBuild = '20348'; osUbr = 2849
                 # RPC filters deployed for every coercion interface: no coercion finding on DC01.
-                coercionServices = [ordered]@{ EFS = 'Manual/Stopped'; Dfs = 'Auto/Running'; EventLog = 'Auto/Running' }; rpcFilterInterfaces = @('MS-DFSNM', 'MS-EFSR', 'MS-EVEN'); dsrmAdminLogonBehavior = 0; error = '' }
+                coercionServices = [ordered]@{ EFS = 'Manual/Stopped'; Dfs = 'Auto/Running'; EventLog = 'Auto/Running' }; rpcFilterInterfaces = @('MS-DFSNM', 'MS-EFSR', 'MS-EVEN'); dsrmAdminLogonBehavior = 0
+                # SrvsvcSessionInfo at the Windows default: Authenticated Users may call
+                # NetSessionEnum (net_session_enum_open). NetCease was never applied here.
+                netSessionAces = @(
+                    [ordered]@{ sid = 'S-1-5-32-544'; name = 'BUILTIN\Administrators'; aceType = 'AccessAllowed'; accessMask = 983103 }
+                    [ordered]@{ sid = 'S-1-5-32-549'; name = 'BUILTIN\Server Operators'; aceType = 'AccessAllowed'; accessMask = 983103 }
+                    [ordered]@{ sid = 'S-1-5-11'; name = 'NT AUTHORITY\Authenticated Users'; aceType = 'AccessAllowed'; accessMask = 1 })
+                error = '' }
             # DC02 also runs WebClient (Desktop Experience installed) -> webclient_on_dc.
             [ordered]@{ dc = 'dc02.moosebank.local'; systemDrive = 'C:'; freeGB = 3.5; sizeGB = 59.4; stoppedServices = @('DFSR'); webClientStartMode = 'Manual'; webClientState = 'Running'
                 # NetBIOS left at the default on a static address -> nbtns_enabled_dc.
@@ -647,7 +731,12 @@ $snapshot = [ordered]@{
                 osBuild = '17763'; osUbr = 2237
                 # No RPC filter: coercion_unfiltered_dc, High (LDAP signing not required, ESC8 on the CA).
                 # DsrmAdminLogonBehavior = 2 -> dsrm_logon_behavior (Tier 0 persistence).
-                coercionServices = [ordered]@{ EFS = 'Manual/Stopped'; Dfs = 'Auto/Running'; EventLog = 'Auto/Running' }; rpcFilterInterfaces = @(); dsrmAdminLogonBehavior = 2; error = '' }
+                coercionServices = [ordered]@{ EFS = 'Manual/Stopped'; Dfs = 'Auto/Running'; EventLog = 'Auto/Running' }; rpcFilterInterfaces = @(); dsrmAdminLogonBehavior = 2
+                # NetCease applied on DC02: only admins and Server Operators, so it stays clean.
+                netSessionAces = @(
+                    [ordered]@{ sid = 'S-1-5-32-544'; name = 'BUILTIN\Administrators'; aceType = 'AccessAllowed'; accessMask = 983103 }
+                    [ordered]@{ sid = 'S-1-5-32-549'; name = 'BUILTIN\Server Operators'; aceType = 'AccessAllowed'; accessMask = 983103 })
+                error = '' }
             [ordered]@{ dc = 'rodc01.moosebank.local'; systemDrive = $null; freeGB = $null; sizeGB = $null; stoppedServices = @(); error = 'not reachable' })
     }
 }

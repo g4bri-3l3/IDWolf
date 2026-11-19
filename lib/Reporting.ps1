@@ -206,6 +206,7 @@ $script:MitreTechniqueNames = @{
     'T1036'     = 'Masquerading'
     'T1059.005' = 'Command and Scripting Interpreter: Visual Basic'
     'T1068'     = 'Exploitation for Privilege Escalation'
+    'T1049'     = 'System Network Connections Discovery'
     'T1072'     = 'Software Deployment Tools'
     'T1078'     = 'Valid Accounts'
     'T1078.001' = 'Valid Accounts: Default Accounts'

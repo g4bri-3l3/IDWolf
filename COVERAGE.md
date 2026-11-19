@@ -2,7 +2,7 @@
 
 How IDWolf's checks line up against the references people actually use to
 judge an AD or Entra audit. One place, kept in sync with the code: every check
-named here exists in the catalog (186 AD, 92 Entra).
+named here exists in the catalog (208 AD, 92 Entra).
 
 **Legend**
 - **Yes**: detected directly.
@@ -96,6 +96,35 @@ the report prints it item by item, with the reason for every item it cannot see.
 | V-243500 | CAT II | Multiple domain controllers | Yes `single_dc` |
 | V-243468/469/472/473/475/479/481/482/483/491/492/494/495/498/499/501, V-269097 | – | Separate admin accounts per tier, separate smart cards, DCs off the Internet, DSRM password age, cross-domain solutions, monitoring, VPN and IDS, documentation, CPCON, Kerberos logging on the CA hosts | Out: procedural, network state, or read on the host rather than from the directory |
 
+### Detecting and mitigating Active Directory compromises (September 2026)
+
+Joint guidance from ASD, CISA, NSA, CCCS, NCSC-NZ and NCSC-UK. It describes 18
+techniques; the September 2026 edition adds Shadow Credentials to the original
+17. Each technique below maps to the checks that cover its *detectable*
+mitigations: the rest of its checklist is organisational (jump servers, encrypted
+backups, central logging) and is listed under "What stays out".
+
+| Technique | IDWolf |
+|---|---|
+| Kerberoasting | Yes `privileged_kerberoastable`, `kerberoastable_user`, `spn_account_rc4`, `gmsa_not_used`, `duplicate_spn`; PQ `pwq_*` for the password itself |
+| AS-REP Roasting | Yes `asrep_roastable` (privileged accounts raise the severity) |
+| Password spraying | Yes `password_policy_short`, `password_policy_no_complexity`, `password_policy_no_lockout`, `password_policy_lockout_weak` (the five-attempt limit), `fgpp_weak`, `builtin_administrator_hygiene`, `privileged_account_delegable`; GPO `ntlm_not_restricted`, `ntlm_weak_lmcompat`; cleartext credentials `password_in_description`, `sysvol_script_secrets`, `gpp_cpassword`, `unix_password_present` |
+| MachineAccountQuota compromise | Yes `machine_account_quota`, `privileged_computer_member`, `dangerous_ace_anywhere` (Domain Computers write rights); GPO `ldap_signing_not_required`, `ldap_channel_binding_off` |
+| Unconstrained delegation | Yes `unconstrained_delegation`, `privileged_account_delegable`, `protected_users_empty`, `auth_policy_silo_unused`; Live `spooler_on_dc` |
+| Password in GPP | Yes `gpp_cpassword`, `gpo_autologon_password` (path only, never the secret) |
+| AD CS compromise | Yes ESC1-ESC17 (16 checks), `adcs_low_priv_enroll`, `adcs_manual_checks` |
+| Golden Certificate | Partial `adcs_weak_ca_key`, `adcs_ca_cert_expiring`, `adcs_esc7`: an HSM, application control and the access path to the CA host are not in a snapshot |
+| DCSync | Yes `dcsync_rights`, `sync_laps_rights`, `privileged_kerberoastable` (an SPN account with DCSync rights); GPO `lm_hash_stored`, `ntlm_weak_lmcompat` (NTLMv1) |
+| Dumping ntds.dit | Partial `ad_backup_overdue`, `dangerous_privilege_right` (SeBackupPrivilege), `dhcp_on_dc`, `webclient_on_dc`; Live `spooler_on_dc`, `smb1_server_enabled`: "only AD DS on a DC" is checked for the roles the collector can see, not every installed application |
+| Golden Ticket | Yes `krbtgt_password_old` (180 days, the guidance asks for 6 months), `rodc_krbtgt_password_old`, `rodc_krbtgt_orphan` |
+| Silver Ticket | Yes `dc_password_old`, `computer_password_old`, `privileged_computer_member`, `gmsa_not_used`; GPO `machine_password_rotation_off`, `dc_refuse_password_change` |
+| Golden SAML | Yes `adfs_dkm_key_readable`, `adfs_service_account_not_gmsa`, `adfs_service_account_password_old`; Entra `entra_federated_domain`. Rotating the token-signing certificate is done on the AD FS server and is not visible in a directory snapshot |
+| Microsoft Entra Connect compromise | Entra `entra_sync_hard_match_takeover`, `entra_admin_synced_from_onprem`, `entra_connect_app_extra_credentials`, `entra_admins_without_mfa`, `entra_sync_stale`; AD `dcsync_rights` names the sync account |
+| One-way domain trust bypass | Yes `trust_tgt_delegation`, `trust_sid_filtering_disabled`, `trust_no_selective_auth`, `trust_rc4` |
+| SID History compromise | Yes `sid_history` (a well-known privileged SID raises the severity), `trust_sid_filtering_disabled` |
+| Skeleton Key | Partial GPO `lsass_not_protected`, `credential_guard_not_configured`, `app_control_missing`: the vulnerable-driver blocklist and driver allow-listing are host state |
+| Shadow Credentials | Yes `shadow_credentials_present` (Tier 0 accounts and every domain controller object), `key_admins_populated`, `dangerous_ace_tier0` / `dangerous_ace_anywhere` (write access to msDS-KeyCredentialLink) |
+
 ### PingCastle rules
 
 PingCastle scores rules; IDWolf reports objects, so this maps by coverage, not
@@ -106,12 +135,18 @@ by score. Rule list: pingcastle.com, engine 3.3.
 | Stale objects | S-Inactive, S-C-Inactive, S-PwdLastSet-DC, S-PrimaryGroup, S-Reversible, S-NoPreAuth(Admin), S-PwdNotRequired, S-PwdNeverExpires, S-SIDHistory, S-DesEnabled, S-AesNotEnabled, S-FunctionalLevel*, S-DC-20xx, S-OS-*, S-DC-SubnetMissing | Yes |
 | | S-SMB-v1, S-OldNtlm, S-KerberosArmoring | GPO |
 | | S-Duplicate | PQ |
-| | S-PwdLastSet-45/90 | Partial `stale_computer` (inactivity, not the 45/90-day split) |
+| | S-PwdLastSet-45/90, S-PwdLastSet-Cluster | Yes `computer_password_old` (active host, password past the threshold; cluster name objects are named in the detail) |
 | | S-Vuln-MS14-068, MS17-010 | Out (patch level) |
 | | S-DC-NotUpdated | Partial: Live `nopac_unpatched_dc` checks only the November 2021 fix; general patch age Out |
 | | S-JavaSchema | Yes `schema_java_objects` |
 | | S-ADRegistrationSchema | Yes `schema_class_poss_superior` |
-| Anomalies | A-AdminCount, A-PreWin2000*, A-DsHeuristicsAnonymous, A-LAPS-Not-Installed, A-Krbtgt, A-NTFRSOnSysvol, A-ReversiblePwd, A-UnixPwd, A-MinPwdLen | Yes |
+| Anomalies | A-AdminCount, A-PreWin2000*, A-DsHeuristicsAnonymous, A-LAPS-Not-Installed, A-Krbtgt, A-NTFRSOnSysvol, A-ReversiblePwd, A-UnixPwd, A-MinPwdLen, A-ProtectedUsers | Yes |
+| | A-DsHeuristicsAllowAnonNSPI, A-DsHeuristicsLDAPSecurity (CVE-2021-42291), A-DsHeuristicsDoNotVerifyUniqueness | Yes `dsheuristics_anonymous_nspi`, `dsheuristics_ldap_add_unprotected`, `dsheuristics_spn_uniqueness_off` (also `dsheuristics_list_object`, `dsheuristics_confidential_cleartext`) |
+| | A-NoNetSessionHardening | Live `net_session_enum_open` (SrvsvcSessionInfo read over CIM on each DC) |
+| | A-DCRefuseComputerPwdChange | GPO `dc_refuse_password_change` |
+| | A-RootDseAnonBinding, A-NullSession, A-LimitBlankPasswordUse, A-NoNetSessionHardening (member servers) | Partial: the DC-side settings are covered, the member-server side is host state |
+| | A-DCLdapsProtocol / A-WSUS-SslProtocol (weak TLS on LDAPS and WSUS) | Out: needs a TLS handshake against each host, which the collector does not do |
+| | A-CertROCA, A-MD2/MD4/MD5/SHA0/SHA1 root and intermediate certificates | Partial `adcs_weak_ca_key` (key size and signature algorithm of the enterprise CA certificates), `gpo_trusted_root_added`; the full trusted-root store of each host is Out |
 | | A-CertTemp* (ESC1-4, ESC9), ESC10, ESC13, ESC15, A-WeakRSARootCert2 | Yes `adcs_*` |
 | | A-CertEnrollHttp / ChannelBinding (ESC8) | Live `adcs_esc8` (web enrollment installed; HTTPS and EPA in IIS are not read) |
 | | A-DCLdapSign, A-DCLdapsChannelBinding, A-SMB-Signing, A-Audit*, A-HardenedPaths | GPO |
@@ -119,7 +154,12 @@ by score. Rule list: pingcastle.com, engine 3.3.
 | | A-DnsZoneAUCreateChild | Yes `dns_zone_create_child` |
 | | A-SmartCardPwdRotation | Yes `smartcard_password_not_rotated` |
 | Privileged | P-Delegated, P-Kerberoasting, P-ServiceDomainAdmin, P-AdminPwdTooOld, P-AdminLogin, P-SchemaAdmin, P-DNSAdmin, P-OperatorsEmpty, P-ProtectedUsers, P-RecycleBin, P-AdminNum, P-RODCAdminRevealed, P-AuthPolicySilo | Yes |
-| | P-ControlPathIndirect*, P-DelegationEveryone, P-DelegationGPO, P-UnprotectedOU | Yes / Deep `dcsync_rights`, `dangerous_ace_*`, `gpo_dangerous_acl`, `shadow_credentials_present`, `gmsa_password_readable` |
+| | P-ControlPathIndirect*, P-DelegationEveryone, P-DelegationGPO | Yes / Deep `dcsync_rights`, `dangerous_ace_*`, `gpo_dangerous_acl`, `shadow_credentials_present`, `gmsa_password_readable` |
+| | P-UnprotectedOU | Yes `ou_not_protected_from_deletion` (populated OUs and containers only) |
+| | P-DelegationKeyAdmin | Yes `key_admins_populated`, plus `dangerous_ace_tier0` for a Key Admins ACE on the domain head |
+| | P-DsHeuristicsAdminSDExMask | Yes `dsheuristics_adminsdholder_exempt`, and `adminsdholder_inheritance_enabled` for the other way SDProp is bypassed |
+| | P-RODCKrbtgtOrphan | Yes `rodc_krbtgt_orphan` (msDS-KrbTgtLink) |
+| | P-DCOwner, P-ExchangePrivEsc, P-ExchangeAdminSDHolder | Yes `nonstandard_owner_tier0`, `dangerous_ace_tier0` (Exchange groups get the PrivExchange note) |
 | | P-LogonDenied | Partial `dangerous_privilege_right` |
 | | P-RODCRevealOnDemand, P-RODCNeverReveal, P-RODCDeniedGroup | Yes `rodc_prp_too_broad`, `rodc_tier0_unprotected` (P-RODCAdminRevealed: `rodc_tier0_revealed`) |
 | Trusts | T-SIDFiltering, T-SIDHistory, T-TGTDelegation, T-AesNotEnabled, T-SelectiveAuth, T-DownLevel | Yes `trust_*` (T-Inactive: `trust_inactive`), `sid_history` |
@@ -446,3 +486,5 @@ article by article yet.
 - **Password hashes**: only through the hashless DSInternals report, never in the snapshot.
 - **On-CA settings** (ESC6, ESC7, ESC8, ESC11, ESC16): read on the CA host over CIM when the account has admin rights there, otherwise listed for manual verification. The IIS side of ESC8 (HTTPS, EPA) is not read.
 - **Settings made by hand on a DC** instead of by GPO: invisible to the GPO-based checks.
+- **Organisational controls**, which most of the ASD/CISA/NSA checklist for the techniques above consists of: jump servers and secure admin workstations as the only path to a DC, a CA or an AD FS server; encrypted backups with access limited to Backup Administrators; logs shipped to a SIEM and analysed in time; an HSM for CA key material; nothing but the server role installed on a Tier 0 server; decoy accounts (canaries) to catch roasting and enumeration. None of them is visible in a directory snapshot, and IDWolf does not pretend to audit them. The snapshot does give the evidence some of them need: who holds the rights, what runs on a DC, and when the last backup was taken.
+- **Rotating secrets held outside the directory**: AD FS token-signing and token-encryption certificates, CA key material, and the Entra Connect sync account on the server side. IDWolf flags the directory-side exposure that makes them worth rotating, not the rotation itself.

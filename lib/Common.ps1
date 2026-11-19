@@ -35,6 +35,12 @@ $script:TRUST_ENABLE_TGT_DELEGATION = 0x800
 # Trust passwords rotate every 30 days while the trust is alive: a TDO untouched for this long looks abandoned.
 $script:TRUST_INACTIVE_DAYS = 180
 
+# Lockout policy: the authoring agencies of "Detecting and mitigating Active Directory
+# compromises" ask for no more than five failed attempts, and a lockout short enough to expire
+# between spray rounds buys the attacker the attempts back.
+$script:LOCKOUT_MAX_THRESHOLD = 5
+$script:LOCKOUT_MIN_DURATION_MIN = 15
+
 # --------------------------------------------------------------------------
 # Tier 0 groups. Rid: domain SID; RootRid: forest root SID; Sid: builtin.
 # --------------------------------------------------------------------------

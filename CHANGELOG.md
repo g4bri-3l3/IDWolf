@@ -1,5 +1,67 @@
 # Changelog
 
+## 1.15 - 2026-11-19
+
+22 new checks, from the gap between IDWolf and *Detecting and mitigating Active Directory
+compromises* (ASD, CISA, NSA, CCCS, NCSC-NZ and NCSC-UK, September 2026 edition) plus the
+PingCastle and Purple Knight indicator lists. The new `Federation` category is mapped to all four
+compliance frameworks like every other one. `COVERAGE.md` now maps all 18 techniques of that
+guidance technique by technique, and says plainly which of its mitigations are organisational and
+stay out.
+
+- **Shadow Credentials now covers computer objects, domain controllers included.**
+  `shadow_credentials_present` only looked at Tier 0 *user* accounts, so a key credential planted
+  on a DC computer object - the gravest form of the technique, and never legitimate - was not
+  reported although the collector already had the data. It is now Critical on a domain controller,
+  High on any other Tier 0 principal, and the detail says which of the two it is. New
+  `key_admins_populated` reports members of Key Admins and Enterprise Key Admins, which are empty
+  in a default domain and can write `msDS-KeyCredentialLink` on every computer in the domain
+  (forest, for the second one). Write access to the attribute itself was already covered by
+  `dangerous_ace_tier0` / `dangerous_ace_anywhere`.
+- **AD FS, so Golden SAML is no longer a blind spot.** The collector reads the Distributed Key
+  Manager container under `CN=Microsoft,CN=Program Data` - the security descriptors and the key
+  count, never `thumbnailPhoto`, which is the key itself. `adfs_dkm_key_readable` (Critical) reports
+  a broad principal, or a group with ordinary members, able to read the master key: that key plus
+  the token-signing certificate forges a SAML token for any user, with the MFA claim included. The
+  single account the farm grants read to is taken as the service account instead of being reported,
+  and feeds `adfs_service_account_not_gmsa` and `adfs_service_account_password_old`. A domain with
+  no AD FS reads as a clean result, not as a collection gap.
+- **dSHeuristics, character by character.** Only character 7 (anonymous LDAP) was read. Six more
+  checks cover the hardening characters: `dsheuristics_anonymous_nspi` (8), `dsheuristics_adminsdholder_exempt`
+  (16, which takes operator groups out of SDProp and names each one),
+  `dsheuristics_spn_uniqueness_off` (21, decoded bit by bit), `dsheuristics_ldap_add_unprotected`
+  (28 and 29, the CVE-2021-42291 hardening, which ships disabled), `dsheuristics_confidential_cleartext`
+  (31, confidential attributes such as LAPS passwords allowed over a plain LDAP connection) and
+  `dsheuristics_list_object` (3). An unset attribute is the documented default, not a gap; a failed
+  read is listed as not evaluated.
+- **Tier 0 control points nobody was reading.** `dpapi_backup_key_readable` (the BCKUPKEY secret:
+  read it once and every domain-key DPAPI blob decrypts offline, forever, security descriptor only),
+  `adminsdholder_inheritance_enabled` (inheritance left on, so an ACE on a parent container is
+  stamped onto every protected admin each hour by SDProp), `reanimate_tombstones_right` (restore a
+  deleted admin with its SID, SID history and memberships), `cert_publishers_unexpected` (only the
+  CA computer accounts belong there; without AD CS collected, only members that cannot be a CA at
+  all are reported and the detail says so) and `ou_not_protected_from_deletion` (populated OUs only).
+- **Machine and service account passwords.** `computer_password_old` reports an active member whose
+  machine password stopped rotating, which keeps its Silver Ticket key valid indefinitely
+  (`-ComputerPasswordMaxAgeDays`, default 90; Windows rotates every 30). `dc_refuse_password_change`
+  is the DC side of it. `rodc_krbtgt_orphan` reports a `krbtgt_NNNNN` account no RODC links to
+  through `msDS-KrbTgtLink`, left behind by a demoted RODC and never rotated. `duplicate_spn`
+  reports an SPN held by more than one account. `gmsa_not_used` reports a domain with service
+  accounts but no gMSA at all, the first mitigation the guidance names for both Kerberoasting and
+  Silver Tickets.
+- **Lockout and session enumeration.** `password_policy_lockout_weak` covers a lockout that exists
+  but is too loose - more than five attempts, or shorter than 15 minutes - which the old
+  "threshold is 0" check let through. `net_session_enum_open` reads `SrvsvcSessionInfo` on each DC
+  over CIM and reports when any authenticated account may call `NetSessionEnum`, the call
+  BloodHound uses to find which workstation an administrator is on. An unset value is the
+  permissive built-in default, not a clean result.
+- **Collector.** New read-only fields: `inheritanceProtected` on every security descriptor,
+  `protectedFromDeletion` on every OU record, `msDS-KrbTgtLink` on the RODCs, the DPAPI backup key
+  security descriptor, and the AD FS DKM container. Every one of them is listed as "not evaluated"
+  on a snapshot from an older collector instead of reading as clean.
+- Reference results: `demo` now gives 251 findings (28/88/99/36), `-Deep` 256, `partial` 235, and
+  the suite runs 865 assertions.
+
 ## 1.14 - 2026-11-18
 
 - **The attack-path map no longer loses a chain inside a merged finding.** A principal with

@@ -16,6 +16,10 @@ $script:CheckCatalog = [ordered]@{
         Title = 'RODC krbtgt account not rotated'
         Description = 'Each RODC has its own krbtgt_NNNNN account. A stale key extends the impact of a compromised branch-office RODC.'
         Remediation = 'Rotate the RODC krbtgt_NNNNN account with the same double-reset procedure.' }
+    rodc_krbtgt_orphan = @{ Category = 'Kerberos'; Severity = 'Medium'; Mitre = 'T1558.001'; Needs = @('users', 'domainControllers', 'domainControllers.krbtgtLink')
+        Title = 'RODC krbtgt account with no RODC behind it'
+        Description = 'A krbtgt_NNNNN account exists but no read-only domain controller in the domain is linked to it (msDS-KrbTgtLink). The account is normally left behind when an RODC is demoted or removed badly. Its key still signs tickets the DCs accept, so a copy taken from the old branch-office server, or from a backup of it, keeps working for as long as the account is there, and nobody rotates a key for a server that no longer exists.'
+        Remediation = 'Confirm the matching RODC is really gone, then delete the orphan krbtgt_NNNNN account. Run the RODC demotion / metadata cleanup properly so the next one does not leave an account behind.' }
     azuread_sso_key_old = @{ Category = 'Kerberos'; Severity = 'Medium'; Mitre = 'T1558.002'; Needs = @('computers')
         Title = 'Seamless SSO key (AZUREADSSOACC$) not rolled over'
         Description = 'With Entra Seamless SSO, the AZUREADSSOACC$ computer account holds the Kerberos key that Entra ID uses to accept on-premises tickets. Whoever has read that key (DCSync, an old backup) can forge a ticket for any synced user and sign in to the cloud as them, MFA rules for trusted networks included. The key never changes by itself.'
@@ -106,6 +110,14 @@ $script:CheckCatalog = [ordered]@{
         Title = 'DnsAdmins populated'
         Description = 'DnsAdmins members can configure the DNS service running on DCs; historically this allowed loading an arbitrary DLL as SYSTEM on a DC. Treat as Tier 0.'
         Remediation = 'Keep DnsAdmins empty or restricted to Tier 0 accounts.' }
+    key_admins_populated = @{ Category = 'Privileged Access'; Severity = 'Medium'; Mitre = 'T1556.003'; Needs = @('users', 'groups')
+        Title = 'Key Admins / Enterprise Key Admins has members'
+        Description = 'Both groups are empty in a default domain. A member can write msDS-KeyCredentialLink on every computer object (Key Admins) or on every object in the forest (Enterprise Key Admins), which means adding a key credential and then logging on as that object with an attacker-held private key (Shadow Credentials). The groups are rarely watched, and a badly run Windows Server 2016 schema preparation used to grant Key Admins rights on the domain head itself.'
+        Remediation = 'Empty both groups unless a documented Windows Hello for Business or NGC key-management role needs them, and treat any member as Tier 0. Check the ACL of the domain head for a Key Admins ACE left by the 2016 schema preparation and remove it.' }
+    cert_publishers_unexpected = @{ Category = 'Privileged Access'; Severity = 'Medium'; Mitre = 'T1649'; Needs = @('groups', 'computers')
+        Title = 'Unexpected member of Cert Publishers'
+        Description = 'Cert Publishers should hold only the computer accounts of the enterprise CAs. Its members can write userCertificate on any account, which maps a certificate they control to that identity, and they are published in the NTAuth store path used for certificate logon. A user account or a non-CA server in this group is a certificate-based path to any identity in the domain.'
+        Remediation = 'Leave only the CA computer accounts in Cert Publishers. Remove users, groups and servers that do not host an enterprise CA, then check why they were added.' }
     privileged_inactive = @{ Category = 'Privileged Access'; Severity = 'High'; Mitre = 'T1078.002'; Needs = @('users', 'groups')
         Title = 'Inactive privileged account still enabled'
         Description = 'An enabled privileged account nobody uses is an unmonitored credential with full rights.'
@@ -150,7 +162,7 @@ $script:CheckCatalog = [ordered]@{
     # ---------------- Account hygiene ----------------
     password_not_required = @{ Category = 'Account Hygiene'; Severity = 'Medium'; Mitre = 'T1078.002'; Needs = @('users')
         Title = 'Password not required (PASSWD_NOTREQD)'
-        Description = 'The account may have, or be set to, an empty password regardless of domain policy.'
+        Description = 'The account may have, or be set to, an empty password regardless of domain policy. (Computer accounts with the same flag are reported as precreated_computer_account.)'
         Remediation = 'Clear PASSWD_NOTREQD (Set-ADAccountControl -PasswordNotRequired $false) and set a compliant password.' }
     reversible_encryption_account = @{ Category = 'Account Hygiene'; Severity = 'High'; Mitre = 'T1556.005'; Needs = @('users')
         Title = 'Password stored with reversible encryption'
@@ -224,6 +236,18 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Computer account with password not required'
         Description = 'An enabled computer account with PASSWD_NOTREQD can be joined or taken over with the predictable default machine password (usually the lowercase account name). Pre-created or pre-staged computer objects left in this state let an attacker who knows the name authenticate as the machine and set its password.'
         Remediation = 'Clear PASSWD_NOTREQD, complete or remove the pre-staged account, and reset the computer password. Delegate pre-staging to a controlled process.' }
+    duplicate_spn = @{ Category = 'Account Hygiene'; Severity = 'Medium'; Mitre = 'T1558.003'; Needs = @('users', 'computers')
+        Title = 'Service principal name registered on more than one account'
+        Description = 'The same SPN is set on several accounts. Kerberos picks one of them, so the service breaks at random, and whoever controls the other account receives service tickets meant for the real service and can crack them offline. A duplicate SPN is also what SPN-jacking leaves behind, and AD only refuses duplicates while the uniqueness check is on.'
+        Remediation = 'Decide which account really runs the service and remove the SPN from the others (setspn -D, or clear servicePrincipalName). Then check dSHeuristics character 21 is "0" so AD keeps enforcing SPN uniqueness.' }
+    computer_password_old = @{ Category = 'Account Hygiene'; Severity = 'Medium'; Mitre = 'T1558'; Needs = @('computers')
+        Title = 'Active computer whose machine password is not rotating'
+        Description = 'The computer logs on normally but its machine account password has not changed for far longer than the 30-day default. Rotation is switched off on that host, or it is a clone or an appliance that never changes it. The NT hash of a machine account is the key that signs Silver Tickets for every service on it, so a hash lifted once from memory or from an old backup stays valid indefinitely.'
+        Remediation = 'Let the host rotate its own password: clear DisablePasswordChange and RefusePasswordChange and leave MaximumPasswordAge at 30 days. Reset the account once (Reset-ComputerMachinePassword on the host) so a stolen hash stops working.' }
+    gmsa_not_used = @{ Category = 'Account Hygiene'; Severity = 'Low'; Mitre = 'T1558.003'; Needs = @('users', 'serviceAccounts', 'serviceAccounts.isGroupManaged')
+        Title = 'No group Managed Service Account in the domain'
+        Description = 'Service accounts are plain user accounts with a password somebody chose and nobody rotates: that is what Kerberoasting cracks and what a Silver Ticket reuses. A gMSA has a 240-character random password that AD rotates every 30 days on its own, and the authoring agencies name it as the first mitigation for both Kerberoasting and Silver Tickets. The domain has none while service accounts with SPNs exist.'
+        Remediation = 'Create the KDS root key once (Add-KdsRootKey), then migrate the services with an SPN to gMSAs, starting with the ones holding privileges. Where a service cannot use one, set a 30-character random password and enforce AES only.' }
     timeroast_computer_password = @{ Category = 'Account Hygiene'; Severity = 'Medium'; Mitre = 'T1110.002'; Needs = @('computers')
         Title = 'Pre-staged computer account still on the password set at creation (Timeroasting)'
         Description = 'An enabled computer account has never logged on and its password was last set when the account was created: no machine ever joined with it, so the password is whatever the person or script that pre-staged it chose, often the lowercase name or a shared value. Without any credential, an attacker can ask a DC for an MS-SNTP time response signed with that password (Timeroasting) and crack it offline, then authenticate as the computer.'
@@ -242,6 +266,10 @@ $script:CheckCatalog = [ordered]@{
         Title = 'No account lockout'
         Description = 'Lockout threshold is 0: online password spraying is unlimited.'
         Remediation = 'Set a lockout threshold (e.g. 10) with a short duration, and monitor 4625/4771 events for spraying.' }
+    password_policy_lockout_weak = @{ Category = 'Domain Configuration'; Severity = 'Low'; Mitre = 'T1110.003'; Needs = @('domain.passwordPolicy')
+        Title = 'Lockout policy too permissive'
+        Description = 'Lockout is on but leaves room for a password spray: the authoring agencies ask for no more than five failed attempts, and a lockout that lifts after a couple of minutes lets an attacker keep guessing all day at a rate the policy never trips.'
+        Remediation = 'Set the lockout threshold to 5 or fewer attempts, the lockout duration to 15 minutes or more and the observation window to at least the duration. Keep break-glass accounts out of it with a fine-grained policy, and alert on the lockout events.' }
     reversible_encryption_policy = @{ Category = 'Domain Configuration'; Severity = 'Critical'; Mitre = 'T1556.005'; Needs = @('domain.passwordPolicy')
         Title = 'Reversible encryption enabled in password policy'
         Description = 'Every account covered by this policy stores a recoverable cleartext password.'
@@ -290,6 +318,30 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Anonymous LDAP operations allowed'
         Description = 'dSHeuristics 7th character is 2: anonymous users can perform LDAP operations and enumerate the directory.'
         Remediation = 'Reset the 7th character of dSHeuristics to 0.' }
+    dsheuristics_anonymous_nspi = @{ Category = 'Domain Configuration'; Severity = 'High'; Mitre = 'T1087.002'; Needs = @('domain.dsHeuristics')
+        Title = 'Anonymous NSPI access enabled (dSHeuristics character 8)'
+        Description = 'fAllowAnonNSPI is set, so the name service provider interface accepts anonymous RPC binds. Without any account, anyone who can reach a domain controller can walk the address book and harvest users, groups and e-mail addresses: the same enumeration anonymous LDAP would give, through a different door, and one that the LDAP hardening does not close.'
+        Remediation = 'Set character 8 of dSHeuristics back to "0" on the Directory Service object, preserving every other character of the string.' }
+    dsheuristics_adminsdholder_exempt = @{ Category = 'Domain Configuration'; Severity = 'High'; Mitre = 'T1098'; Needs = @('domain.dsHeuristics')
+        Title = 'Operator groups excluded from AdminSDHolder (dwAdminSDExMask)'
+        Description = 'Character 16 of dSHeuristics is not "0", so SDProp no longer resets the permissions of the operator groups it names. Those groups keep whatever ACL anyone writes on them: an attacker can grant themselves rights over Account, Server, Print or Backup Operators and the hourly AdminSDHolder propagation will never undo it. It is a quiet, persistent change that survives most clean-ups.'
+        Remediation = 'Set character 16 of dSHeuristics to "0", preserving the rest of the string, then review the ACL of each operator group and reset it to the default (SDProp will re-apply it within an hour).' }
+    dsheuristics_spn_uniqueness_off = @{ Category = 'Domain Configuration'; Severity = 'High'; Mitre = 'T1558.003'; Needs = @('domain.dsHeuristics')
+        Title = 'UPN / SPN uniqueness checks disabled (dSHeuristics character 21)'
+        Description = 'DoNotVerifyUPNAndOrSPNUniqueness is set, so AD stops refusing a userPrincipalName or servicePrincipalName that another account already holds. Whoever can write either attribute can then register an existing service name on an account they control and collect the service tickets for it, or claim another user''s UPN for certificate and federated logon. The setting was introduced to work around migrations and is routinely left on afterwards.'
+        Remediation = 'Set character 21 of dSHeuristics back to "0" once the migration that needed it is finished, preserving the rest of the string, then look for duplicate SPNs and UPNs left behind.' }
+    dsheuristics_ldap_add_unprotected = @{ Category = 'Domain Configuration'; Severity = 'Medium'; Mitre = 'T1068'; Needs = @('domain.dsHeuristics')
+        Title = 'CVE-2021-42291 LDAP add hardening not enforced (dSHeuristics 28 / 29)'
+        Description = 'AttributeAuthorizationOnLDAPAdd and BlockOwnerImplicitRights are at their default of 0. Without them a principal that may create objects can set attributes on the new object that it would not be allowed to write afterwards, and the creator keeps implicit full rights over what it created as owner. That is the privilege escalation of CVE-2021-42291, and the fix ships disabled so existing applications keep working.'
+        Remediation = 'Audit first (set both characters to "1" and watch event 3050 / 3051 on the DCs), then move to enforcement by setting characters 28 and 29 of dSHeuristics to "2", preserving the rest of the string. Every DC needs the November 2021 update or later.' }
+    dsheuristics_confidential_cleartext = @{ Category = 'Domain Configuration'; Severity = 'High'; Mitre = 'T1557'; Needs = @('domain.dsHeuristics')
+        Title = 'Confidential attributes allowed over an unencrypted connection (dSHeuristics 31)'
+        Description = 'DisableConfidentialAttributeEncryptionRequirements is set, so a DC hands out, accepts or stores confidential attributes on a plain LDAP connection. Those attributes are the ones holding secrets: LAPS passwords, BitLocker recovery material, anything marked confidential by a schema extension. Anyone positioned on the network can read them off the wire instead of needing rights in the directory.'
+        Remediation = 'Set character 31 of dSHeuristics back to "0", preserving the rest of the string, and fix the client that needed it so that it binds with LDAPS or SASL sealing instead.' }
+    dsheuristics_list_object = @{ Category = 'Domain Configuration'; Severity = 'Low'; Mitre = ''; Needs = @('domain.dsHeuristics')
+        Title = 'List Object mode enabled (dSHeuristics character 3)'
+        Description = 'fDoListObject is on, so a principal needs the List Object right on a container to see the objects inside it. It is a deliberate hardening choice, but one that very few directories make and that is easy to get wrong: a missing right hides objects from tools and administrators, and the hidden objects then go unreviewed. Worth confirming it was intended and documented.'
+        Remediation = 'If List Object mode was not a deliberate decision, set character 3 of dSHeuristics back to "0". If it was, document it and make sure the delegations that depend on List Object are maintained.' }
     single_dc = @{ Category = 'Domain Configuration'; Severity = 'Medium'; Mitre = ''; Needs = @('domainControllers')
         Title = 'Single domain controller'
         Description = 'Only one DC: no redundancy and a harder, riskier recovery.'
@@ -408,6 +460,22 @@ $script:CheckCatalog = [ordered]@{
         Title = 'Non-default owner of Tier 0 object'
         Description = 'The owner of an object can always rewrite its ACL.'
         Remediation = 'Set the owner back to Domain Admins.' }
+    reanimate_tombstones_right = @{ Category = 'Permissions'; Severity = 'Medium'; Mitre = 'T1098'; Needs = @('acl.DomainRoot')
+        Title = 'Non-default principal holds Reanimate-Tombstones on the domain'
+        Description = 'The Reanimate-Tombstones extended right lets a principal bring a deleted object back without the Recycle Bin and without being able to read it first. Brought back that way an account keeps its SID, its SID history and its group memberships, so whoever holds the right can resurrect a deleted administrator, reset its password and log in. The right is normally held only by Administrators, and it is granted by hand far more often than it is reviewed.'
+        Remediation = 'Remove the Reanimate-Tombstones ACE from the domain head unless a restore tool genuinely needs it, in which case scope it to a dedicated account and audit its use (event 5136 on isDeleted).' }
+    dpapi_backup_key_readable = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1555'; Needs = @('acl', 'acl.DpapiBackupKey')
+        Title = 'DPAPI domain backup key readable by a non-Tier 0 principal'
+        Description = 'The BCKUPKEY secret in CN=System is the private key every domain member uses as the fallback for DPAPI. Reading it once decrypts, offline and for the whole domain, every DPAPI blob protected with the domain key: saved browser and RDP credentials, private keys of user certificates, scheduled task passwords. It never changes, so a copy keeps working for the life of the domain and no password reset invalidates it.'
+        Remediation = 'Leave only SYSTEM and the Domain Admins / Administrators groups on the object. If a non-Tier 0 principal has read it, treat the domain as compromised at the credential level: rotate what DPAPI protected, which in practice means stored credentials and user certificates.' }
+    adminsdholder_inheritance_enabled = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1098'; Needs = @('acl', 'acl.AdminSDHolder', 'acl.inheritance')
+        Title = 'AdminSDHolder is not protected from inheritance'
+        Description = 'The AdminSDHolder object has inheritance enabled, so ACEs set on CN=System or on the domain head flow into it. Every hour SDProp copies the AdminSDHolder permissions onto every protected administrator and privileged group, which means an ACE placed on a parent container is stamped onto the whole Tier 0 set automatically, and keeps being re-applied after anyone cleans it off a single account. Inheritance is blocked on AdminSDHolder by default.'
+        Remediation = 'Block inheritance on CN=AdminSDHolder,CN=System again (clear "Include inheritable permissions from this object''s parent"), then review the AdminSDHolder ACL for entries that arrived that way and let SDProp propagate the corrected one.' }
+    ou_not_protected_from_deletion = @{ Category = 'Permissions'; Severity = 'Low'; Mitre = 'T1485'; Needs = @('ouAcls', 'ouAcls.protection')
+        Title = 'Organizational unit not protected from accidental deletion'
+        Description = 'The OU has no Deny ACE for Everyone on Delete and DeleteTree, so one mistaken or malicious delete takes the whole subtree with it: every user, computer and group inside, their group memberships and the GPO links. Without the Recycle Bin a restore means an authoritative restore from backup. New OUs get the protection by default; one without it was created by a script or had it turned off.'
+        Remediation = 'Turn "Protect object from accidental deletion" back on for the OU (Set-ADOrganizationalUnit -ProtectedFromAccidentalDeletion $true), and enable the AD Recycle Bin if it is still off.' }
     gpp_cpassword = @{ Category = 'Permissions'; Severity = 'Critical'; Mitre = 'T1552.006'; Needs = @('sysvol')
         Title = 'Group Policy Preferences password in SYSVOL'
         Description = 'cpassword values are encrypted with a key Microsoft published (MS14-025): any domain user can read SYSVOL and decrypt them.'
@@ -449,10 +517,10 @@ $script:CheckCatalog = [ordered]@{
         Title = 'gMSA password readable by a non-Tier 0 principal'
         Description = 'msDS-GroupMSAMembership (PrincipalsAllowedToRetrieveManagedPassword) lets the listed principals retrieve the managed password of this group managed service account. When that principal is not Tier 0, anyone who controls it can recover the gMSA credential and impersonate the service (BloodHound ReadGMSAPassword edge).'
         Remediation = 'Restrict PrincipalsAllowedToRetrieveManagedPassword to the specific host or Tier-matched group that runs the service. Remove broad or non-Tier 0 principals.' }
-    shadow_credentials_present = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1556.003'; Needs = @('users', 'groups', 'schema.keyCredentialLink')
-        Title = 'Key credential set on a privileged account (possible Shadow Credentials)'
-        Description = 'The privileged account has one or more msDS-KeyCredentialLink entries. A key credential allows PKINIT/NGC logon with an attacker-held private key, a common persistence and takeover technique (Shadow Credentials / Whisker). Windows Hello for Business and Azure AD join set this legitimately, so each entry on a Tier 0 account must be confirmed.'
-        Remediation = 'Verify every key credential on the account against the expected device/registration. Remove unexpected entries and review who holds the write-to-key-credential right on the object.' }
+    shadow_credentials_present = @{ Category = 'Permissions'; Severity = 'High'; Mitre = 'T1556.003'; Needs = @('users', 'computers', 'groups', 'schema.keyCredentialLink')
+        Title = 'Key credential set on a privileged account or a domain controller (possible Shadow Credentials)'
+        Description = 'The object has one or more msDS-KeyCredentialLink entries. A key credential allows PKINIT/NGC logon with an attacker-held private key, and it keeps working after the account password is reset: that is what makes Shadow Credentials (Whisker, pywhisker) both an escalation and a persistence technique. Windows Hello for Business and Entra device registration set the attribute legitimately on user and workstation objects, so each entry on a Tier 0 account has to be confirmed against an expected registration. On a domain controller object there is no legitimate reason for one at all.'
+        Remediation = 'Verify every key credential against the expected device or Windows Hello registration and remove the rest (Set-ADComputer / Set-ADUser -Clear msDS-KeyCredentialLink). Then review who holds the write-to-key-credential right on the object and keep Key Admins and Enterprise Key Admins empty. An entry on a domain controller means treating the domain as compromised.' }
 
     # ---------------- AD CS (certificate services) ----------------
     adcs_esc1 = @{ Category = 'Certificate Services'; Severity = 'Critical'; Mitre = 'T1649'; Needs = @('adcs')
@@ -527,6 +595,20 @@ $script:CheckCatalog = [ordered]@{
         Title = 'AD CS checks not verified on the CA (ESC6/ESC7/ESC8/ESC11/ESC16)'
         Description = 'Some AD CS weaknesses are not visible in LDAP: EDITF_ATTRIBUTESUBJECTALTNAME2 on the CA (ESC6), CA role delegation (ESC7), HTTP/NTLM web enrollment relay (ESC8), RPC enrollment without IF_ENFORCEENCRYPTICERTREQUEST (ESC11, NTLM relay to ICPR), and the SID security extension disabled CA-wide (ESC16). IDWolf flags that a CA exists so these are verified manually or with a dedicated tool.'
         Remediation = 'On each CA: certutil -getreg policy\\EditFlags (ESC6 = EDITF_ATTRIBUTESUBJECTALTNAME2 set); review Manage CA / Issue and Manage Certificates delegation (ESC7); disable HTTP web enrollment or enforce EPA/HTTPS (ESC8); certutil -getreg CA\\InterfaceFlags must include IF_ENFORCEENCRYPTICERTREQUEST (ESC11); certutil -getreg policy\\DisableExtensionList must not list 1.3.6.1.4.1.311.25.2 (ESC16).' }
+
+    # ---------------- AD FS (federation) ----------------
+    adfs_dkm_key_readable = @{ Category = 'Federation'; Severity = 'Critical'; Mitre = 'T1606.002'; Needs = @('adfs')
+        Title = 'AD FS DKM master key readable by a non-default principal'
+        Description = 'The Distributed Key Manager container holds the master key AD FS uses to decrypt its own token-signing and token-encryption keys. That key plus the token-signing certificate is everything needed to forge a SAML token for any user, with any claims, including the claim that multi-factor authentication already happened (Golden SAML). The forged token is accepted by every relying party, Microsoft Entra ID included, and no password reset or MFA re-registration stops it. Only the AD FS service account should be able to read the container.'
+        Remediation = 'Leave read access on the DKM container and its key objects to the AD FS service account alone. If a principal that should not have it has read access, treat the farm as compromised: rotate the token-signing and token-encryption certificates twice, re-create the DKM key, and review every relying party for tokens issued in the meantime.' }
+    adfs_service_account_not_gmsa = @{ Category = 'Federation'; Severity = 'Medium'; Mitre = 'T1606.002'; Needs = @('adfs', 'users', 'serviceAccounts')
+        Title = 'AD FS service account is not a gMSA'
+        Description = 'The account running AD FS is an ordinary user account, so its password was chosen by a person and nobody rotates it. It is also the account allowed to read the DKM master key, which makes it the single credential that turns into a Golden SAML. A plain service account with an SPN is Kerberoastable, and the authoring agencies name a gMSA as the first mitigation for exactly this.'
+        Remediation = 'Move the farm to a group Managed Service Account (the AD FS wizard supports it, Set-AdfsProperties / re-run the farm configuration), so AD rotates the password every 30 days. Until then set a 30-character random password, enforce AES only and use the account for nothing else.' }
+    adfs_service_account_password_old = @{ Category = 'Federation'; Severity = 'Medium'; Mitre = 'T1606.002'; Needs = @('adfs', 'users', 'serviceAccounts')
+        Title = 'AD FS service account password not rotated'
+        Description = 'The password of the account that runs AD FS, and that may read the DKM master key, has not changed for longer than the threshold. Anyone who captured or cracked it still holds the one credential that leads to forging SAML tokens for the whole federation.'
+        Remediation = 'Rotate the password (or move the account to a gMSA so AD does it every 30 days), and rotate the AD FS token-signing and token-encryption certificates at the same time if the account may have been exposed.' }
 }
 
 $script:SeverityRank = @{ Critical = 4; High = 3; Medium = 2; Low = 1 }
@@ -552,6 +634,9 @@ $script:AdGuids = @{
     # Property set that holds msDS-AllowedToActOnBehalfOfOtherIdentity: write it, configure RBCD (BloodHound WriteAccountRestrictions).
     '4c164200-20c0-11d0-a768-00aa003049e2' = 'User-Account-Restrictions'
     '89e95b76-444d-4c62-991a-0facbeda640c' = 'DS-Replication-Get-Changes-In-Filtered-Set'
+    # Not in DangerousExtRights: reanimate_tombstones_right reports it on its own, with its own
+    # remediation, so it must not also come out as a generic dangerous ACE.
+    '45ec5156-db7e-47bb-b53f-dbeb2d03c40f' = 'Reanimate-Tombstones'
     'bf967aba-0de6-11d0-a285-00aa003049e2' = 'user objects'
     'bf967a9c-0de6-11d0-a285-00aa003049e2' = 'group objects'
     'bf967a86-0de6-11d0-a285-00aa003049e2' = 'computer objects'
@@ -620,6 +705,14 @@ function Get-AceDanger {
     return ($labels -join ', ')
 }
 
+# One character of dSHeuristics, by its 1-based position in MS-ADTS. Every character defaults to
+# "0", and the string can be shorter than the position or absent altogether.
+function Get-DshChar {
+    param([string]$S, [int]$Pos)
+    if ("$S".Length -ge $Pos) { return "$($S[$Pos - 1])" }
+    return '0'
+}
+
 # True when the ACE applies to the object itself (not only to children).
 function Test-AceAppliesToSelf {
     param($Ace)
@@ -662,10 +755,32 @@ function Get-NotEvaluatedChecks {
     if (-not $Snapshot.meta.options.deep) { $absentReasons['deepAcls'] = "requires -Deep collection (privileged, full ACL sweep)" }
     elseif (-not $Snapshot.PSObject.Properties['kdsRootKeyAcls']) { $absentReasons['kdsRootKeys'] = 'snapshot from an older collector (no KDS root key permissions): re-collect with -Deep' }
     if (-not $Snapshot.meta.options.skipAcl -and -not $Snapshot.PSObject.Properties['ouAcls']) { $absentReasons['ouAcls'] = 'snapshot from an older collector (no OU and container permissions): re-collect' }
+    elseif (@($Snapshot.ouAcls | Where-Object { $_ -and -not $_.PSObject.Properties['protectedFromDeletion'] }).Count -gt 0) {
+        $absentReasons['ouAcls.protection'] = 'snapshot from an older collector (no accidental-deletion protection flag on the OUs): re-collect'
+    }
+    if (-not $Snapshot.meta.options.skipAcl) {
+        # Inheritance flag and the DPAPI backup key arrived together with the same collector.
+        if (@($Snapshot.acls | Where-Object { $_ -and -not $_.PSObject.Properties['inheritanceProtected'] }).Count -gt 0) {
+            $absentReasons['acl.inheritance'] = 'snapshot from an older collector (no inheritance flag on the Tier 0 security descriptors): re-collect'
+        }
+        if (-not $Index.CollectionErrorSections.Contains('acl.DpapiBackupKey') -and @($Snapshot.acls | Where-Object { $_ -and "$($_.target)" -eq 'DpapiBackupKey' }).Count -eq 0) {
+            $absentReasons['acl.DpapiBackupKey'] = 'snapshot from an older collector (no DPAPI domain backup key permissions): re-collect'
+        }
+    }
+    # No AD FS in the domain is a clean result (present = false), not a gap.
+    if ($Snapshot.meta.options.skipAcl) { $absentReasons['adfs'] = 'ACL collection skipped (-SkipAcl): the AD FS DKM container is read with it' }
+    elseif (-not $Snapshot.PSObject.Properties['adfs'] -or $null -eq $Snapshot.adfs) { $absentReasons['adfs'] = 'snapshot from an older collector (no AD FS DKM container): re-collect' }
     # Its own read, independent of the Tier 0 ACLs: only -SkipAcl or an older collector leave it out.
     if ($Snapshot.meta.options.skipAcl) { $absentReasons['sccm'] = 'ACL collection skipped (-SkipAcl)' }
     elseif (-not $Snapshot.PSObject.Properties['sccm']) { $absentReasons['sccm'] = 'snapshot from an older collector (no SCCM System Management container): re-collect' }
     if ($null -eq $Snapshot.preWin2000) { $absentReasons['preWin2000'] = 'Pre-Windows 2000 group could not be read' }
+    # Only matters when an RODC exists: without one, every krbtgt_NNNNN is an orphan by definition.
+    if (@($Snapshot.domainControllers | Where-Object { $_ -and $_.isReadOnly -and $_.rodcPolicy -and -not $_.rodcPolicy.PSObject.Properties['krbtgtLink'] }).Count -gt 0) {
+        $absentReasons['domainControllers.krbtgtLink'] = 'snapshot from an older collector (no msDS-KrbTgtLink on the RODCs): re-collect'
+    }
+    if (@($Snapshot.serviceAccounts | Where-Object { $_ -and -not $_.PSObject.Properties['isGroupManaged'] }).Count -gt 0) {
+        $absentReasons['serviceAccounts.isGroupManaged'] = 'snapshot from an older collector (managed service accounts not split into group-managed and standalone): re-collect'
+    }
     # No AD CS at all is not a gap; skipping it or failing to read it is.
     if ($Snapshot.meta.options.skipAdcs) { $absentReasons['adcs'] = 'AD CS collection skipped (-SkipAdcs)' }
     elseif ((-not $Snapshot.adcs -or -not $Snapshot.adcs.collected) -and -not ($Snapshot.adcs.notDeployed)) {
@@ -736,6 +851,14 @@ function Get-NotEvaluatedChecks {
         }
         if (@($Snapshot.health.dcState | Where-Object { $_ -and -not $_.error -and -not $_.PSObject.Properties['netbiosAdapters'] }).Count -gt 0) {
             $absentReasons['health.netbios'] = 'snapshot from an older collector (no NetBIOS adapter settings on the DCs): re-collect'
+        }
+        # $null = the registry read itself failed; @() = the value is genuinely not set, which is
+        # a result, not a gap. Only a missing property means an older collector.
+        if (@($Snapshot.health.dcState | Where-Object { $_ -and -not $_.error -and -not $_.PSObject.Properties['netSessionAces'] }).Count -gt 0) {
+            $absentReasons['health.netSession'] = 'snapshot from an older collector (no session enumeration permissions on the DCs): re-collect'
+        }
+        elseif (@($Snapshot.health.dcState | Where-Object { $_ -and -not $_.error -and $null -eq $_.netSessionAces }).Count -gt 0) {
+            $absentReasons['health.netSession'] = "the SrvsvcSessionInfo permissions could not be read on $(@($Snapshot.health.dcState | Where-Object { $_ -and -not $_.error -and $null -eq $_.netSessionAces } | ForEach-Object { "$($_.dc)" }) -join ', ') (needs remote registry rights)"
         }
         if (@($Snapshot.health.dcState | Where-Object { $_ -and -not $_.error -and -not $_.PSObject.Properties['osBuild'] }).Count -gt 0) {
             $absentReasons['health.osBuild'] = 'snapshot from an older collector (no DC build and update revision): re-collect'
@@ -816,11 +939,32 @@ function Invoke-ADHygieneChecks {
                 -Detail "krbtgt password last set $(Format-Age $age) ago (threshold $($Config.KrbtgtMaxAgeDays) days, critical above $($Config.KrbtgtCriticalDays))."
         }
     }
-    foreach ($u in @($Index.Users | Where-Object { $_.samAccountName -match '^krbtgt_\d+$' })) {
+    $rodcKrbtgts = @($Index.Users | Where-Object { $_.samAccountName -match '^krbtgt_\d+$' })
+    foreach ($u in $rodcKrbtgts) {
         $age = Get-AgeDays $u.pwdLastSet
         if ($null -eq $age -or $age -gt $Config.KrbtgtMaxAgeDays) {
             Add-Finding -Type rodc_krbtgt_password_old -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName `
                 -Detail "RODC krbtgt password last set $(Format-Age $age) ago."
+        }
+    }
+    # krbtgt_NNNNN that no RODC points at through msDS-KrbTgtLink: left behind by a demoted RODC.
+    # Skipped (and reported as not evaluated) when an RODC is present but its link was not read.
+    if ($rodcKrbtgts.Count -gt 0) {
+        $rodcs = @($Snapshot.domainControllers | Where-Object { $_ -and $_.isReadOnly })
+        $linkUnknown = @($rodcs | Where-Object { $_.rodcPolicy -and -not $_.rodcPolicy.PSObject.Properties['krbtgtLink'] }).Count -gt 0
+        if (-not $linkUnknown) {
+            $linkedKrbtgt = @{}
+            foreach ($rodc in $rodcs) {
+                if (-not $rodc.rodcPolicy) { continue }
+                $link = "$($rodc.rodcPolicy.krbtgtLink)"
+                if ($link) { $linkedKrbtgt[$link.ToLower()] = "$($rodc.name)" }
+            }
+            foreach ($u in $rodcKrbtgts) {
+                if ($linkedKrbtgt.ContainsKey("$($u.distinguishedName)".ToLower())) { continue }
+                $age = Get-AgeDays $u.pwdLastSet
+                Add-Finding -Type rodc_krbtgt_orphan -Object $u.samAccountName -ObjectType 'user' -ObjectDn $u.distinguishedName `
+                    -Detail "No read-only domain controller links to this account$(if ($rodcs.Count -eq 0) { ' (the domain has no RODC at all)' } else { " (RODCs in the domain: $(@($rodcs | ForEach-Object { $_.name }) -join ', '))" }). Password last set $(Format-Age $age) ago."
+            }
         }
     }
     # Hybrid keys Entra ID holds for this domain: Seamless SSO and cloud Kerberos trust.
@@ -1013,6 +1157,7 @@ function Invoke-ADHygieneChecks {
     $groupMemberChecks = @(
         @{ Keys = @('SchemaAdmins', 'EnterpriseAdmins'); Type = 'schema_enterprise_admins_populated' }
         @{ Keys = @('AccountOperators', 'ServerOperators', 'PrintOperators', 'BackupOperators'); Type = 'operator_groups_populated' }
+        @{ Keys = @('KeyAdmins', 'EnterpriseKeyAdmins'); Type = 'key_admins_populated' }
         @{ Keys = @('DnsAdmins'); Type = 'dnsadmins_populated' }
     )
     foreach ($gc in $groupMemberChecks) {
@@ -1037,6 +1182,41 @@ function Invoke-ADHygieneChecks {
             $state = if ($m.Principal -and $null -ne $m.Principal.enabled) { if ($m.Principal.enabled) { 'enabled' } else { 'disabled' } } else { 'n/a' }
             Add-Finding -Type $gc.Type -Object $name -ObjectType $m.Type -ObjectDn $m.Dn `
                 -Detail "Member of $($rec.Via -join ' | '). Account $state."
+        }
+    }
+
+    # Cert Publishers (RID 517) should hold the CA computer accounts and nothing else. Which hosts
+    # run a CA is only known when AD CS was collected; without it, only members that cannot be a
+    # CA at all (users and groups) are reported, and the detail says so.
+    $certPub = $Index.BySid["$dom-517"]
+    if ($certPub -and $certPub._type -eq 'group') {
+        $caHosts = @{}
+        $caKnown = $false
+        if ($Snapshot.adcs -and $Snapshot.adcs.collected) {
+            $caKnown = $true
+            foreach ($es in @($Snapshot.adcs.enrollmentServices | Where-Object { $_ })) {
+                foreach ($h in @("$($es.dnsHostName)", "$($es.name)")) {
+                    if (-not $h) { continue }
+                    $caHosts[$h.ToLower()] = $true
+                    $caHosts[(($h -split '\.')[0]).ToLower()] = $true
+                }
+            }
+        }
+        foreach ($m in @(Get-EffectiveMembers -Index $Index -Group $certPub)) {
+            $p = $m.Principal
+            $label = if ($p -and $p.samAccountName) { $p.samAccountName } elseif ($p -and $p.name) { $p.name } else { $m.Dn }
+            if ($p -and $p._type -eq 'computer') {
+                if (-not $caKnown) { continue }
+                $short = "$($p.samAccountName)".TrimEnd('$').ToLower()
+                if ($caHosts.ContainsKey($short) -or ($p.dnsHostName -and $caHosts.ContainsKey("$($p.dnsHostName)".ToLower()))) { continue }
+                Add-Finding -Type cert_publishers_unexpected -Object $label -ObjectType 'computer' -ObjectDn $m.Dn `
+                    -Detail "In Cert Publishers via: $($m.Path). No enterprise CA is published on this host$(if (@($Snapshot.adcs.enrollmentServices).Count) { " (CAs: $(@($Snapshot.adcs.enrollmentServices | ForEach-Object { "$($_.dnsHostName)" }) -join ', '))" } else { ' (no CA in the forest)' })."
+            }
+            else {
+                $sev = if ($p -and (Test-IsPrivileged $PrivMap $p)) { 'High' } else { 'Medium' }
+                Add-Finding -Type cert_publishers_unexpected -Object $label -ObjectType $m.Type -ObjectDn $m.Dn -Severity $sev `
+                    -Detail "In Cert Publishers via: $($m.Path). Only the computer accounts of enterprise CAs belong there.$(if (-not $caKnown) { ' AD CS was not collected, so CA computer accounts in the group could not be checked.' })"
+            }
         }
     }
 
@@ -1257,6 +1437,16 @@ function Invoke-ADHygieneChecks {
         $ll = Get-AgeDays $c.lastLogonTimestamp
         $created = Get-AgeDays $c.whenCreated
         $stale = ($null -ne $ll -and $ll -gt $Config.StaleComputerDays) -or ($null -eq $ll -and $null -ne $created -and $created -gt $Config.StaleComputerDays)
+        # Still logging on, but the machine password stopped rotating: the NT hash of the account
+        # is the Silver Ticket key for every service on that host, and it is not changing.
+        # Only live hosts: a stale or never-joined one has its own finding.
+        if (-not $stale -and $null -ne $ll -and -not (Test-Uac $c 'PASSWD_NOTREQD') -and "$($c.samAccountName)" -ine 'AZUREADSSOACC$') {
+            $cpa = Get-AgeDays $c.pwdLastSet
+            if ($null -ne $cpa -and $cpa -gt $Config.ComputerPasswordMaxAgeDays) {
+                Add-Finding -Type computer_password_old -Object $c.samAccountName -ObjectType 'computer' -ObjectDn $c.distinguishedName `
+                    -Detail "Machine password last set $(Format-Age $cpa) ago (threshold $($Config.ComputerPasswordMaxAgeDays) days, the Windows default rotation is 30), last logon $(Format-Age $ll) ago. OS: $($c.operatingSystem). Cluster name objects and appliances that manage their own password show up here too."
+            }
+        }
         # The Seamless SSO account never logs on; deleting it as stale breaks SSO (azuread_sso_key_old covers it).
         if ($stale -and "$($c.samAccountName)" -ine 'AZUREADSSOACC$') {
             Add-Finding -Type stale_computer -Object $c.samAccountName -ObjectType 'computer' -ObjectDn $c.distinguishedName `
@@ -1297,6 +1487,42 @@ function Invoke-ADHygieneChecks {
                 -Detail "Java classes in the schema: $($jc -join ', ')."
         }
     }
+    # The same SPN on more than one account: Kerberos picks one, and the loser collects tickets
+    # meant for the real service. Case-insensitive, and duplicates inside one account don't count.
+    $spnOwners = @{}
+    foreach ($p in (@($Index.Users) + @($Index.Computers))) {
+        $seenHere = @{}
+        foreach ($s in @($p.servicePrincipalNames | Where-Object { $_ })) {
+            $k = "$s".ToLower()
+            if ($seenHere.ContainsKey($k)) { continue }
+            $seenHere[$k] = $true
+            if (-not $spnOwners.ContainsKey($k)) { $spnOwners[$k] = New-Object System.Collections.Generic.List[object] }
+            $spnOwners[$k].Add($p)
+        }
+    }
+    foreach ($k in @($spnOwners.Keys | Sort-Object)) {
+        # .ToArray(): @() straight onto a List[object] from New-Object throws "Argument types do
+        # not match" on PowerShell 7.6.
+        $owners = @($spnOwners[$k].ToArray())
+        if ($owners.Count -lt 2) { continue }
+        $priv = @($owners | Where-Object { Test-IsPrivileged $PrivMap $_ })
+        $sev = if ($priv.Count -gt 0) { 'High' } else { 'Medium' }
+        Add-Finding -Type duplicate_spn -Object $k -ObjectType 'spn' -Severity $sev `
+            -Detail "Held by $($owners.Count) accounts: $(@($owners | ForEach-Object { "$($_.samAccountName)$(if (Test-IsPrivileged $PrivMap $_) { ' (Tier 0)' })" } | Sort-Object) -join ', ')."
+    }
+
+    # No gMSA anywhere while user accounts carry SPNs: every service password is hand-made.
+    $msaRecords = @($Snapshot.serviceAccounts | Where-Object { $_ })
+    $gmsaUnknown = @($msaRecords | Where-Object { -not $_.PSObject.Properties['isGroupManaged'] }).Count -gt 0
+    if (-not $gmsaUnknown -and -not $Index.CollectionErrorSections.ContainsKey('serviceAccounts')) {
+        $gmsaCount = @($msaRecords | Where-Object { $_.isGroupManaged -eq $true }).Count
+        $spnUsers = @($Index.Users | Where-Object { $_.kind -eq 'user' -and @($_.servicePrincipalNames | Where-Object { $_ }).Count -gt 0 })
+        if ($gmsaCount -eq 0 -and $spnUsers.Count -gt 0) {
+            Add-Finding -Type gmsa_not_used -Object $Snapshot.domain.dnsRoot -ObjectType 'domain' -ObjectDn $Snapshot.domain.distinguishedName `
+                -Detail "No group Managed Service Account in the domain, while $($spnUsers.Count) user account(s) hold a servicePrincipalName$(if (@($msaRecords).Count) { " (and $(@($msaRecords).Count) standalone MSA(s) exist)" })."
+        }
+    }
+
     if ($null -ne $Snapshot.domain.machineAccountQuota -and [int]$Snapshot.domain.machineAccountQuota -gt 0) {
         Add-Finding -Type machine_account_quota -Object $Snapshot.domain.dnsRoot -ObjectType 'domain' -ObjectDn $Snapshot.domain.distinguishedName `
             -Detail "ms-DS-MachineAccountQuota = $($Snapshot.domain.machineAccountQuota)."
@@ -1321,6 +1547,17 @@ function Invoke-ADHygieneChecks {
         }
         if ([int]$pp.lockoutThreshold -eq 0) {
             Add-Finding -Type password_policy_no_lockout -Object 'Default Domain Policy' -ObjectType 'policy' -ObjectDn $domDn -Detail 'Lockout threshold = 0.'
+        }
+        else {
+            # Lockout is on but loose: more than five attempts, or it lifts too soon to slow a spray.
+            $lockIssues = @()
+            if ([int]$pp.lockoutThreshold -gt $script:LOCKOUT_MAX_THRESHOLD) { $lockIssues += "threshold $([int]$pp.lockoutThreshold) failed attempts (limit $($script:LOCKOUT_MAX_THRESHOLD))" }
+            if ($null -ne $pp.lockoutDurationMinutes -and [int]$pp.lockoutDurationMinutes -gt 0 -and [int]$pp.lockoutDurationMinutes -lt $script:LOCKOUT_MIN_DURATION_MIN) {
+                $lockIssues += "duration $([int]$pp.lockoutDurationMinutes) minutes (minimum $($script:LOCKOUT_MIN_DURATION_MIN))"
+            }
+            if ($lockIssues.Count -gt 0) {
+                Add-Finding -Type password_policy_lockout_weak -Object 'Default Domain Policy' -ObjectType 'policy' -ObjectDn $domDn -Detail "$($lockIssues -join '; ')."
+            }
         }
         if ($pp.reversibleEncryptionEnabled) {
             Add-Finding -Type reversible_encryption_policy -Object 'Default Domain Policy' -ObjectType 'policy' -ObjectDn $domDn -Detail 'ReversibleEncryptionEnabled = True in the default domain policy.'
@@ -1374,9 +1611,61 @@ function Invoke-ADHygieneChecks {
                 -Detail "tombstoneLifetime = $(if ($null -eq $Snapshot.domain.tombstoneLifetime) { 'not set (defaults to 60)' } else { $tsl }) days (recommended >= 180)."
         }
     }
+    # dSHeuristics, character by character (MS-ADTS 7.1.1.2.4.1.2; 1-based positions below, so
+    # character N is $dsh[N-1]). Every character defaults to "0" and the whole string may be
+    # absent, which is the default behavior, not a gap: only a failed read is a gap.
     $dsh = "$($Snapshot.domain.dsHeuristics)"
+    $dshRead = -not $Index.CollectionErrorSections.ContainsKey('domain.dsHeuristics')
     if ($dsh.Length -ge 7 -and $dsh[6] -eq '2') {
-        Add-Finding -Type anonymous_ldap_enabled -Object $domObj -ObjectType 'domain' -Detail "dSHeuristics = '$dsh'."
+        Add-Finding -Type anonymous_ldap_enabled -Object $domObj -ObjectType 'domain' -Detail "dSHeuristics = '$dsh' (character 7, fLDAPBlockAnonOps, is 2)."
+    }
+    if ($dshRead) {
+        if ((Get-DshChar $dsh 3) -eq '1') {
+            Add-Finding -Type dsheuristics_list_object -Object $domObj -ObjectType 'domain' -Detail "dSHeuristics = '$dsh' (character 3, fDoListObject, is 1)."
+        }
+        if ((Get-DshChar $dsh 8) -ne '0') {
+            Add-Finding -Type dsheuristics_anonymous_nspi -Object $domObj -ObjectType 'domain' -Detail "dSHeuristics = '$dsh' (character 8, fAllowAnonNSPI, is $(Get-DshChar $dsh 8))."
+        }
+        $exMaskChar = Get-DshChar $dsh 16
+        $exMask = 0
+        try { $exMask = [Convert]::ToInt32("$exMaskChar", 16) } catch { $exMask = 0 }
+        if ($exMask -ne 0) {
+            $excluded = @()
+            foreach ($bit in @(@(1, 'Account Operators'), @(2, 'Server Operators'), @(4, 'Print Operators'), @(8, 'Backup Operators'))) {
+                if (($exMask -band $bit[0]) -ne 0) { $excluded += $bit[1] }
+            }
+            Add-Finding -Type dsheuristics_adminsdholder_exempt -Object $domObj -ObjectType 'domain' `
+                -Detail "dSHeuristics = '$dsh' (character 16, dwAdminSDExMask, is '$exMaskChar' = 0x$('{0:X}' -f $exMask)). No longer protected by SDProp: $(if ($excluded.Count) { $excluded -join ', ' } else { 'the groups the mask names' })."
+        }
+        $uniq = Get-DshChar $dsh 21
+        if ($uniq -ne '0') {
+            $off = @()
+            $uniqVal = 0
+            try { $uniqVal = [int]"$uniq" } catch { $uniqVal = 0 }
+            if (($uniqVal -band 1) -ne 0) { $off += 'userPrincipalName uniqueness' }
+            if (($uniqVal -band 2) -ne 0) { $off += 'servicePrincipalName uniqueness' }
+            if (($uniqVal -band 4) -ne 0) { $off += 'SPN alias uniqueness' }
+            Add-Finding -Type dsheuristics_spn_uniqueness_off -Object $domObj -ObjectType 'domain' `
+                -Detail "dSHeuristics = '$dsh' (character 21, DoNotVerifyUPNAndOrSPNUniqueness, is $uniq). Not enforced: $(if ($off.Count) { $off -join ', ' } else { 'the checks the value disables' })."
+        }
+        $ldapAdd = Get-DshChar $dsh 28
+        $ownerRights = Get-DshChar $dsh 29
+        if ($ldapAdd -eq '0' -or $ownerRights -eq '0') {
+            $which = @()
+            if ($ldapAdd -eq '0') { $which += 'character 28 (AttributeAuthorizationOnLDAPAdd) is 0' }
+            if ($ownerRights -eq '0') { $which += 'character 29 (BlockOwnerImplicitRights) is 0' }
+            Add-Finding -Type dsheuristics_ldap_add_unprotected -Object $domObj -ObjectType 'domain' `
+                -Detail "dSHeuristics = $(if ($dsh) { "'$dsh'" } else { 'not set' }): $($which -join ', '). 1 = audit, 2 = enforce."
+        }
+        $conf = Get-DshChar $dsh 31
+        if ($conf -ne '0') {
+            $confVal = 0
+            try { $confVal = [int]"$conf" } catch { $confVal = 0 }
+            $ops = @()
+            foreach ($bit in @(@(1, 'search'), @(2, 'modify'), @(4, 'add'))) { if (($confVal -band $bit[0]) -ne 0) { $ops += $bit[1] } }
+            Add-Finding -Type dsheuristics_confidential_cleartext -Object $domObj -ObjectType 'domain' `
+                -Detail "dSHeuristics = '$dsh' (character 31, DisableConfidentialAttributeEncryptionRequirements, is $conf): confidential attributes allowed on an unencrypted LDAP connection for $(if ($ops.Count) { "$($ops -join ', ') operations" } else { 'the operations the value names' })."
+        }
     }
 
     $dcList = @($Snapshot.domainControllers | Where-Object { $_ })
@@ -1576,6 +1865,72 @@ function Invoke-ADHygieneChecks {
         }
     }
 
+    # Reanimate-Tombstones on the domain head: restore a deleted admin with its SID, SID history
+    # and memberships intact. Default holder is Administrators only.
+    foreach ($acl in @($Snapshot.acls | Where-Object { $_ -and $_.target -eq 'DomainRoot' })) {
+        $reanimate = [ordered]@{}
+        foreach ($ace in @($acl.aces | Where-Object { $_ })) {
+            if ($ace.accessType -ne 'Allow' -or $defaultAcl -contains $ace.sid) { continue }
+            if ("$($ace.rights)" -notmatch '\bExtendedRight\b') { continue }
+            $ot = "$($ace.objectType)".ToLower()
+            # An all-extended-rights ACE is already a dcsync_rights / dangerous_ace finding.
+            if ($ot -ne '45ec5156-db7e-47bb-b53f-dbeb2d03c40f') { continue }
+            if (-not $reanimate.Contains($ace.sid)) { $reanimate[$ace.sid] = if ($ace.name) { "$($ace.name)" } else { "$($ace.sid)" } }
+        }
+        foreach ($sid in $reanimate.Keys) {
+            $t0 = $Index.BySid[$sid]
+            $sev = if ($t0 -and (Test-IsPrivileged $PrivMap $t0)) { 'Low' } else { 'Medium' }
+            Add-Finding -Type reanimate_tombstones_right -Object $reanimate[$sid] -ObjectType 'acl' -ObjectDn $acl.distinguishedName -Severity $sev `
+                -Detail "ExtendedRight(Reanimate-Tombstones) on the domain head.$(if ($sev -eq 'Low') { ' The principal is already Tier 0, so this adds no path, but it is not a directory default either.' })$aclT0Note"
+        }
+    }
+
+    # DPAPI domain backup key: who can read the secret, not who can control the object (that is
+    # dangerous_ace_tier0). Read access alone decrypts every domain-key DPAPI blob offline.
+    $tier0Sids = Get-Tier0SidSet $Index $PrivMap
+    foreach ($acl in @($Snapshot.acls | Where-Object { $_ -and $_.target -eq 'DpapiBackupKey' })) {
+        $readers = [ordered]@{}
+        foreach ($ace in @($acl.aces | Where-Object { $_ })) {
+            if ($ace.accessType -ne 'Allow' -or -not (Test-AceAppliesToSelf $ace)) { continue }
+            if ($tier0Sids.ContainsKey("$($ace.sid)")) { continue }
+            if ("$($ace.rights)" -notmatch '\bGenericAll\b|\bGenericRead\b|\bReadProperty\b') { continue }
+            $label = if ($ace.name) { "$($ace.name)" } else { "$($ace.sid)" }
+            if (-not $readers.Contains($ace.sid)) { $readers[$ace.sid] = [PSCustomObject]@{ Name = $label; Rights = New-Object System.Collections.Generic.List[string] } }
+            foreach ($r in @('GenericAll', 'GenericRead', 'ReadProperty')) {
+                if ("$($ace.rights)" -match "\b$r\b" -and -not $readers[$ace.sid].Rights.Contains($r)) { $readers[$ace.sid].Rights.Add($r) }
+            }
+        }
+        foreach ($sid in $readers.Keys) {
+            Add-Finding -Type dpapi_backup_key_readable -Object $readers[$sid].Name -ObjectType 'acl' -ObjectDn $acl.distinguishedName `
+                -Detail "$($readers[$sid].Rights -join ', ') on $($acl.distinguishedName).$aclT0Note"
+        }
+    }
+
+    # AdminSDHolder with inheritance on: an ACE on a parent container is stamped onto every
+    # protected admin by SDProp, and re-stamped after anyone cleans it off one account.
+    foreach ($acl in @($Snapshot.acls | Where-Object { $_ -and $_.target -eq 'AdminSDHolder' -and $_.PSObject.Properties['inheritanceProtected'] })) {
+        if ($acl.inheritanceProtected -eq $false) {
+            $inh = @($acl.aces | Where-Object { $_ -and $_.isInherited -and $_.accessType -eq 'Allow' } | ForEach-Object { "$($_.name)" } | Select-Object -Unique)
+            Add-Finding -Type adminsdholder_inheritance_enabled -Object 'AdminSDHolder' -ObjectType 'acl' -ObjectDn $acl.distinguishedName `
+                -Detail "Inheritance is not blocked on CN=AdminSDHolder.$(if ($inh.Count) { " Inherited allow entries already present: $($inh -join ', ')." })"
+        }
+    }
+
+    # OUs without the accidental-deletion deny ACE. Only the ones that hold objects: an empty
+    # staging OU is not worth a finding.
+    $ouPopulated = @{}
+    foreach ($o in (@($Index.Users) + @($Index.Computers) + @($Index.Groups))) {
+        $parent = "$($o.distinguishedName)" -replace '^.+?(?<!\\),', ''
+        if ($parent) { $ouPopulated[$parent.ToLower()] = $true }
+    }
+    foreach ($ou in @($Snapshot.ouAcls | Where-Object { $_ -and $_.PSObject.Properties['protectedFromDeletion'] })) {
+        if ($ou.protectedFromDeletion -ne $false) { continue }
+        $dnKey = "$($ou.distinguishedName)".ToLower()
+        if (-not $ouPopulated.ContainsKey($dnKey)) { continue }
+        Add-Finding -Type ou_not_protected_from_deletion -Object $ou.distinguishedName -ObjectType 'ou' -ObjectDn $ou.distinguishedName `
+            -Detail "No Deny ACE for Everyone on Delete / DeleteTree, and the $(if ("$($ou.objectClass)" -eq 'container') { 'container' } else { 'OU' }) holds objects. Recycle Bin: $(if ($Snapshot.domain.recycleBinEnabled) { 'enabled' } else { 'disabled, so a restore means an authoritative restore from backup' })."
+    }
+
     # Get-Changes + Get-Changes-In-Filtered-Set without Get-Changes-All: DirSync reads of confidential
     # attributes (LAPS). With Get-Changes-All it is DCSync, reported above.
     $guidGc = '1131f6aa-9c07-11d1-f79f-00c04fc2dcd2'; $guidGca = '1131f6ad-9c07-11d1-f79f-00c04fc2dcd2'; $guidFiltered = '89e95b76-444d-4c62-991a-0facbeda640c'
@@ -1645,14 +2000,30 @@ function Invoke-ADHygieneChecks {
                 -Detail "Password retrievable by non-Tier 0 principal(s): $($bad -join ', ')$(if ($isPriv) { ' (the gMSA itself holds privileged rights)' }).$(if ($PrivMap.Tier0Unknown) { " Tier 0 membership unknown: $($PrivMap.Tier0UnknownReason), so principals listed here may in fact be Tier 0." })"
         }
     }
+    # Key credentials on anything Tier 0, and on every domain controller object: a DC never has a
+    # legitimate one, so it is reported even though a DC is not a Tier 0 group member.
+    $kcSeen = @{}
+    $kcTargets = New-Object System.Collections.Generic.List[object]
     foreach ($rec in $PrivMap.Principals.Values) {
         $p = $rec.Principal
-        if (-not $p -or $p._type -ne 'user' -or $p.kind -ne 'user' -or -not $p.distinguishedName) { continue }
+        if (-not $p -or -not $p.distinguishedName) { continue }
+        if (@('user', 'computer') -notcontains "$($p._type)") { continue }
+        $kcTargets.Add([PSCustomObject]@{ P = $p; Why = "Tier 0 account (member of $($rec.Groups -join ', '))" })
+        $kcSeen["$($p.distinguishedName)".ToLower()] = $true
+    }
+    foreach ($c in @($Index.Computers | Where-Object { $_._isDc -and $_.distinguishedName })) {
+        if ($kcSeen.ContainsKey("$($c.distinguishedName)".ToLower())) { continue }
+        $kcTargets.Add([PSCustomObject]@{ P = $c; Why = 'domain controller object' })
+    }
+    foreach ($t in $kcTargets) {
+        $p = $t.P
         $kc = 0; try { $kc = [int]$p.keyCredentialCount } catch { $kc = 0 }
-        if ($kc -gt 0) {
-            Add-Finding -Type shadow_credentials_present -Object $p.samAccountName -ObjectType 'user' -ObjectDn $p.distinguishedName `
-                -Detail "$kc key credential(s) on a Tier 0 account (member of $($rec.Groups -join ', ')). Confirm each against an expected Windows Hello / device registration, or treat as Shadow Credentials persistence."
-        }
+        if ($kc -le 0) { continue }
+        $isDcObj = ("$($p._type)" -eq 'computer') -and $p._isDc
+        $sev = if ($isDcObj) { 'Critical' } else { 'High' }
+        $note = if ($isDcObj) { 'A domain controller has no legitimate key credential: treat this as an active compromise.' } else { 'Confirm each against an expected Windows Hello / device registration, or treat as Shadow Credentials persistence.' }
+        Add-Finding -Type shadow_credentials_present -Object $p.samAccountName -ObjectType "$($p._type)" -ObjectDn $p.distinguishedName -Severity $sev `
+            -Detail "$kc key credential(s) on a $($t.Why). $note"
     }
 
     # Each group runs on its own: odd data from a real domain costs a warning, not the report.
@@ -1661,6 +2032,7 @@ function Invoke-ADHygieneChecks {
         DeepAcl       = { Invoke-DeepAclChecks -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap }
         BadSuccessor  = { Invoke-BadSuccessorCheck -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap }
         AdCs          = { Invoke-AdcsChecks -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap }
+        Adfs          = { Invoke-AdfsChecks -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap -Config $Config }
         Dns           = { Invoke-DnsChecks -Snapshot $Snapshot }
         Sccm          = { Invoke-SccmChecks -Snapshot $Snapshot -Index $Index -PrivMap $PrivMap }
         GroupNesting  = { Invoke-GroupNestingCheck -Index $Index }
@@ -1977,6 +2349,25 @@ function Invoke-HealthChecks {
         $sev = if ("$($s.webClientState)" -eq 'Running') { 'High' } else { 'Medium' }
         Add-Finding -Type webclient_on_dc -Object "$($s.dc)" -ObjectType 'dc' -Severity $sev -Detail "WebClient service: start mode $wm, state $($s.webClientState)."
     }
+    # Who may call NetSessionEnum (SrvsvcSessionInfo). $null = the registry read failed and the
+    # check is listed as not evaluated; an empty list = the value is not set, which means the
+    # permissive built-in default, not a clean result.
+    $nsBroad = @{ 'S-1-1-0' = 'Everyone'; 'S-1-5-7' = 'Anonymous Logon'; 'S-1-5-11' = 'Authenticated Users'
+        'S-1-5-32-545' = 'Users'; "$($Index.DomainSid)-513" = 'Domain Users'; "$($Index.DomainSid)-515" = 'Domain Computers' }
+    foreach ($s in @($h.dcState | Where-Object { $_ -and -not $_.error -and $_.PSObject.Properties['netSessionAces'] -and $null -ne $_.netSessionAces })) {
+        $nsAces = @($s.netSessionAces | Where-Object { $_ })
+        if ($nsAces.Count -eq 0) {
+            Add-Finding -Type net_session_enum_open -Object "$($s.dc)" -ObjectType 'dc' `
+                -Detail 'SrvsvcSessionInfo is not set, so the permissive built-in default applies and any authenticated account can call NetSessionEnum.'
+            continue
+        }
+        $open = @($nsAces | Where-Object { "$($_.aceType)" -match '(?i)allow' -and [int]$_.accessMask -ne 0 -and $nsBroad.ContainsKey("$($_.sid)") } |
+                ForEach-Object { "$(if ($_.name -and "$($_.name)" -ne "$($_.sid)") { "$($_.name)" } else { $nsBroad["$($_.sid)"] }) (mask 0x$('{0:X}' -f [int]$_.accessMask))" } | Select-Object -Unique)
+        if ($open.Count) {
+            Add-Finding -Type net_session_enum_open -Object "$($s.dc)" -ObjectType 'dc' `
+                -Detail "SrvsvcSessionInfo grants session enumeration to: $($open -join ', ')."
+        }
+    }
     # DSRM administrator logon behavior (2 = can log on while the DC runs normally): Tier 0 persistence.
     foreach ($s in @($h.dcState | Where-Object { $_ -and -not $_.error -and $_.PSObject.Properties['dsrmAdminLogonBehavior'] -and $null -ne $_.dsrmAdminLogonBehavior })) {
         if ([int]$s.dsrmAdminLogonBehavior -eq 2) {
@@ -2174,6 +2565,70 @@ function Invoke-BadSuccessorCheck {
         $more = if ($parts.Count -gt 8) { "; and $($parts.Count - 8) more container(s)" } else { '' }
         Add-Finding -Type badsuccessor_dmsa_create -Object $p.Name -ObjectType 'acl' -Severity $sev `
             -Detail "$(@($parts | Select-Object -First 8) -join '; ')$more. $dcText"
+    }
+}
+
+# --------------------------------------------------------------------------
+# AD FS: the DKM master key container. Read access to it, plus the token-signing certificate,
+# is a Golden SAML. The AD FS setup grants the service account read there, so a single account
+# with read is taken as the service account (and checked on its own account) rather than
+# reported; a broad principal or a group with ordinary members is the real exposure.
+# --------------------------------------------------------------------------
+function Invoke-AdfsChecks {
+    param($Snapshot, $Index, $PrivMap, [hashtable]$Config)
+    if (-not $Snapshot.PSObject.Properties['adfs'] -or -not $Snapshot.adfs -or -not $Snapshot.adfs.present) { return }
+    $tier0 = Get-Tier0SidSet $Index $PrivMap
+    $broadSids = @{ 'S-1-1-0' = 'Everyone'; 'S-1-5-7' = 'Anonymous Logon'; 'S-1-5-11' = 'Authenticated Users'
+        'S-1-5-32-545' = 'Users'; "$($Index.DomainSid)-513" = 'Domain Users'; "$($Index.DomainSid)-515" = 'Domain Computers' }
+    $svcCandidates = [ordered]@{}
+    foreach ($farm in @($Snapshot.adfs.farms | Where-Object { $_ })) {
+        $readers = [ordered]@{}
+        foreach ($rec in @(@($farm.acl) + @($farm.keyAcls) | Where-Object { $_ })) {
+            $where = if ("$($rec.target)" -like 'adfsKey:*') { 'key object' } else { 'container' }
+            foreach ($ace in @($rec.aces | Where-Object { $_ })) {
+                if ($ace.accessType -ne 'Allow') { continue }
+                if ($tier0.ContainsKey("$($ace.sid)")) { continue }
+                if ("$($ace.rights)" -notmatch '\bGenericAll\b|\bGenericRead\b|\bReadProperty\b') { continue }
+                if (-not $readers.Contains($ace.sid)) {
+                    $readers[$ace.sid] = [PSCustomObject]@{ Name = $(if ($ace.name) { "$($ace.name)" } else { "$($ace.sid)" }); Where = New-Object System.Collections.Generic.List[string] }
+                }
+                if (-not $readers[$ace.sid].Where.Contains($where)) { $readers[$ace.sid].Where.Add($where) }
+            }
+        }
+        foreach ($sid in $readers.Keys) {
+            $entry = $readers[$sid]
+            $p = $Index.BySid["$sid"]
+            if ($broadSids.ContainsKey("$sid")) {
+                Add-Finding -Type adfs_dkm_key_readable -Object $entry.Name -ObjectType 'acl' -ObjectDn "$($farm.distinguishedName)" `
+                    -Detail "$($broadSids["$sid"]) can read the AD FS DKM $($entry.Where -join ' and ') of farm '$($farm.name)' ($($farm.keyCount) key object(s)). Any account in the domain can forge a SAML token for any user."
+                continue
+            }
+            if ($p -and $p._type -eq 'group') {
+                $ordinary = @(Get-EffectiveMembers -Index $Index -Group $p | Where-Object { $_.Principal -and -not (Test-IsPrivileged $PrivMap $_.Principal) })
+                if ($ordinary.Count -eq 0) { continue }
+                Add-Finding -Type adfs_dkm_key_readable -Object $entry.Name -ObjectType 'group' -ObjectDn "$($p.distinguishedName)" -Severity 'High' `
+                    -Detail "Group with $($ordinary.Count) non-Tier 0 member(s) can read the AD FS DKM $($entry.Where -join ' and ') of farm '$($farm.name)': $(@($ordinary | ForEach-Object { if ($_.Principal.samAccountName) { $_.Principal.samAccountName } else { $_.Principal.name } } | Select-Object -First 8) -join ', ')."
+                continue
+            }
+            # A single account with read is how AD FS is set up: it is the service account.
+            if ($p -and @('user', 'computer') -contains $p._type -and -not $svcCandidates.Contains($sid)) {
+                $svcCandidates[$sid] = [PSCustomObject]@{ Principal = $p; Farm = "$($farm.name)" }
+            }
+        }
+    }
+    foreach ($sid in $svcCandidates.Keys) {
+        $p = $svcCandidates[$sid].Principal
+        $farmName = $svcCandidates[$sid].Farm
+        $isGmsa = ("$($p.kind)" -eq 'msa') -and ($p.isGroupManaged -eq $true)
+        if (-not $isGmsa) {
+            Add-Finding -Type adfs_service_account_not_gmsa -Object $p.samAccountName -ObjectType $p._type -ObjectDn $p.distinguishedName `
+                -Detail "Runs AD FS farm '$farmName' (it may read the DKM master key) and is $(if ("$($p.kind)" -eq 'msa') { 'a standalone managed service account' } else { 'an ordinary account' }), so its password is not rotated by AD.$(if (@($p.servicePrincipalNames | Where-Object { $_ }).Count) { " It holds $(@($p.servicePrincipalNames | Where-Object { $_ }).Count) SPN(s), so it is also Kerberoastable." })"
+            $age = Get-AgeDays $p.pwdLastSet
+            if ($null -eq $age -or $age -gt $Config.PasswordMaxAgeDays) {
+                Add-Finding -Type adfs_service_account_password_old -Object $p.samAccountName -ObjectType $p._type -ObjectDn $p.distinguishedName `
+                    -Detail "AD FS farm '$farmName': password last set $(Format-Age $age) ago (threshold $($Config.PasswordMaxAgeDays) days)."
+            }
+        }
     }
 }
 

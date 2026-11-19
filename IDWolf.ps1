@@ -57,6 +57,9 @@
     Never-used accounts younger than this are not flagged (default 90).
 .PARAMETER StaleComputerDays
     Enabled computer without logon for more than this (default 90).
+.PARAMETER ComputerPasswordMaxAgeDays
+    Machine account password age above which an active computer is reported as no
+    longer rotating it (default 90; Windows rotates every 30).
 .PARAMETER PasswordMaxAgeDays
     Password age threshold for privileged and SPN accounts (default 365).
 .PARAMETER MinPasswordLength
@@ -92,6 +95,7 @@ Param(
     [int]$LapsOverdueDays = 30,
     [int]$BuiltinAdminRecentDays = 30,
     [int]$DcPasswordMaxAgeDays = 90,
+    [int]$ComputerPasswordMaxAgeDays = 90,
     [string]$PasswordQualityFile = "",
     [System.Security.SecureString]$BundlePassword = $null,
     [switch]$SkipLLM,
@@ -103,7 +107,7 @@ Param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:IDWolfVersion = "1.14"
+$script:IDWolfVersion = "1.15"
 
 $libDir = Join-Path $PSScriptRoot 'lib'
 foreach ($f in @('Common.ps1', 'Checks.ps1', 'ChecksHost.ps1', 'Reporting.ps1', 'Graph.ps1', 'AI.ps1', 'ChecksEntra.ps1', 'Compliance.ps1', 'Bundle.ps1', 'Wizard.ps1')) {
@@ -572,6 +576,7 @@ $config = @{
     LapsOverdueDays        = $LapsOverdueDays
     BuiltinAdminRecentDays = $BuiltinAdminRecentDays
     DcPasswordMaxAgeDays   = $DcPasswordMaxAgeDays
+    ComputerPasswordMaxAgeDays = $ComputerPasswordMaxAgeDays
 }
 
 Write-Host "Domain: $($snap.domain.dnsRoot)  snapshot: $($script:RefDate.ToString('yyyy-MM-dd HH:mm')) UTC"

@@ -37,7 +37,7 @@ nothing but the native ActiveDirectory module, then analyzes that snapshot
 **offline** and gives you an HTML report, a findings CSV and, if you want, JSON
 Lines for your SIEM.
 
-On the AD side it runs **186 checks**: Kerberos, privileged access, account
+On the AD side it runs **208 checks**: Kerberos, privileged access, account
 hygiene, domain configuration, permissions, DNS, AD CS (ESC1-5, 9, 10, 13, 15),
 operational health (replication, DHCP, backups), host hardening read from the
 GPOs (SMB and LDAP signing, NTLM, LM hash, user rights) and password quality,
@@ -174,7 +174,7 @@ October 2026. If something here is out of date or wrong, please say so.
 | Proves it can't write to the directory (built-in code review) | **Yes** | – | – | – | – (has a fix mode) | – | – (attacks by design, after operator confirmation) |
 | Collect once, analyze later on another machine, offline | **Yes** | partial (re-renders its XML report) | – | yes (import into the server) | – | – | – |
 | AI summary, remediation plan, attack-path story, fix scripts, exploitability ranking | **Yes** (names tokenized first, nothing sent without consent) | – | – | – | – | – | – |
-| AD hygiene checklist | 186 checks | yes | yes | – (paths, not a checklist) | – | – | – (104 attack techniques, tried rather than audited) |
+| AD hygiene checklist | 208 checks | yes | yes | – (paths, not a checklist) | – | – | – (104 attack techniques, tried rather than audited) |
 | AD CS (ESC) | ESC1-5, 9, 10, 13, 15; 6, 7, 8, 11, 16 read on the CA | some | some | yes, as graph edges | **broadest**, with fixes | – | template enumeration; ESC1-16 exploitation in PRO |
 | Password quality (duplicates, breached) | yes, hashless | – | – | – | – | – | spraying and cracking (an attack, not an audit) |
 | Host hardening read from GPOs | yes | yes | yes | – | – | – | – (some preconditions probed live) |
@@ -218,7 +218,7 @@ documentation as of October 2026; pricing and details change often.
 | Response / auto-remediation | – (gives a plan and scripts to review) | partial (via XDR) | **Yes**, plus forest recovery | partial |
 | SIEM / XDR integration | JSON Lines | **Yes** (Defender XDR, Sentinel) | yes | yes |
 | Attack-path view | yes (report + BloodHound export) | yes (Exposure Management) | yes | **yes**, a strong point |
-| Hygiene / posture checklist | 186 AD + 92 Entra, with CIS/MITRE/NIS2… | via Secure Score | yes (indicators) | yes (indicators) |
+| Hygiene / posture checklist | 208 AD + 92 Entra, with CIS/MITRE/NIS2… | via Secure Score | yes (indicators) | yes (indicators) |
 | AI review with chaining and a compromise verdict | **Yes** (names tokenized first) | – | – | – |
 | Support | community | vendor, SLA | vendor, SLA | vendor, SLA |
 
@@ -701,6 +701,7 @@ particular object.
 |---|---|---|---|
 | `krbtgt_password_old` | High | T1558.001 | krbtgt password not rotated |
 | `rodc_krbtgt_password_old` | Medium | T1558.001 | RODC krbtgt account not rotated |
+| `rodc_krbtgt_orphan` | Medium | T1558.001 | RODC krbtgt account with no RODC behind it |
 | `azuread_sso_key_old` | Medium | T1558.002 | Seamless SSO key (AZUREADSSOACC$) not rolled over |
 | `cloud_kerberos_trust_key_old` | Medium | T1558.001 | Cloud Kerberos trust key (krbtgt_AzureAD) not rotated |
 | `privileged_kerberoastable` | Critical | T1558.003 | Privileged account with SPN (Kerberoastable) |
@@ -729,6 +730,8 @@ particular object.
 | `rodc_prp_too_broad` | High | T1003 | RODC allowed to cache privileged or domain-wide credentials |
 | `rodc_tier0_revealed` | High | T1003 | Tier 0 credentials cached on a read-only domain controller |
 | `dnsadmins_populated` | Medium |  | DnsAdmins populated |
+| `key_admins_populated` | Medium | T1556.003 | Key Admins / Enterprise Key Admins has members |
+| `cert_publishers_unexpected` | Medium | T1649 | Unexpected member of Cert Publishers |
 | `privileged_inactive` | High | T1078.002 | Inactive privileged account still enabled |
 | `privileged_password_old` | High | T1078.002 | Privileged account password not changed |
 | `privileged_password_never_expires` | Medium | T1078.002 | Privileged account with password never expires |
@@ -764,6 +767,9 @@ particular object.
 | `laps_stale` | Low | T1550.002 | LAPS password overdue |
 | `machine_account_quota` | Medium | T1136.002 | Users can join computers to the domain |
 | `precreated_computer_account` | Medium | T1078.002 | Computer account with password not required |
+| `duplicate_spn` | Medium | T1558.003 | Service principal name registered on more than one account |
+| `computer_password_old` | Medium | T1558 | Active computer whose machine password is not rotating |
+| `gmsa_not_used` | Low | T1558.003 | No group Managed Service Account in the domain |
 | `timeroast_computer_password` | Medium | T1110.002 | Pre-staged computer account still on the password set at creation (Timeroasting) |
 
 **Domain Configuration**
@@ -773,6 +779,7 @@ particular object.
 | `password_policy_short` | Medium | T1110 | Short minimum password length |
 | `password_policy_no_complexity` | Medium | T1110 | Password complexity disabled with short passwords |
 | `password_policy_no_lockout` | Medium | T1110.003 | No account lockout |
+| `password_policy_lockout_weak` | Low | T1110.003 | Lockout policy too permissive |
 | `reversible_encryption_policy` | Critical | T1556.005 | Reversible encryption enabled in password policy |
 | `password_policy_min_age_zero` | Low | T1110 | Minimum password age is zero |
 | `password_policy_history_weak` | Low | T1110 | Short password history |
@@ -785,18 +792,24 @@ particular object.
 | `recycle_bin_disabled` | Low |  | AD Recycle Bin not enabled |
 | `tombstone_lifetime_low` | Low |  | Tombstone lifetime below 180 days |
 | `anonymous_ldap_enabled` | High | T1087.002 | Anonymous LDAP operations allowed |
+| `dsheuristics_anonymous_nspi` | High | T1087.002 | Anonymous NSPI access enabled (dSHeuristics character 8) |
+| `dsheuristics_adminsdholder_exempt` | High | T1098 | Operator groups excluded from AdminSDHolder (dwAdminSDExMask) |
+| `dsheuristics_spn_uniqueness_off` | High | T1558.003 | UPN / SPN uniqueness checks disabled (dSHeuristics character 21) |
+| `dsheuristics_ldap_add_unprotected` | Medium | T1068 | CVE-2021-42291 LDAP add hardening not enforced (dSHeuristics 28 / 29) |
+| `dsheuristics_confidential_cleartext` | High | T1557 | Confidential attributes allowed over an unencrypted connection (dSHeuristics 31) |
+| `dsheuristics_list_object` | Low |  | List Object mode enabled (dSHeuristics character 3) |
 | `single_dc` | Medium |  | Single domain controller |
 | `dc_obsolete_os` | High | T1210 | Domain controller on old operating system |
 | `trust_sid_filtering_disabled` | High | T1134.005 | Trust without SID filtering |
 | `trust_tgt_delegation` | High | T1558 | TGT delegation enabled across forest trust |
 | `trust_no_selective_auth` | Low |  | Inbound trust without selective authentication |
 | `trust_rc4` | Medium | T1558 | Trust uses RC4 |
-| `trust_inactive` | Low |  | Trust that looks unused |
 | `schema_class_poss_superior` | High | T1136.002 | Schema class lets any user or computer create containers |
 | `schema_java_objects` | Low |  | Java object classes present in the schema |
+| `trust_inactive` | Low |  | Trust that looks unused |
 | `dns_insecure_updates` | High | T1557 | DNS zone allows non-secure dynamic updates |
-| `dns_zone_create_child` | Medium | T1557 | Any user can create records in a DNS zone |
 | `dns_zone_transfer_allowed` | Medium | T1590 | DNS zone transfer allowed to any server |
+| `dns_zone_create_child` | Medium | T1557 | Any user can create records in a DNS zone |
 | `dns_scavenging_disabled` | Low |  | DNS aging/scavenging disabled |
 | `dns_dangerous_record` | High | T1557 | Dangerous DNS record (wildcard / WPAD / ISATAP) |
 
@@ -812,8 +825,8 @@ particular object.
 | `replication_failures` | Medium |  | Active Directory replication failing |
 | `replication_stale` | Medium |  | Active Directory replication stale |
 | `ad_backup_overdue` | High |  | Active Directory backup overdue |
-| `dhcp_on_dc` | Medium | T1557 | DHCP server running on a domain controller |
 | `dsrm_logon_behavior` | High | T1078.003 | DSRM administrator allowed to log on |
+| `dhcp_on_dc` | Medium | T1557 | DHCP server running on a domain controller |
 
 **Permissions**
 
@@ -823,6 +836,10 @@ particular object.
 | `sync_laps_rights` | High | T1555 | Non-default principal can read confidential attributes through DirSync |
 | `dangerous_ace_tier0` | Critical | T1098 | Dangerous permission on Tier 0 object |
 | `nonstandard_owner_tier0` | High | T1098 | Non-default owner of Tier 0 object |
+| `reanimate_tombstones_right` | Medium | T1098 | Non-default principal holds Reanimate-Tombstones on the domain |
+| `dpapi_backup_key_readable` | High | T1555 | DPAPI domain backup key readable by a non-Tier 0 principal |
+| `adminsdholder_inheritance_enabled` | High | T1098 | AdminSDHolder is not protected from inheritance |
+| `ou_not_protected_from_deletion` | Low | T1485 | Organizational unit not protected from accidental deletion |
 | `gpp_cpassword` | Critical | T1552.006 | Group Policy Preferences password in SYSVOL |
 | `sysvol_writable` | Critical | T1484.001 | NETLOGON or SYSVOL Policies folder writable by non-Tier 0 principals |
 | `sysvol_script_secrets` | High | T1552.001 | Possible credential in a SYSVOL logon script |
@@ -833,7 +850,7 @@ particular object.
 | `laps_readers` | High | T1098 | Non-Tier 0 principal can read LAPS passwords |
 | `pre_win2000_anonymous` | High | T1087 | Pre-Windows 2000 Compatible Access includes Anonymous/Everyone |
 | `gmsa_password_readable` | High | T1649 | gMSA password readable by a non-Tier 0 principal |
-| `shadow_credentials_present` | High | T1556.003 | Key credential set on a privileged account (possible Shadow Credentials) |
+| `shadow_credentials_present` | High | T1556.003 | Key credential set on a privileged account or a domain controller (possible Shadow Credentials) |
 | `gpo_dangerous_acl` | High | T1484.001 | Non-privileged principal can edit a GPO linked to Tier 0 |
 | `gpo_runs_code_from_share` | Medium | T1484.001 | GPO runs a script or task from a share outside SYSVOL |
 
@@ -846,8 +863,8 @@ particular object.
 | `adcs_esc3` | High | T1649 | Enrollment Agent template enrollable by low-privileged users (ESC3) |
 | `adcs_esc4` | High | T1649 | Certificate template with a dangerous ACL (ESC4) |
 | `adcs_esc9` | High | T1649 | Template without the SID security extension (ESC9) |
-| `adcs_esc15` | High | T1649 | Schema v1 template with requester-supplied subject (ESC15 / EKUwu, CVE-2024-49019) |
 | `adcs_esc17` | High | T1557 | WSUS over HTTPS and a template that issues server certificates for any name (ESC17) |
+| `adcs_esc15` | High | T1649 | Schema v1 template with requester-supplied subject (ESC15 / EKUwu, CVE-2024-49019) |
 | `adcs_esc13` | High | T1649 | Template with an issuance policy linked to a group (ESC13) |
 | `adcs_esc5` | High | T1649 | Non-privileged principal controls an AD CS object (ESC5) |
 | `adcs_low_priv_enroll` | Medium | T1649 | Client-auth template enrollable by all users |
@@ -861,6 +878,14 @@ particular object.
 | `adcs_manual_checks` | Low | T1649 | AD CS checks not verified on the CA (ESC6/ESC7/ESC8/ESC11/ESC16) |
 | `adcs_esc10` | High | T1649 | Weak certificate binding on domain controllers (ESC10) |
 
+**Federation**
+
+| Check | Severity | MITRE | What it flags |
+|---|---|---|---|
+| `adfs_dkm_key_readable` | Critical | T1606.002 | AD FS DKM master key readable by a non-default principal |
+| `adfs_service_account_not_gmsa` | Medium | T1606.002 | AD FS service account is not a gMSA |
+| `adfs_service_account_password_old` | Medium | T1606.002 | AD FS service account password not rotated |
+
 **Host Hardening**
 
 | Check | Severity | MITRE | What it flags |
@@ -871,7 +896,9 @@ particular object.
 | `ldap_client_signing_not_required` | Medium | T1557.001 | LDAP client signing not required |
 | `winrm_basic_auth` | High | T1021.006 | WinRM allows Basic authentication or unencrypted traffic |
 | `machine_password_rotation_off` | Medium | T1558.002 | Machine account password changes disabled or too rare |
-| `machine_inactivity_limit_missing` | Low | – | No machine inactivity limit on the domain controllers |
+| `dc_refuse_password_change` | Medium | T1558 | Domain controllers refuse machine account password changes |
+| `net_session_enum_open` | Medium | T1049 | Any authenticated user can enumerate sessions on a domain controller |
+| `machine_inactivity_limit_missing` | Low |  | No machine inactivity limit on the domain controllers |
 | `lm_hash_stored` | High | T1003 | LM hash storage not disabled |
 | `ntlm_weak_lmcompat` | Medium | T1550.002 | Weak LM/NTLM compatibility level |
 | `ntlm_not_restricted` | Low | T1550.002 | NTLM neither audited nor restricted on domain controllers |
@@ -1336,10 +1363,10 @@ collections run there, and some bugs only show up there.
   fake Graph.
 - The AI layer is tested offline: no real name in the prompt, the token round
   trip, and invented check IDs being dropped.
-- Reference results: the AD `demo` gives **228 findings** (26 Critical, 82 High,
-  86 Medium, 34 Low) and 17 Tier 0 principals, and 236 with the example
-  password report. `-Deep` gives 233. `partial` gives 213. The Entra tenant
-  gives 95. In total there are **732 assertions**.
+- Reference results: the AD `demo` gives **251 findings** (28 Critical, 88 High,
+  99 Medium, 36 Low) and 17 Tier 0 principals, and 259 with the example
+  password report. `-Deep` gives 256. `partial` gives 235. The Entra tenant
+  gives 95. In total there are **865 assertions**.
 - `tests/lab/` is for a throw-away lab domain, never for production.
   `New-LabAttackPaths.ps1` plants a four-step ACL chain and a few delegation
   findings. It **writes to AD**, asks you to type the domain name first, and has
