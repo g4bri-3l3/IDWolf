@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.16 - unreleased
+
+- Tests: the README check tables are now asserted against the catalog instead of being kept in
+  step by hand. The suite reads every `| check | severity | MITRE | title |` row and fails on a
+  row that names a check which does not exist, a check the tables leave out, a check listed twice, or a
+  severity, MITRE id or title that no longer matches the catalog entry. It also checks the totals
+  the two documents advertise: the AD and Entra counts in `README.md` and the `(N AD, M Entra)`
+  line in `COVERAGE.md`. Other tools' check counts in the comparison table are theirs and are
+  deliberately not asserted. 875 assertions on PowerShell 7 and 5.1.
+- Docs: the published demo and the project page were regenerated for 1.15, which the release
+  commit did not carry. `examples\synthetic_demo.json` and `examples\synthetic_partial.json` had
+  to be regenerated as well: they predate the five collector fields 1.15 added, so the AD FS,
+  OU-protection, AdminSDHolder-inheritance, RODC-krbtgt and NetSessionEnum checks were published
+  as "not evaluated". The synthetic reference date is hardcoded, so `collectedAtUtc` and every age
+  are unchanged. The demo report now shows 259 findings with the example password report, and the
+  report GIF was rebuilt with a cap above the report's full height (26073 px at this release).
+
 ## 1.15 - 2026-11-19
 
 22 new checks, from the gap between IDWolf and *Detecting and mitigating Active Directory

@@ -1936,6 +1936,50 @@ Assert-True ((@($bmAd | Where-Object { $_.Item -eq 'V-243475' })[0]).Status -eq 
 $bmHtml = ConvertTo-BenchmarkHtml -Catalog $script:CheckCatalog -Findings $r.Findings -NotEvaluated $r.NotEvaluated -Kind 'ad'
 Assert-True ($bmHtml -match 'DISA Active Directory Domain STIG' -and $bmHtml -match 'Measured here: 18 of 36 items' -and $bmHtml -notmatch 'CIS Microsoft 365') 'benchmark HTML: the AD report carries the STIG table only'
 
+# ------------------------------------------------------------------------ docs
+# The README check tables are the catalog in another format. Hand-editing one and
+# not the other advertises a check that does not exist, or hides one that does.
+Write-Host "[docs]"
+$readmeText = [System.IO.File]::ReadAllText((Join-Path $root 'README.md'))
+$docCatalog = @{}
+foreach ($k in $script:CheckCatalog.Keys) { $docCatalog[$k] = $script:CheckCatalog[$k] }
+foreach ($k in $script:EntraCheckCatalog.Keys) { $docCatalog[$k] = $script:EntraCheckCatalog[$k] }
+# | `check_id` | Severity | MITRE | What it flags |   (MITRE is blank for a check with none)
+$docRows = [regex]::Matches($readmeText, '(?m)^\| `([a-z0-9_]+)` \| (Critical|High|Medium|Low) \|([^|]*)\|([^|]*)\|\s*$')
+$docSeen = @{}
+$docDupes = @()
+$docUnknown = @()
+$docDrift = @()
+foreach ($m in $docRows) {
+    $id = $m.Groups[1].Value
+    if ($docSeen.ContainsKey($id)) { $docDupes += $id; continue }
+    $docSeen[$id] = $true
+    if (-not $docCatalog.ContainsKey($id)) { $docUnknown += $id; continue }
+    $e = $docCatalog[$id]
+    $sev = $m.Groups[2].Value
+    $mit = $m.Groups[3].Value.Trim()
+    $ttl = $m.Groups[4].Value.Trim()
+    if ($sev -ne "$($e.Severity)") { $docDrift += "$id severity '$sev' vs catalog '$($e.Severity)'" }
+    if ($mit -ne "$($e.Mitre)".Trim()) { $docDrift += "$id MITRE '$mit' vs catalog '$($e.Mitre)'" }
+    if ($ttl -ne "$($e.Title)".Trim()) { $docDrift += "$id title '$ttl' vs catalog '$($e.Title)'" }
+}
+$docMissing = @($docCatalog.Keys | Where-Object { -not $docSeen.ContainsKey($_) } | Sort-Object)
+Assert-True ($docRows.Count -eq $docCatalog.Count) "README check tables have one row per catalog entry ($($docRows.Count) rows, $($docCatalog.Count) checks)"
+Assert-True ($docDupes.Count -eq 0) "README lists no check twice (twice: $($docDupes -join ', '))"
+Assert-True ($docUnknown.Count -eq 0) "README names no check that does not exist (unknown: $($docUnknown -join ', '))"
+Assert-True ($docMissing.Count -eq 0) "README lists every check in the catalog (missing: $($docMissing -join ', '))"
+Assert-True ($docDrift.Count -eq 0) "README rows match the catalog severity, MITRE id and title ($($docDrift -join '; '))"
+# The totals the two documents advertise. Every number below is one IDWolf claims
+# about itself; the comparison table also quotes other tools' counts, which are
+# theirs to change and are deliberately not asserted here.
+$adCount = $script:CheckCatalog.Count
+$enCount = $script:EntraCheckCatalog.Count
+$covTotals = [System.IO.File]::ReadAllText((Join-Path $root 'COVERAGE.md'))
+Assert-True ($readmeText -match "\*\*$adCount checks\*\*") "README advertises the real AD check count ($adCount)"
+Assert-True ($readmeText -match "\*\*$enCount checks\*\*") "README advertises the real Entra check count ($enCount)"
+Assert-True ($readmeText -match "\| $adCount checks \|") "README feature table advertises $adCount checks"
+Assert-True ($readmeText -match "$adCount AD \+ $enCount Entra") "README comparison table advertises $adCount AD + $enCount Entra"
+Assert-True ($covTotals -match "\($adCount AD, $enCount Entra\)") "COVERAGE.md advertises $adCount AD and $enCount Entra checks"
 # ------------------------------------------------------------ regulatory mapping
 Write-Host "[compliance]"
 $allTypes = @($script:CheckCatalog.Keys) + @($script:EntraCheckCatalog.Keys)

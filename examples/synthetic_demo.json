@@ -108,7 +108,7 @@
       "skipGpo": false,
       "skipDns": false,
       "skipHealth": false,
-      "deep": true
+      "deep": false
     },
     "collectionErrors": [],
     "synthetic": true
@@ -124,7 +124,7 @@
     "forestRootSid": "S-1-5-21-1111111111-2222222222-3333333333",
     "forestMode": "Windows2012R2Forest",
     "machineAccountQuota": 10,
-    "dsHeuristics": "0000002",
+    "dsHeuristics": "001000210100000f000230000000031",
     "smartcardPwdRotation": false,
     "recycleBinEnabled": false,
     "tombstoneLifetime": 90,
@@ -252,7 +252,8 @@
           "CN=user005,OU=Users,OU=MooseBank,DC=moosebank,DC=local",
           "CN=RODC01,OU=Domain Controllers,DC=moosebank,DC=local"
         ],
-        "managedBy": "CN=Helpdesk,CN=Users,DC=moosebank,DC=local"
+        "managedBy": "CN=Helpdesk,CN=Users,DC=moosebank,DC=local",
+        "krbtgtLink": "CN=krbtgt_12345,CN=Users,DC=moosebank,DC=local"
       }
     }
   ],
@@ -1916,6 +1917,52 @@
       "keyCredentialCount": 0,
       "hasUnixPassword": false,
       "altSecIdTypes": []
+    },
+    {
+      "kind": "user",
+      "samAccountName": "krbtgt_55555",
+      "distinguishedName": "CN=krbtgt_55555,CN=Users,DC=moosebank,DC=local",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1269",
+      "enabled": false,
+      "userAccountControl": 514,
+      "pwdLastSet": "2025-02-05T08:00:00.0000000Z",
+      "lastLogonTimestamp": null,
+      "whenCreated": "2023-06-16T08:00:00.0000000Z",
+      "servicePrincipalNames": [],
+      "adminCount": null,
+      "primaryGroupId": 513,
+      "description": "",
+      "descriptionSuspicious": false,
+      "sidHistory": [],
+      "supportedEncryptionTypes": null,
+      "allowedToDelegateTo": [],
+      "rbcdPrincipals": [],
+      "keyCredentialCount": 0,
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
+    },
+    {
+      "kind": "user",
+      "samAccountName": "svc_adfs",
+      "distinguishedName": "CN=svc_adfs,OU=ServiceAccounts,OU=MooseBank,DC=moosebank,DC=local",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1270",
+      "enabled": true,
+      "userAccountControl": 512,
+      "pwdLastSet": "2024-07-20T08:00:00.0000000Z",
+      "lastLogonTimestamp": "2026-09-27T08:00:00.0000000Z",
+      "whenCreated": "2022-11-28T08:00:00.0000000Z",
+      "servicePrincipalNames": [],
+      "adminCount": null,
+      "primaryGroupId": 513,
+      "description": "",
+      "descriptionSuspicious": false,
+      "sidHistory": [],
+      "supportedEncryptionTypes": null,
+      "allowedToDelegateTo": [],
+      "rbcdPrincipals": [],
+      "keyCredentialCount": 0,
+      "hasUnixPassword": false,
+      "altSecIdTypes": []
     }
   ],
   "serviceAccounts": [
@@ -1980,7 +2027,7 @@
       "kind": "computer",
       "samAccountName": "DC01$",
       "distinguishedName": "CN=DC01,OU=Domain Controllers,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1269",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1271",
       "enabled": true,
       "userAccountControl": 532480,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2003,6 +2050,7 @@
       "operatingSystem": "Windows Server 2022 Datacenter",
       "osVersion": "10.0 (20348)",
       "dnsHostName": "dc01.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": null
     },
@@ -2010,7 +2058,7 @@
       "kind": "computer",
       "samAccountName": "DC02$",
       "distinguishedName": "CN=DC02,OU=Domain Controllers,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1270",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1272",
       "enabled": true,
       "userAccountControl": 532480,
       "pwdLastSet": "2026-03-12T08:00:00.0000000Z",
@@ -2031,6 +2079,7 @@
       "operatingSystem": "Windows Server 2016 Standard",
       "osVersion": "10.0 (14393)",
       "dnsHostName": "dc02.moosebank.local",
+      "keyCredentialCount": 1,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": null
     },
@@ -2038,7 +2087,7 @@
       "kind": "computer",
       "samAccountName": "RODC01$",
       "distinguishedName": "CN=RODC01,OU=Domain Controllers,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1271",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1273",
       "enabled": true,
       "userAccountControl": 67112960,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2059,6 +2108,7 @@
       "operatingSystem": "Windows Server 2019 Standard",
       "osVersion": "10.0 (17763)",
       "dnsHostName": "rodc01.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": null
     },
@@ -2066,7 +2116,7 @@
       "kind": "computer",
       "samAccountName": "SRV-BACKUP01$",
       "distinguishedName": "CN=SRV-BACKUP01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1272",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1274",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2087,6 +2137,7 @@
       "operatingSystem": "Windows Server 2019 Standard",
       "osVersion": "10.0 (17763)",
       "dnsHostName": "srv-backup01.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2094,7 +2145,7 @@
       "kind": "computer",
       "samAccountName": "SRV-PRINT01$",
       "distinguishedName": "CN=SRV-PRINT01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1273",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1275",
       "enabled": true,
       "userAccountControl": 528384,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2115,6 +2166,7 @@
       "operatingSystem": "Windows Server 2019 Standard",
       "osVersion": "10.0 (17763)",
       "dnsHostName": "srv-print01.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2122,10 +2174,10 @@
       "kind": "computer",
       "samAccountName": "SRV-OLD2008$",
       "distinguishedName": "CN=SRV-OLD2008,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1274",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1276",
       "enabled": true,
       "userAccountControl": 4096,
-      "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
+      "pwdLastSet": "2025-08-24T08:00:00.0000000Z",
       "lastLogonTimestamp": "2026-09-25T08:00:00.0000000Z",
       "whenCreated": "2025-05-16T08:00:00.0000000Z",
       "servicePrincipalNames": [
@@ -2143,14 +2195,44 @@
       "operatingSystem": "Windows Server 2008 R2 Standard",
       "osVersion": "6.1 (7601)",
       "dnsHostName": "srv-old2008.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": null
     },
     {
       "kind": "computer",
+      "samAccountName": "CA01$",
+      "distinguishedName": "CN=CA01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1277",
+      "enabled": true,
+      "userAccountControl": 4096,
+      "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
+      "lastLogonTimestamp": "2026-09-25T08:00:00.0000000Z",
+      "whenCreated": "2025-05-16T08:00:00.0000000Z",
+      "servicePrincipalNames": [
+        "HOST/CA01",
+        "HOST/ca01.moosebank.local"
+      ],
+      "adminCount": null,
+      "primaryGroupId": 515,
+      "description": "",
+      "descriptionSuspicious": false,
+      "sidHistory": [],
+      "supportedEncryptionTypes": 28,
+      "allowedToDelegateTo": [],
+      "rbcdPrincipals": [],
+      "operatingSystem": "Windows Server 2022 Standard",
+      "osVersion": "10.0 (20348)",
+      "dnsHostName": "ca01.moosebank.local",
+      "keyCredentialCount": 0,
+      "lapsLegacyExpiry": null,
+      "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
+    },
+    {
+      "kind": "computer",
       "samAccountName": "WKS-W7-01$",
       "distinguishedName": "CN=WKS-W7-01,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1275",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1278",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2171,6 +2253,7 @@
       "operatingSystem": "Windows 7 Professional",
       "osVersion": "6.1 (7601)",
       "dnsHostName": "wks-w7-01.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": null
     },
@@ -2178,7 +2261,7 @@
       "kind": "computer",
       "samAccountName": "SRV-APP01$",
       "distinguishedName": "CN=SRV-APP01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1276",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1279",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2201,6 +2284,7 @@
       "operatingSystem": "Windows Server 2022 Standard",
       "osVersion": "10.0 (20348)",
       "dnsHostName": "srv-app01.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2208,7 +2292,7 @@
       "kind": "computer",
       "samAccountName": "SRV-WEB01$",
       "distinguishedName": "CN=SRV-WEB01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1277",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1280",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2216,7 +2300,8 @@
       "whenCreated": "2025-05-16T08:00:00.0000000Z",
       "servicePrincipalNames": [
         "HOST/SRV-WEB01",
-        "HOST/srv-web01.moosebank.local"
+        "HOST/srv-web01.moosebank.local",
+        "HTTP/app01.moosebank.local"
       ],
       "adminCount": null,
       "primaryGroupId": 515,
@@ -2229,6 +2314,7 @@
       "operatingSystem": "Windows Server 2022 Standard",
       "osVersion": "10.0 (20348)",
       "dnsHostName": "srv-web01.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2236,7 +2322,7 @@
       "kind": "computer",
       "samAccountName": "EVILPC$",
       "distinguishedName": "CN=EVILPC,CN=Computers,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1278",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1281",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2257,6 +2343,7 @@
       "operatingSystem": "Windows 10 Pro",
       "osVersion": "10.0 (19045)",
       "dnsHostName": "evilpc.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": null
     },
@@ -2264,7 +2351,7 @@
       "kind": "computer",
       "samAccountName": "SRV-SQL01$",
       "distinguishedName": "CN=SRV-SQL01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1279",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1282",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2288,6 +2375,7 @@
       "operatingSystem": "Windows Server 2022 Standard",
       "osVersion": "10.0 (20348)",
       "dnsHostName": "srv-sql01.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2295,7 +2383,7 @@
       "kind": "computer",
       "samAccountName": "LINUX01$",
       "distinguishedName": "CN=LINUX01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1280",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1283",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2316,6 +2404,7 @@
       "operatingSystem": "Ubuntu 24.04",
       "osVersion": "",
       "dnsHostName": "linux01.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": null
     },
@@ -2323,7 +2412,7 @@
       "kind": "computer",
       "samAccountName": "PRESTAGE01$",
       "distinguishedName": "CN=PRESTAGE01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1281",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1284",
       "enabled": true,
       "userAccountControl": 4128,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2344,6 +2433,7 @@
       "operatingSystem": "Windows Server 2022 Standard",
       "osVersion": "10.0 (20348)",
       "dnsHostName": "prestage01.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2351,7 +2441,7 @@
       "kind": "computer",
       "samAccountName": "KIOSK-PRE01$",
       "distinguishedName": "CN=KIOSK-PRE01,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1282",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1285",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-07-30T08:00:00.0000000Z",
@@ -2372,6 +2462,7 @@
       "operatingSystem": "",
       "osVersion": "",
       "dnsHostName": "kiosk-pre01.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": null
     },
@@ -2379,7 +2470,7 @@
       "kind": "computer",
       "samAccountName": "AZUREADSSOACC$",
       "distinguishedName": "CN=AZUREADSSOACC,CN=Computers,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1283",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1286",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2025-08-24T08:00:00.0000000Z",
@@ -2400,6 +2491,7 @@
       "operatingSystem": "",
       "osVersion": "",
       "dnsHostName": "azureadssoacc.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": null
     },
@@ -2407,7 +2499,7 @@
       "kind": "computer",
       "samAccountName": "WKS-001$",
       "distinguishedName": "CN=WKS-001,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1284",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1287",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2428,6 +2520,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-001.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2435,7 +2528,7 @@
       "kind": "computer",
       "samAccountName": "WKS-002$",
       "distinguishedName": "CN=WKS-002,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1285",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1288",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2456,6 +2549,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-002.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2463,7 +2557,7 @@
       "kind": "computer",
       "samAccountName": "WKS-003$",
       "distinguishedName": "CN=WKS-003,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1286",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1289",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2484,6 +2578,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-003.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2491,7 +2586,7 @@
       "kind": "computer",
       "samAccountName": "WKS-004$",
       "distinguishedName": "CN=WKS-004,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1287",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1290",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2512,6 +2607,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-004.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2519,7 +2615,7 @@
       "kind": "computer",
       "samAccountName": "WKS-005$",
       "distinguishedName": "CN=WKS-005,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1288",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1291",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2540,6 +2636,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-005.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2547,7 +2644,7 @@
       "kind": "computer",
       "samAccountName": "WKS-006$",
       "distinguishedName": "CN=WKS-006,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1289",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1292",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2568,6 +2665,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-006.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2575,7 +2673,7 @@
       "kind": "computer",
       "samAccountName": "WKS-007$",
       "distinguishedName": "CN=WKS-007,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1290",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1293",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2596,6 +2694,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-007.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2603,7 +2702,7 @@
       "kind": "computer",
       "samAccountName": "WKS-008$",
       "distinguishedName": "CN=WKS-008,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1291",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1294",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2624,6 +2723,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-008.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2631,7 +2731,7 @@
       "kind": "computer",
       "samAccountName": "WKS-009$",
       "distinguishedName": "CN=WKS-009,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1292",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1295",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2652,6 +2752,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-009.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2659,7 +2760,7 @@
       "kind": "computer",
       "samAccountName": "WKS-010$",
       "distinguishedName": "CN=WKS-010,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1293",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1296",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2680,6 +2781,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-010.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2687,7 +2789,7 @@
       "kind": "computer",
       "samAccountName": "WKS-011$",
       "distinguishedName": "CN=WKS-011,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1294",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1297",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2708,6 +2810,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-011.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2715,7 +2818,7 @@
       "kind": "computer",
       "samAccountName": "WKS-012$",
       "distinguishedName": "CN=WKS-012,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1295",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1298",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2736,6 +2839,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-012.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2743,7 +2847,7 @@
       "kind": "computer",
       "samAccountName": "WKS-013$",
       "distinguishedName": "CN=WKS-013,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1296",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1299",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2764,6 +2868,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-013.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2771,7 +2876,7 @@
       "kind": "computer",
       "samAccountName": "WKS-014$",
       "distinguishedName": "CN=WKS-014,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1297",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1300",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2792,6 +2897,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-014.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2799,7 +2905,7 @@
       "kind": "computer",
       "samAccountName": "WKS-015$",
       "distinguishedName": "CN=WKS-015,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1298",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1301",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2820,6 +2926,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-015.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-06-20T08:00:00.0000000Z"
     },
@@ -2827,7 +2934,7 @@
       "kind": "computer",
       "samAccountName": "WKS-016$",
       "distinguishedName": "CN=WKS-016,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1299",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1302",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2848,6 +2955,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-016.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": null
     },
@@ -2855,7 +2963,7 @@
       "kind": "computer",
       "samAccountName": "WKS-017$",
       "distinguishedName": "CN=WKS-017,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1300",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1303",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2876,6 +2984,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-017.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2883,7 +2992,7 @@
       "kind": "computer",
       "samAccountName": "WKS-018$",
       "distinguishedName": "CN=WKS-018,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1301",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1304",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2904,6 +3013,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-018.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2911,7 +3021,7 @@
       "kind": "computer",
       "samAccountName": "WKS-019$",
       "distinguishedName": "CN=WKS-019,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1302",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1305",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2932,6 +3042,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-019.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     },
@@ -2939,7 +3050,7 @@
       "kind": "computer",
       "samAccountName": "WKS-020$",
       "distinguishedName": "CN=WKS-020,OU=Workstations,OU=MooseBank,DC=moosebank,DC=local",
-      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1303",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-1306",
       "enabled": true,
       "userAccountControl": 4096,
       "pwdLastSet": "2026-09-18T08:00:00.0000000Z",
@@ -2960,6 +3071,7 @@
       "operatingSystem": "Windows 11 Enterprise",
       "osVersion": "10.0 (22631)",
       "dnsHostName": "wks-020.moosebank.local",
+      "keyCredentialCount": 0,
       "lapsLegacyExpiry": null,
       "lapsV2Expiry": "2026-10-18T08:00:00.0000000Z"
     }
@@ -3163,7 +3275,9 @@
       "groupScope": "Global",
       "groupCategory": "Security",
       "adminCount": null,
-      "members": []
+      "members": [
+        "CN=adm.gialli,OU=Admins,OU=Tier0,DC=moosebank,DC=local"
+      ]
     },
     {
       "name": "Enterprise Key Admins",
@@ -3174,6 +3288,20 @@
       "groupCategory": "Security",
       "adminCount": null,
       "members": []
+    },
+    {
+      "name": "Cert Publishers",
+      "samAccountName": "Cert Publishers",
+      "distinguishedName": "CN=Cert Publishers,CN=Users,DC=moosebank,DC=local",
+      "sid": "S-1-5-21-1111111111-2222222222-3333333333-517",
+      "groupScope": "DomainLocal",
+      "groupCategory": "Security",
+      "adminCount": null,
+      "members": [
+        "CN=CA01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
+        "CN=user001,OU=Users,OU=MooseBank,DC=moosebank,DC=local",
+        "CN=SRV-WEB01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local"
+      ]
     },
     {
       "name": "Protected Users",
@@ -3328,6 +3456,7 @@
       "distinguishedName": "DC=moosebank,DC=local",
       "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
       "ownerName": "MOOSEBANK\\Domain Admins",
+      "inheritanceProtected": true,
       "aces": [
         {
           "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
@@ -3520,6 +3649,16 @@
           "isInherited": false
         },
         {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1103",
+          "name": "MOOSEBANK\\Helpdesk",
+          "rights": "ExtendedRight",
+          "accessType": "Allow",
+          "objectType": "45ec5156-db7e-47bb-b53f-dbeb2d03c40f",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "None",
+          "isInherited": false
+        },
+        {
           "sid": "S-1-5-11",
           "name": "NT AUTHORITY\\Authenticated Users",
           "rights": "WriteProperty",
@@ -3536,6 +3675,7 @@
       "distinguishedName": "CN=AdminSDHolder,CN=System,DC=moosebank,DC=local",
       "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
       "ownerName": "MOOSEBANK\\Domain Admins",
+      "inheritanceProtected": false,
       "aces": [
         {
           "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
@@ -3616,6 +3756,16 @@
           "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
           "inheritanceType": "None",
           "isInherited": false
+        },
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1103",
+          "name": "MOOSEBANK\\Helpdesk",
+          "rights": "ReadProperty",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "All",
+          "isInherited": true
         }
       ]
     },
@@ -3624,6 +3774,7 @@
       "distinguishedName": "OU=Domain Controllers,DC=moosebank,DC=local",
       "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
       "ownerName": "MOOSEBANK\\Domain Admins",
+      "inheritanceProtected": true,
       "aces": [
         {
           "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
@@ -3708,10 +3859,41 @@
       ]
     },
     {
+      "target": "DpapiBackupKey",
+      "distinguishedName": "CN=BCKUPKEY_PREFERRED Secret,CN=System,DC=moosebank,DC=local",
+      "objectClass": "secret",
+      "ownerSid": "S-1-5-18",
+      "ownerName": "NT AUTHORITY\\SYSTEM",
+      "inheritanceProtected": true,
+      "aces": [
+        {
+          "sid": "S-1-5-18",
+          "name": "NT AUTHORITY\\SYSTEM",
+          "rights": "GenericAll",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "None",
+          "isInherited": false
+        },
+        {
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1103",
+          "name": "MOOSEBANK\\Helpdesk",
+          "rights": "ReadProperty",
+          "accessType": "Allow",
+          "objectType": "00000000-0000-0000-0000-000000000000",
+          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+          "inheritanceType": "None",
+          "isInherited": false
+        }
+      ]
+    },
+    {
       "target": "Group:Domain Admins",
       "distinguishedName": "CN=Domain Admins,CN=Users,DC=moosebank,DC=local",
       "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-1205",
       "ownerName": "MOOSEBANK\\adm.old",
+      "inheritanceProtected": true,
       "aces": [
         {
           "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
@@ -3790,6 +3972,7 @@
       "distinguishedName": "CN=Schema Admins,CN=Users,DC=moosebank,DC=local",
       "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
       "ownerName": "MOOSEBANK\\Domain Admins",
+      "inheritanceProtected": true,
       "aces": [
         {
           "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
@@ -3868,6 +4051,7 @@
       "distinguishedName": "CN=Enterprise Admins,CN=Users,DC=moosebank,DC=local",
       "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
       "ownerName": "MOOSEBANK\\Domain Admins",
+      "inheritanceProtected": true,
       "aces": [
         {
           "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
@@ -3946,6 +4130,7 @@
       "distinguishedName": "CN=Administrators,CN=Builtin,DC=moosebank,DC=local",
       "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
       "ownerName": "MOOSEBANK\\Domain Admins",
+      "inheritanceProtected": true,
       "aces": [
         {
           "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
@@ -4024,6 +4209,7 @@
       "distinguishedName": "CN=Group Policy Creator Owners,CN=Users,DC=moosebank,DC=local",
       "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
       "ownerName": "MOOSEBANK\\Domain Admins",
+      "inheritanceProtected": true,
       "aces": [
         {
           "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
@@ -4115,6 +4301,7 @@
       "objectClass": "organizationalUnit",
       "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
       "ownerName": "MOOSEBANK\\Domain Admins",
+      "protectedFromDeletion": true,
       "aces": [
         {
           "sid": "S-1-5-21-1111111111-2222222222-3333333333-1103",
@@ -4154,6 +4341,7 @@
       "objectClass": "organizationalUnit",
       "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
       "ownerName": "MOOSEBANK\\Domain Admins",
+      "protectedFromDeletion": true,
       "aces": [
         {
           "sid": "S-1-5-21-1111111111-2222222222-3333333333-1106",
@@ -4173,6 +4361,16 @@
       "objectClass": "organizationalUnit",
       "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-1106",
       "ownerName": "MOOSEBANK\\IT-Ops",
+      "protectedFromDeletion": false,
+      "aces": []
+    },
+    {
+      "target": "ou:OU=Staging,DC=moosebank,DC=local",
+      "distinguishedName": "OU=Staging,DC=moosebank,DC=local",
+      "objectClass": "organizationalUnit",
+      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+      "ownerName": "MOOSEBANK\\Domain Admins",
+      "protectedFromDeletion": false,
       "aces": []
     },
     {
@@ -4181,6 +4379,7 @@
       "objectClass": "container",
       "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
       "ownerName": "MOOSEBANK\\Domain Admins",
+      "protectedFromDeletion": true,
       "aces": []
     }
   ],
@@ -4194,7 +4393,7 @@
       "ownerName": "MOOSEBANK\\Domain Admins",
       "aces": [
         {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1276",
+          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1279",
           "name": "MOOSEBANK\\SRV-APP01$",
           "rights": "GenericAll",
           "accessType": "Allow",
@@ -4232,563 +4431,100 @@
       }
     ]
   },
-  "deepAcls": [
-    {
-      "target": "obj:CN=adm.bianchi,OU=Admins,OU=Tier0,DC=moosebank,DC=local",
-      "distinguishedName": "CN=adm.bianchi,OU=Admins,OU=Tier0,DC=moosebank,DC=local",
-      "objectClass": "user",
-      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
-      "ownerName": "MOOSEBANK\\Domain Admins",
-      "aces": [
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
-          "name": "MOOSEBANK\\Domain Admins",
-          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, GenericRead, WriteDacl, WriteOwner",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
+  "adfs": {
+    "present": true,
+    "farms": [
+      {
+        "name": "adfs",
+        "distinguishedName": "CN=adfs,CN=Microsoft,CN=Program Data,DC=moosebank,DC=local",
+        "keyCount": 1,
+        "acl": {
+          "target": "adfs:adfs",
+          "distinguishedName": "CN=adfs,CN=Microsoft,CN=Program Data,DC=moosebank,DC=local",
+          "objectClass": "container",
+          "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+          "ownerName": "MOOSEBANK\\Domain Admins",
+          "inheritanceProtected": false,
+          "aces": [
+            {
+              "sid": "S-1-5-18",
+              "name": "NT AUTHORITY\\SYSTEM",
+              "rights": "GenericAll",
+              "accessType": "Allow",
+              "objectType": "00000000-0000-0000-0000-000000000000",
+              "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+              "inheritanceType": "All",
+              "isInherited": false
+            },
+            {
+              "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+              "name": "MOOSEBANK\\Domain Admins",
+              "rights": "GenericAll",
+              "accessType": "Allow",
+              "objectType": "00000000-0000-0000-0000-000000000000",
+              "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+              "inheritanceType": "All",
+              "isInherited": false
+            },
+            {
+              "sid": "S-1-5-21-1111111111-2222222222-3333333333-1270",
+              "name": "MOOSEBANK\\svc_adfs",
+              "rights": "GenericRead",
+              "accessType": "Allow",
+              "objectType": "00000000-0000-0000-0000-000000000000",
+              "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+              "inheritanceType": "All",
+              "isInherited": false
+            }
+          ]
         },
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-519",
-          "name": "MOOSEBANK\\Enterprise Admins",
-          "rights": "GenericAll",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-32-544",
-          "name": "BUILTIN\\Administrators",
-          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, Delete, GenericRead, WriteDacl, WriteOwner",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-18",
-          "name": "NT AUTHORITY\\SYSTEM",
-          "rights": "GenericAll",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-11",
-          "name": "NT AUTHORITY\\Authenticated Users",
-          "rights": "GenericRead",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-10",
-          "name": "NT AUTHORITY\\SELF",
-          "rights": "WriteProperty",
-          "accessType": "Allow",
-          "objectType": "5b47d60f-6090-40b2-9f37-2a4de88f3063",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-1-0",
-          "name": "Everyone",
-          "rights": "ExtendedRight",
-          "accessType": "Allow",
-          "objectType": "ab721a53-1e2f-11d0-9819-00aa0040529b",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1103",
-          "name": "MOOSEBANK\\Helpdesk",
-          "rights": "GenericAll",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "None",
-          "isInherited": false
-        }
-      ]
-    },
-    {
-      "target": "obj:OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "distinguishedName": "OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "objectClass": "organizationalUnit",
-      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
-      "ownerName": "MOOSEBANK\\Domain Admins",
-      "aces": [
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
-          "name": "MOOSEBANK\\Domain Admins",
-          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, GenericRead, WriteDacl, WriteOwner",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-519",
-          "name": "MOOSEBANK\\Enterprise Admins",
-          "rights": "GenericAll",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-32-544",
-          "name": "BUILTIN\\Administrators",
-          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, Delete, GenericRead, WriteDacl, WriteOwner",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-18",
-          "name": "NT AUTHORITY\\SYSTEM",
-          "rights": "GenericAll",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-11",
-          "name": "NT AUTHORITY\\Authenticated Users",
-          "rights": "GenericRead",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-10",
-          "name": "NT AUTHORITY\\SELF",
-          "rights": "WriteProperty",
-          "accessType": "Allow",
-          "objectType": "5b47d60f-6090-40b2-9f37-2a4de88f3063",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-1-0",
-          "name": "Everyone",
-          "rights": "ExtendedRight",
-          "accessType": "Allow",
-          "objectType": "ab721a53-1e2f-11d0-9819-00aa0040529b",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-11",
-          "name": "NT AUTHORITY\\Authenticated Users",
-          "rights": "WriteDacl",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "None",
-          "isInherited": false
-        }
-      ]
-    },
-    {
-      "target": "obj:CN=user001,OU=Users,OU=MooseBank,DC=moosebank,DC=local",
-      "distinguishedName": "CN=user001,OU=Users,OU=MooseBank,DC=moosebank,DC=local",
-      "objectClass": "user",
-      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
-      "ownerName": "MOOSEBANK\\Domain Admins",
-      "aces": [
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
-          "name": "MOOSEBANK\\Domain Admins",
-          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, GenericRead, WriteDacl, WriteOwner",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-519",
-          "name": "MOOSEBANK\\Enterprise Admins",
-          "rights": "GenericAll",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-32-544",
-          "name": "BUILTIN\\Administrators",
-          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, Delete, GenericRead, WriteDacl, WriteOwner",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-18",
-          "name": "NT AUTHORITY\\SYSTEM",
-          "rights": "GenericAll",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-11",
-          "name": "NT AUTHORITY\\Authenticated Users",
-          "rights": "GenericRead",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-10",
-          "name": "NT AUTHORITY\\SELF",
-          "rights": "WriteProperty",
-          "accessType": "Allow",
-          "objectType": "5b47d60f-6090-40b2-9f37-2a4de88f3063",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-1-0",
-          "name": "Everyone",
-          "rights": "ExtendedRight",
-          "accessType": "Allow",
-          "objectType": "ab721a53-1e2f-11d0-9819-00aa0040529b",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        }
-      ]
-    },
-    {
-      "target": "obj:CN=SRV-WEB01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "distinguishedName": "CN=SRV-WEB01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "objectClass": "computer",
-      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
-      "ownerName": "MOOSEBANK\\Domain Admins",
-      "aces": [
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
-          "name": "MOOSEBANK\\Domain Admins",
-          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, GenericRead, WriteDacl, WriteOwner",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-519",
-          "name": "MOOSEBANK\\Enterprise Admins",
-          "rights": "GenericAll",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-32-544",
-          "name": "BUILTIN\\Administrators",
-          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, Delete, GenericRead, WriteDacl, WriteOwner",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-18",
-          "name": "NT AUTHORITY\\SYSTEM",
-          "rights": "GenericAll",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-11",
-          "name": "NT AUTHORITY\\Authenticated Users",
-          "rights": "GenericRead",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-10",
-          "name": "NT AUTHORITY\\SELF",
-          "rights": "WriteProperty",
-          "accessType": "Allow",
-          "objectType": "5b47d60f-6090-40b2-9f37-2a4de88f3063",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-1-0",
-          "name": "Everyone",
-          "rights": "ExtendedRight",
-          "accessType": "Allow",
-          "objectType": "ab721a53-1e2f-11d0-9819-00aa0040529b",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1103",
-          "name": "MOOSEBANK\\Helpdesk",
-          "rights": "ReadProperty",
-          "accessType": "Allow",
-          "objectType": "ea2b1b3a-0000-4b1a-9c0d-000000000001",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "None",
-          "isInherited": false
-        }
-      ]
-    },
-    {
-      "target": "obj:CN=SRV-APP01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "distinguishedName": "CN=SRV-APP01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "objectClass": "computer",
-      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
-      "ownerName": "MOOSEBANK\\Domain Admins",
-      "aces": [
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
-          "name": "MOOSEBANK\\Domain Admins",
-          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, GenericRead, WriteDacl, WriteOwner",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-519",
-          "name": "MOOSEBANK\\Enterprise Admins",
-          "rights": "GenericAll",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-32-544",
-          "name": "BUILTIN\\Administrators",
-          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, Delete, GenericRead, WriteDacl, WriteOwner",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-18",
-          "name": "NT AUTHORITY\\SYSTEM",
-          "rights": "GenericAll",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-11",
-          "name": "NT AUTHORITY\\Authenticated Users",
-          "rights": "GenericRead",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-10",
-          "name": "NT AUTHORITY\\SELF",
-          "rights": "WriteProperty",
-          "accessType": "Allow",
-          "objectType": "5b47d60f-6090-40b2-9f37-2a4de88f3063",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-1-0",
-          "name": "Everyone",
-          "rights": "ExtendedRight",
-          "accessType": "Allow",
-          "objectType": "ab721a53-1e2f-11d0-9819-00aa0040529b",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
-          "name": "MOOSEBANK\\Domain Admins",
-          "rights": "ReadProperty",
-          "accessType": "Allow",
-          "objectType": "ea2b1b3a-0000-4b1a-9c0d-000000000001",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "None",
-          "isInherited": false
-        }
-      ]
-    },
-    {
-      "target": "obj:CN=SRV-SQL01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "distinguishedName": "CN=SRV-SQL01,OU=Servers,OU=MooseBank,DC=moosebank,DC=local",
-      "objectClass": "computer",
-      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
-      "ownerName": "MOOSEBANK\\Domain Admins",
-      "aces": [
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
-          "name": "MOOSEBANK\\Domain Admins",
-          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, GenericRead, WriteDacl, WriteOwner",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-519",
-          "name": "MOOSEBANK\\Enterprise Admins",
-          "rights": "GenericAll",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-32-544",
-          "name": "BUILTIN\\Administrators",
-          "rights": "CreateChild, Self, WriteProperty, ExtendedRight, Delete, GenericRead, WriteDacl, WriteOwner",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-18",
-          "name": "NT AUTHORITY\\SYSTEM",
-          "rights": "GenericAll",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-11",
-          "name": "NT AUTHORITY\\Authenticated Users",
-          "rights": "GenericRead",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-10",
-          "name": "NT AUTHORITY\\SELF",
-          "rights": "WriteProperty",
-          "accessType": "Allow",
-          "objectType": "5b47d60f-6090-40b2-9f37-2a4de88f3063",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-1-0",
-          "name": "Everyone",
-          "rights": "ExtendedRight",
-          "accessType": "Allow",
-          "objectType": "ab721a53-1e2f-11d0-9819-00aa0040529b",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "All",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1106",
-          "name": "MOOSEBANK\\IT-Ops",
-          "rights": "WriteProperty",
-          "accessType": "Allow",
-          "objectType": "4c164200-20c0-11d0-a768-00aa003049e2",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "None",
-          "isInherited": false
-        }
-      ]
-    }
-  ],
-  "kdsRootKeyAcls": [
-    {
-      "target": "kds:3f1c8e2a-5d4b-4c1e-9a7f-2b6d0e8c4a11",
-      "distinguishedName": "CN=3f1c8e2a-5d4b-4c1e-9a7f-2b6d0e8c4a11,CN=Master Root Keys,CN=Group Key Distribution Service,CN=Services,CN=Configuration,DC=moosebank,DC=local",
-      "objectClass": "msKds-ProvRootKey",
-      "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
-      "ownerName": "MOOSEBANK\\Domain Admins",
-      "aces": [
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-512",
-          "name": "MOOSEBANK\\Domain Admins",
-          "rights": "GenericAll",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "None",
-          "isInherited": false
-        },
-        {
-          "sid": "S-1-5-21-1111111111-2222222222-3333333333-1103",
-          "name": "MOOSEBANK\\Helpdesk",
-          "rights": "GenericRead",
-          "accessType": "Allow",
-          "objectType": "00000000-0000-0000-0000-000000000000",
-          "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
-          "inheritanceType": "None",
-          "isInherited": false
-        }
-      ]
-    }
-  ],
+        "keyAcls": [
+          {
+            "target": "adfsKey:d9b1a2e4-7c3f-4a85-9f0b-11c2b3d4e5f6",
+            "distinguishedName": "CN=d9b1a2e4-7c3f-4a85-9f0b-11c2b3d4e5f6,CN=adfs,CN=Microsoft,CN=Program Data,DC=moosebank,DC=local",
+            "objectClass": "contact",
+            "ownerSid": "S-1-5-21-1111111111-2222222222-3333333333-512",
+            "ownerName": "MOOSEBANK\\Domain Admins",
+            "inheritanceProtected": false,
+            "aces": [
+              {
+                "sid": "S-1-5-18",
+                "name": "NT AUTHORITY\\SYSTEM",
+                "rights": "GenericAll",
+                "accessType": "Allow",
+                "objectType": "00000000-0000-0000-0000-000000000000",
+                "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+                "inheritanceType": "None",
+                "isInherited": false
+              },
+              {
+                "sid": "S-1-5-21-1111111111-2222222222-3333333333-1270",
+                "name": "MOOSEBANK\\svc_adfs",
+                "rights": "GenericRead",
+                "accessType": "Allow",
+                "objectType": "00000000-0000-0000-0000-000000000000",
+                "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+                "inheritanceType": "None",
+                "isInherited": false
+              },
+              {
+                "sid": "S-1-5-11",
+                "name": "NT AUTHORITY\\Authenticated Users",
+                "rights": "ReadProperty",
+                "accessType": "Allow",
+                "objectType": "00000000-0000-0000-0000-000000000000",
+                "inheritedObjectType": "00000000-0000-0000-0000-000000000000",
+                "inheritanceType": "None",
+                "isInherited": false
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "deepAcls": [],
+  "kdsRootKeyAcls": [],
   "preWin2000": {
     "name": "Pre-Windows 2000 Compatible Access",
     "distinguishedName": "CN=Pre-Windows 2000 Compatible Access,CN=Builtin,DC=moosebank,DC=local",
@@ -5583,6 +5319,7 @@
           "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RequireStrongKey": "4,0",
           "MACHINE\\Software\\Policies\\Microsoft\\Windows\\WinRM\\Service\\AllowBasic": "4,1",
           "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\DisablePasswordChange": "4,1",
+          "MACHINE\\System\\CurrentControlSet\\Services\\Netlogon\\Parameters\\RefusePasswordChange": "4,1",
           "MACHINE\\System\\CurrentControlSet\\Services\\LDAP\\LDAPClientIntegrity": "4,0",
           "MACHINE\\System\\CurrentControlSet\\Control\\Lsa\\EveryoneIncludesAnonymous": "4,1",
           "MACHINE\\System\\CurrentControlSet\\Services\\LanManServer\\Parameters\\NullSessionShares": "7,COMCFG,DFS$",
@@ -5953,6 +5690,26 @@
           "MS-EVEN"
         ],
         "dsrmAdminLogonBehavior": 0,
+        "netSessionAces": [
+          {
+            "sid": "S-1-5-32-544",
+            "name": "BUILTIN\\Administrators",
+            "aceType": "AccessAllowed",
+            "accessMask": 983103
+          },
+          {
+            "sid": "S-1-5-32-549",
+            "name": "BUILTIN\\Server Operators",
+            "aceType": "AccessAllowed",
+            "accessMask": 983103
+          },
+          {
+            "sid": "S-1-5-11",
+            "name": "NT AUTHORITY\\Authenticated Users",
+            "aceType": "AccessAllowed",
+            "accessMask": 1
+          }
+        ],
         "error": ""
       },
       {
@@ -5984,6 +5741,20 @@
         },
         "rpcFilterInterfaces": [],
         "dsrmAdminLogonBehavior": 2,
+        "netSessionAces": [
+          {
+            "sid": "S-1-5-32-544",
+            "name": "BUILTIN\\Administrators",
+            "aceType": "AccessAllowed",
+            "accessMask": 983103
+          },
+          {
+            "sid": "S-1-5-32-549",
+            "name": "BUILTIN\\Server Operators",
+            "aceType": "AccessAllowed",
+            "accessMask": 983103
+          }
+        ],
         "error": ""
       },
       {

@@ -1366,7 +1366,7 @@ collections run there, and some bugs only show up there.
 - Reference results: the AD `demo` gives **251 findings** (28 Critical, 88 High,
   99 Medium, 36 Low) and 17 Tier 0 principals, and 259 with the example
   password report. `-Deep` gives 256. `partial` gives 235. The Entra tenant
-  gives 95. In total there are **865 assertions**.
+  gives 95. In total there are **875 assertions**.
 - `tests/lab/` is for a throw-away lab domain, never for production.
   `New-LabAttackPaths.ps1` plants a four-step ACL chain and a few delegation
   findings. It **writes to AD**, asks you to type the domain name first, and has

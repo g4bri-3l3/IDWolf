@@ -6,7 +6,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>IDWolf - Active Directory and Entra ID hygiene auditor</title>
-<meta name="description" content="IDWolf takes one read-only snapshot of Active Directory or Microsoft Entra ID and judges it offline: 186 AD checks, 92 Entra checks, an attack-path map to Tier 0, and a report that says what could not be judged at all.">
+<meta name="description" content="IDWolf takes one read-only snapshot of Active Directory or Microsoft Entra ID and judges it offline: 208 AD checks, 92 Entra checks, an attack-path map to Tier 0, and a report that says what could not be judged at all.">
 <style>
   :root {
     --paper: #F3EFE6; --surface: #FFFDF8; --tint: #E8E2D4; --ink: #161513; --muted: #5F5A51;
@@ -95,7 +95,7 @@
   ________|   _/_  | |
 &lt;__________\______)\__)</pre>
   <div>
-    <span class="pill">v1.14 &middot; MIT &middot; PowerShell 5.1 and 7</span>
+    <span class="pill">v1.15 &middot; MIT &middot; PowerShell 5.1 and 7</span>
     <h1>IDWolf</h1>
     <p class="lede">A hygiene audit for Active Directory and Microsoft Entra ID. One read-only
     collection with the native modules, the analysis runs anywhere else, offline, and the report
@@ -103,16 +103,16 @@
     <div class="btns">
       <a class="btn primary" href="demo/demo_report.html">Open the live report</a>
       <a class="btn" href="https://github.com/g4bri-3l3/IDWolf">Code on GitHub</a>
-      <a class="btn" href="https://github.com/g4bri-3l3/IDWolf/archive/refs/tags/v1.14.zip">Download v1.14</a>
+      <a class="btn" href="https://github.com/g4bri-3l3/IDWolf/archive/refs/tags/v1.15.zip">Download v1.15</a>
     </div>
   </div>
 </header>
 
 <section>
   <div class="nums">
-    <div class="num"><b>186</b><span>Active Directory checks</span></div>
+    <div class="num"><b>208</b><span>Active Directory checks</span></div>
     <div class="num"><b>92</b><span>Entra ID checks</span></div>
-    <div class="num"><b>53</b><span>MITRE techniques</span></div>
+    <div class="num"><b>56</b><span>MITRE techniques</span></div>
     <div class="num"><b>43</b><span>attacks seen in the wild</span></div>
     <div class="num"><b>4</b><span>compliance frameworks</span></div>
     <div class="num"><b>0</b><span>network calls in the analysis</span></div>
@@ -154,7 +154,7 @@
       <div class="step">2 &middot; Analyse</div>
       <h3>Anywhere, offline</h3>
       <p>The snapshot is judged on your own machine, with no AD or Graph module in sight:
-      186 AD checks across 9 categories - Kerberos, privileged access, account
+      208 AD checks across 10 categories - Kerberos, privileged access, account
       hygiene, domain configuration, permissions, AD CS (ESC1-15), DNS, host hardening read from the
       GPOs, operational health - plus 92 Entra checks. Password quality comes from a
       separate hashless export, so no password hash is ever handled.</p>
@@ -210,7 +210,7 @@
       <ul class="plain">
         <li><b>NIS2, ISO 27001, DORA, GDPR</b>: every check maps to controls in all 4
         frameworks, by theme rather than by hand, so the mapping cannot fall behind the catalog.</li>
-        <li><b>MITRE ATT&amp;CK</b>: 53 techniques, cited by the checks that look for them.</li>
+        <li><b>MITRE ATT&amp;CK</b>: 56 techniques, cited by the checks that look for them.</li>
         <li><b>CIS Microsoft 365</b>: the Entra checks follow the benchmark's own wording.</li>
         <li><b>Attacks seen in the wild</b>: 43 of them, named on the finding that enables
         them rather than as a generic threat list.</li>
@@ -294,7 +294,7 @@
 </div>
 <footer>
   <div class="wrap meta">
-    IDWolf v1.14 &middot; MIT licence &middot; built from the repository, with no tracking and
+    IDWolf v1.15 &middot; MIT licence &middot; built from the repository, with no tracking and
     no third-party asset on this page. The demo report is synthetic data: no real directory appears
     in it.
   </div>
