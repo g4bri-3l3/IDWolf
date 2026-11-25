@@ -2272,6 +2272,32 @@ foreach ($vf in 'Collect-ADSnapshot.ps1', 'Collect-EntraSnapshot.ps1') {
     Assert-True ($vt -match "\`$script:CollectorVersion = 'unknown'" -and $vt -match '\$script:IDWolfVersion\\s\*=\\s\*"\(\[\^"\]\+\)"') "version: $vf reads the number from IDWolf.ps1, with 'unknown' as the fallback"
 }
 
+# ------------------------------------------------------------ module manifest (PowerShell Gallery)
+Write-Host "[module manifest]"
+$psd1 = Import-PowerShellDataFile -LiteralPath (Join-Path $root 'IDWolf.psd1')
+Assert-True ([string]$psd1.ModuleVersion -eq $toolVer) "manifest: ModuleVersion matches IDWolf.ps1 (psd1 '$($psd1.ModuleVersion)', script '$toolVer')"
+Assert-True ($psd1.RootModule -eq 'IDWolf.psm1' -and [string]$psd1.PowerShellVersion -eq '5.1') 'manifest: IDWolf.psm1 is the root module and 5.1 is the floor'
+Assert-True (@($psd1.CmdletsToExport).Count -eq 0 -and @($psd1.VariablesToExport).Count -eq 0 -and @($psd1.AliasesToExport).Count -eq 0) 'manifest: exports nothing but functions, never a wildcard'
+Assert-True (@($psd1.RequiredModules).Count -eq 0) 'manifest: no RequiredModules, so the analyzer installs without RSAT or Graph'
+Assert-True ($psd1.PrivateData.PSData.ProjectUri -and $psd1.PrivateData.PSData.LicenseUri -and @($psd1.PrivateData.PSData.Tags).Count -ge 5) 'manifest: project, licence and tags are filled in for the gallery'
+
+# The module adds names, not behaviour: one wrapper per script, no second implementation.
+$psm1Text = Get-Content -LiteralPath (Join-Path $root 'IDWolf.psm1') -Raw
+$psm1Funcs = @([regex]::Matches($psm1Text, '(?m)^function\s+([\w\-]+)\s*\{') | ForEach-Object { $_.Groups[1].Value })
+Assert-True (@(Compare-Object $psm1Funcs @($psd1.FunctionsToExport)).Count -eq 0) "manifest: FunctionsToExport and the functions in IDWolf.psm1 are the same set ($($psm1Funcs.Count) / $(@($psd1.FunctionsToExport).Count))"
+Assert-True ($psm1Text -notmatch '(?m)^\s*Export-ModuleMember') 'module: no Export-ModuleMember call, the manifest is the only export list'
+$wrapped = @([regex]::Matches($psm1Text, "Join-Path \`$PSScriptRoot '([\w\-]+\.ps1)'") | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+Assert-True ($wrapped.Count -ge 8) "module: every wrapper invokes a script by name ($($wrapped.Count) found)"
+foreach ($w in $wrapped) { Assert-True (Test-Path -LiteralPath (Join-Path $root $w)) "module: $w, invoked by a wrapper, exists" }
+
+# A new top-level file has to be added to the package list by hand: a wildcard over the
+# repository root would ship real snapshots from output\ and the private notes.
+$pkgText = Get-Content -LiteralPath (Join-Path $root 'packaging\Build-GalleryPackage.ps1') -Raw
+foreach ($f in @(Get-ChildItem -LiteralPath $root -File | Where-Object { @('.ps1', '.psm1', '.psd1', '.cmd') -contains $_.Extension.ToLower() })) {
+    Assert-True ($pkgText -match [regex]::Escape("'$($f.Name)'")) "packaging: $($f.Name) is on the list of files the gallery package ships"
+}
+Assert-True ($pkgText -notmatch "(?m)^\s*'tests[\\/]") 'packaging: nothing from tests is ever packaged'
+
 # ------------------------------------------------------------ output exposure (read-only ACL look)
 Write-Host "[output exposure]"
 $expDir = Join-Path $tmp 'exposed'

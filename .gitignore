@@ -27,3 +27,6 @@ ROADMAP.md
 
 # Threat model working notes: private review material, not published.
 threat-model/
+
+# Release tooling output: the staged module, the local rehearsal repository.
+packaging/out/

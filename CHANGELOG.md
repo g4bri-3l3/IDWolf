@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.16 - 2026-11-25
+
+IDWolf on the PowerShell Gallery: `Install-PSResource -Name IDWolf`. No check changed and no
+finding moved, so the counts, the score and the reports are the ones 1.15 produced.
+
+- **A module manifest and nine commands, over the same scripts.** `IDWolf.psd1` and `IDWolf.psm1`
+  are the whole addition. Each command (`Invoke-IDWolf`, `Start-IDWolf`, `Export-IDWolfADSnapshot`,
+  `Export-IDWolfEntraSnapshot`, `Export-IDWolfPasswordQuality`, `Export-IDWolfBloodHound`,
+  `Invoke-IDWolfScheduled`, `Test-IDWolfSafety`, `Get-IDWolfPath`) runs the script next to it and
+  forwards every argument unchanged, so there is one implementation and one parameter list, and a
+  clone keeps working exactly as before. Importing the module reads nothing and contacts nothing.
+  `FunctionsToExport` in the manifest is the only export list; the module declares no
+  `RequiredModules`, so the analyzer installs and runs on a host with no RSAT and no Graph SDK -
+  including Linux PowerShell 7. `Test-IDWolfSafety` with no argument reviews the copy you
+  installed, which is the point of shipping it inside the package.
+- **Nothing is ever published from the repository root.** `output\` holds real snapshots and
+  reports, and `threat-model\` is private review material. `packaging\Build-GalleryPackage.ps1`
+  copies a closed list of files into a staging folder - never a wildcard over the root - and stops
+  if a file it did not name turns up there, or if a name matches the real-data patterns from
+  `.gitignore`. It then checks that `IDWolf.psd1` and `$script:IDWolfVersion` agree, runs
+  `Test-ModuleManifest`, runs the staged `Test-IDWolfSafety.ps1` over the staged copy, and in a
+  fresh process under both Windows PowerShell 5.1 and PowerShell 7 imports the module and analyzes
+  the bundled synthetic snapshot. `-LocalTest` rehearses the whole publish against a throwaway
+  local repository and installs from it, because a version published to the gallery can be unlisted
+  but never replaced. Packing needs PSResourceGet, which Windows PowerShell 5.1 does not have, so
+  those two steps run under PowerShell 7 and say so up front instead of failing at the end;
+  staging and every check run on 5.1 as well, and the package is the same either way.
+- **`tests\` is not packaged.** `tests\lab\New-Lab*.ps1` write to a directory, and nothing that
+  writes to one belongs in something people install. The synthetic snapshots ship already
+  generated under `examples\` instead, so `Invoke-IDWolf -Snapshot (Join-Path (Get-IDWolfPath)
+  'examples\synthetic_demo.json') -SkipLLM` gives a full report with nothing collected.
+- **Safety review and regression.** `Test-IDWolfSafety.ps1` reads `.psm1` files already, so the
+  module surface is reviewed like the rest; it now skips `packaging\` the way it already skips
+  `tests\` and `examples\`, and its help says which folders it skips and why. `packaging\` is the
+  only place in the repository that copies files or talks to a package repository, and it is never
+  part of the package it builds. The regression suite asserts that the manifest version matches
+  `IDWolf.ps1`, that the manifest and the module name the same functions, that every wrapper points
+  at a script that exists, and that every top-level script is on the package list - so a new script
+  cannot quietly be left out of a release.
+
 ## 1.15 - 2026-11-19
 
 22 new checks, from the gap between IDWolf and *Detecting and mitigating Active Directory

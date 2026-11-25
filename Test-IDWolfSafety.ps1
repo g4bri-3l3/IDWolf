@@ -25,6 +25,10 @@
         GitHub tag list (the launcher's version check) and the
         MITRE links in the report.
 
+    It reads every .ps1, .psm1 and .cmd in the folder, except the development and
+    release tooling under tests, examples and packaging, which is not what users
+    run and is not part of the published package.
+
 .PARAMETER Path
     IDWolf folder. Default: the folder of this script.
 .PARAMETER Quiet
@@ -86,9 +90,12 @@ $bannedText = [ordered]@{
 $postAllowedIn = @('lib/AI.ps1')
 $allowedHosts = @('graph.microsoft.com', 'generativelanguage.googleapis.com', 'attack.mitre.org', 'api.github.com')
 
+# tests, examples and packaging are development and release tooling: not shipped to users,
+# not part of a collection, and excluded here. packaging is the only place that copies
+# files or talks to a package repository, and it never ends up in the package it builds.
 $root = (Resolve-Path -LiteralPath $Path).Path
 # Relative to the IDWolf folder, either separator: a copy kept under C:\tests\ must still be read.
-$files = @(Get-ScriptFiles $root | Where-Object { $_.FullName.Substring($root.Length).TrimStart('\', '/') -notmatch '^(tests|examples)[\\/]' -and $_.Name -ne 'Test-IDWolfSafety.ps1' })
+$files = @(Get-ScriptFiles $root | Where-Object { $_.FullName.Substring($root.Length).TrimStart('\', '/') -notmatch '^(tests|examples|packaging)[\\/]' -and $_.Name -ne 'Test-IDWolfSafety.ps1' })
 
 $problems = New-Object System.Collections.Generic.List[string]
 $used = @{}          # command -> files

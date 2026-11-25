@@ -132,8 +132,18 @@ real directory data in the report.
    to, then fails if anything is outside the reviewed list:
 
    ```powershell
-   .\Test-IDWolfSafety.ps1
+   .\Test-IDWolfSafety.ps1          # a clone
+   Test-IDWolfSafety                # the copy installed from the PowerShell Gallery
    ```
+
+   The review ships inside the gallery package on purpose, so you can run it
+   against the copy you actually installed rather than trust a page. It reads
+   every `.ps1`, `.psm1` and `.cmd` of the tool. It skips `tests\`, `examples\`
+   and `packaging\`: development and release tooling, not what runs on your
+   machines and not part of the package. `packaging\` is the one place in the
+   repository that copies files or talks to a package repository, and it is
+   never included in the package it builds; `tests\lab\` is the one place that
+   writes to a directory, and it is never included either.
 
    It flags any command that would change AD, Entra, DNS, DHCP or GPOs, any
    command nobody reviewed, run-time code tricks (`iex`, Base64, encoded

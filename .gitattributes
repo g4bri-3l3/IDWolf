@@ -3,3 +3,4 @@
 *.ps1  -text
 *.psm1 -text
 *.cmd  -text
+*.psd1 -text

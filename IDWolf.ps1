@@ -107,7 +107,7 @@ Param(
 )
 
 $ErrorActionPreference = 'Stop'
-$script:IDWolfVersion = "1.15"
+$script:IDWolfVersion = "1.16"
 
 $libDir = Join-Path $PSScriptRoot 'lib'
 foreach ($f in @('Common.ps1', 'Checks.ps1', 'ChecksHost.ps1', 'Reporting.ps1', 'Graph.ps1', 'AI.ps1', 'ChecksEntra.ps1', 'Compliance.ps1', 'Bundle.ps1', 'Wizard.ps1')) {

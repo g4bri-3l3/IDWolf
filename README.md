@@ -233,6 +233,68 @@ mapping (NIS2, ISO 27001, DORA, GDPR) and the AI layer are not usually offered b
 the commercial tools in the same shape. Semperis Purple Knight and Microsoft
 Secure Score are the closest free point-in-time comparisons.
 
+## Install
+
+Two ways to the same code.
+
+**From the PowerShell Gallery.** Nothing to clone, Windows PowerShell 5.1 and
+PowerShell 7 both:
+
+```powershell
+Install-PSResource -Name IDWolf        # or, on an older host: Install-Module -Name IDWolf
+Import-Module IDWolf
+Test-IDWolfSafety                      # reads the copy you just installed, runs nothing
+Invoke-IDWolf -Snapshot .\adsnap.json -SkipLLM
+```
+
+`Install-PSResource` comes with PowerShell 7. A stock Windows PowerShell 5.1 has
+the older `Install-Module`, and on a server that has never fetched anything from
+the gallery it may need TLS 1.2 enabled for the session first:
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+Install-Module -Name IDWolf -Scope CurrentUser
+```
+
+The module adds names, not behaviour: each command runs the script that does the
+work, next to it, and passes your arguments through unchanged. So the parameters
+are the ones documented in this README, and `Get-Help` on the script file lists
+them. `Get-IDWolfPath` says where the scripts landed.
+
+| Command | Runs |
+|---|---|
+| `Start-IDWolf` | `Start-IDWolf.ps1` |
+| `Invoke-IDWolf` | `IDWolf.ps1` |
+| `Export-IDWolfADSnapshot` | `Collect-ADSnapshot.ps1` |
+| `Export-IDWolfEntraSnapshot` | `Collect-EntraSnapshot.ps1` |
+| `Export-IDWolfPasswordQuality` | `Export-PasswordQuality.ps1` |
+| `Export-IDWolfBloodHound` | `Export-BloodHound.ps1` |
+| `Invoke-IDWolfScheduled` | `Invoke-IDWolfScheduled.ps1` |
+| `Test-IDWolfSafety` | `Test-IDWolfSafety.ps1` |
+
+```powershell
+Get-Help (Join-Path (Get-IDWolfPath) 'IDWolf.ps1') -Full          # every analyzer parameter
+Invoke-IDWolf -Snapshot (Join-Path (Get-IDWolfPath) 'examples\synthetic_demo.json') -SkipLLM
+```
+
+That last line is a full report off the bundled synthetic domain, with nothing
+collected: a way to see what IDWolf produces before pointing it at your own
+directory. The package carries the analyzer, both collectors, `lib\`, this
+documentation and the synthetic samples. It does not carry `tests\`: the lab
+scripts there write to a directory, and nothing that writes belongs in a
+package.
+
+**From a clone**, if you would rather read the code before running it:
+
+```powershell
+git clone https://github.com/g4bri-3l3/IDWolf.git
+cd IDWolf
+.\Test-IDWolfSafety.ps1
+```
+
+Then run the scripts by path, the way the rest of this README does. Nothing has
+to be installed, and no part of IDWolf installs itself.
+
 ## Quick start
 
 ```powershell
@@ -1366,7 +1428,7 @@ collections run there, and some bugs only show up there.
 - Reference results: the AD `demo` gives **251 findings** (28 Critical, 88 High,
   99 Medium, 36 Low) and 17 Tier 0 principals, and 259 with the example
   password report. `-Deep` gives 256. `partial` gives 235. The Entra tenant
-  gives 95. In total there are **875 assertions**.
+  gives 95. In total there are **903 assertions**.
 - `tests/lab/` is for a throw-away lab domain, never for production.
   `New-LabAttackPaths.ps1` plants a four-step ACL chain and a few delegation
   findings. It **writes to AD**, asks you to type the domain name first, and has
@@ -1382,6 +1444,17 @@ collections run there, and some bugs only show up there.
   captioned slide per section. It needs Windows PowerShell 5.1 and Edge or Chrome. For anything you
   publish, build the GIF from a report made with synthetic data, because a real
   one shows real names.
+
+- `packaging/Build-GalleryPackage.ps1` stages the PowerShell Gallery module and
+  verifies it: a closed list of files (never a wildcard over the repository
+  root, which holds real snapshots under `output/`), the manifest version
+  against `$script:IDWolfVersion`, `Test-ModuleManifest`, the safety review over
+  the staged copy, and then an import plus a full analysis of the bundled
+  synthetic snapshot in a fresh process under both 5.1 and 7. `-LocalTest`
+  rehearses the whole publish against a throwaway local repository and installs
+  from it. `-Publish` is the only thing that sends anything anywhere, and it
+  needs `$env:PSGALLERY_API_KEY`. Those two need PSResourceGet, so run them
+  under PowerShell 7 (`pwsh`); staging and the checks run on 5.1 too.
 
 ## Known Limitations
 
