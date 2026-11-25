@@ -95,7 +95,7 @@
   ________|   _/_  | |
 &lt;__________\______)\__)</pre>
   <div>
-    <span class="pill">v1.15 &middot; MIT &middot; PowerShell 5.1 and 7</span>
+    <span class="pill">v1.16 &middot; MIT &middot; PowerShell 5.1 and 7</span>
     <h1>IDWolf</h1>
     <p class="lede">A hygiene audit for Active Directory and Microsoft Entra ID. One read-only
     collection with the native modules, the analysis runs anywhere else, offline, and the report
@@ -103,7 +103,7 @@
     <div class="btns">
       <a class="btn primary" href="demo/demo_report.html">Open the live report</a>
       <a class="btn" href="https://github.com/g4bri-3l3/IDWolf">Code on GitHub</a>
-      <a class="btn" href="https://github.com/g4bri-3l3/IDWolf/archive/refs/tags/v1.15.zip">Download v1.15</a>
+      <a class="btn" href="https://github.com/g4bri-3l3/IDWolf/archive/refs/tags/v1.16.zip">Download v1.16</a>
     </div>
   </div>
 </header>
@@ -273,8 +273,10 @@
     PS&gt; <code>.\Start-IDWolf.ps1</code> &nbsp; # or just the menu, if you prefer prompts
     </p>
   </div>
-  <p style="margin-top:14px">No installer, no module manifest, no build step: the scripts dot-source
-  what they need. A scheduled-task wrapper collects, analyses, diffs against the previous run and
+  <p style="margin-top:14px">No installer and no build step: the scripts dot-source what they need,
+  so a clone runs as it is. Or take it from the PowerShell Gallery in one line -
+  <code>Install-PSResource -Name IDWolf</code> - which lays down the same scripts and adds a command
+  for each of them. A scheduled-task wrapper collects, analyses, diffs against the previous run and
   appends JSON Lines to one file for your SIEM with no prompts - and it never registers the task
   itself.</p>
 </section>
@@ -294,7 +296,7 @@
 </div>
 <footer>
   <div class="wrap meta">
-    IDWolf v1.15 &middot; MIT licence &middot; built from the repository, with no tracking and
+    IDWolf v1.16 &middot; MIT licence &middot; built from the repository, with no tracking and
     no third-party asset on this page. The demo report is synthetic data: no real directory appears
     in it.
   </div>
